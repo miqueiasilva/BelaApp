@@ -31,7 +31,8 @@ const AgendaOnlineView: React.FC = () => {
     const [replyText, setReplyText] = useState<{ [key: number]: string }>({});
 
     const handleCopyLink = () => {
-        navigator.clipboard.writeText(`belaapp.com/${config.slug}`);
+        const baseUrl = window.location.href.split('#')[0];
+        navigator.clipboard.writeText(`${baseUrl}#/public-preview`);
         alert('Link copiado para a área de transferência!');
     };
 
@@ -45,8 +46,8 @@ const AgendaOnlineView: React.FC = () => {
     };
 
     const openPreview = () => {
-        // Abre a visualização em uma nova aba para garantir o isolamento da sessão admin e simular a experiência do cliente
-        window.open(`${window.location.origin}/#/public-preview`, '_blank');
+        // Navigate in the current tab via hash to avoid sandbox 404/blob errors
+        window.location.hash = '/public-preview';
     };
 
     return (
@@ -98,13 +99,10 @@ const AgendaOnlineView: React.FC = () => {
                             <div className="space-y-4">
                                 <label className="block text-sm font-bold text-slate-700">Seu Link Público</label>
                                 <div className="flex gap-2">
-                                    <div className="flex-1 flex items-center px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-600 text-sm">
-                                        belaapp.com/
-                                        <input 
-                                            value={config.slug} 
-                                            onChange={(e) => setConfig({...config, slug: e.target.value})}
-                                            className="bg-transparent border-none focus:outline-none font-bold text-slate-800 flex-1 ml-1"
-                                        />
+                                    <div className="flex-1 flex items-center px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-600 text-sm overflow-hidden">
+                                        <span className="truncate">
+                                            {window.location.host}/.../{config.slug}
+                                        </span>
                                     </div>
                                     <button onClick={handleCopyLink} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600" title="Copiar">
                                         <Copy className="w-5 h-5" />

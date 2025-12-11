@@ -44,6 +44,9 @@ const AppContent = () => {
     const handleHashChange = () => {
         if (window.location.hash.includes('public-preview')) {
             setCurrentView('public_preview');
+        } else {
+            // If hash changes away from public preview (e.g. back button or manual exit), go to dashboard
+            setCurrentView(prev => prev === 'public_preview' ? 'dashboard' : prev);
         }
     };
     window.addEventListener('hashchange', handleHashChange);

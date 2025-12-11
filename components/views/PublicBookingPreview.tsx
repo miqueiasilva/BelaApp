@@ -8,6 +8,7 @@ import {
 import { format, addDays, startOfToday, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { LegacyService } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
 
 // --- Types for the Wizard ---
 type Step = 'service' | 'professional' | 'datetime' | 'form' | 'success';
@@ -20,6 +21,7 @@ const PublicBookingPreview: React.FC = () => {
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [clientForm, setClientForm] = useState({ name: '', phone: '', notes: '' });
     const [searchTerm, setSearchTerm] = useState('');
+    const { user } = useAuth();
     
     // Accordion state for categories
     const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
@@ -95,11 +97,29 @@ const PublicBookingPreview: React.FC = () => {
         else if (step === 'form') setStep('datetime');
     };
 
+    const handleExitPreview = () => {
+        window.location.hash = ''; // Return to dashboard handled by App.tsx
+    };
+
     // --- RENDERERS ---
+
+    const BackToAdminButton = () => (
+        user ? (
+            <div className="fixed top-4 left-4 z-50">
+                <button 
+                    onClick={handleExitPreview} 
+                    className="bg-slate-800 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold hover:bg-slate-700 transition-colors border border-slate-600"
+                >
+                    <ChevronLeft size={14} /> Voltar ao Admin
+                </button>
+            </div>
+        ) : null
+    );
 
     if (step === 'success') {
         return (
-            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans">
+            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans relative">
+                <BackToAdminButton />
                 <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full">
                     <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                         <Check className="w-10 h-10 text-green-600" />
@@ -135,14 +155,15 @@ const PublicBookingPreview: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-[#FAFAFA] font-sans pb-20">
+        <div className="min-h-screen bg-[#FAFAFA] font-sans pb-20 relative">
+            <BackToAdminButton />
             
             {/* --- HEADER (Reference Style) --- */}
             <header className="bg-white pt-6 pb-4 px-4 shadow-sm sticky top-0 z-20">
                 <div className="max-w-3xl mx-auto">
                     {step === 'service' ? (
                         /* Studio Profile Header */
-                        <div className="flex flex-col md:flex-row items-center md:items-start text-center md:text-left gap-4 mb-4">
+                        <div className="flex flex-col md:flex-row items-center md:items-start text-center md:text-left gap-4 mb-4 mt-8 md:mt-0">
                             <div className="relative">
                                 <img src={mockOnlineConfig.logoUrl} alt="Logo" className="w-24 h-24 rounded-full border border-slate-100 shadow-sm object-cover" />
                                 <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-500 border-2 border-white rounded-full" title="Aberto Agora"></div>
@@ -165,7 +186,7 @@ const PublicBookingPreview: React.FC = () => {
                         </div>
                     ) : (
                         /* Navigation Header (Steps 2-4) */
-                        <div className="flex items-center justify-between py-2">
+                        <div className="flex items-center justify-between py-2 mt-8 md:mt-0">
                             <button onClick={handleBack} className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full">
                                 <ChevronLeft />
                             </button>
