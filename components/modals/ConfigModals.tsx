@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Upload, User, Scissors, DollarSign, Clock, Palette, Tag } from 'lucide-react';
+import { X, Save, Upload, User, Scissors, DollarSign, Clock, Palette, Tag, Trash2, Camera } from 'lucide-react';
 import { LegacyService, LegacyProfessional } from '../../types';
 
 // --- Service Modal ---
@@ -214,6 +214,14 @@ export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({ profession
         }
     };
 
+    const handleRemovePhoto = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setAvatarUrl('');
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         onSave({
@@ -235,21 +243,42 @@ export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({ profession
                 </header>
                 <form onSubmit={handleSubmit} className="p-6 space-y-6">
                     <div className="flex flex-col items-center gap-3">
-                        <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                            <div className="w-24 h-24 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border-2 border-slate-200 group-hover:border-blue-400 transition-colors">
+                        <div 
+                            className="relative group cursor-pointer w-28 h-28" 
+                            onClick={() => fileInputRef.current?.click()}
+                        >
+                            <div className="w-full h-full rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border-4 border-slate-50 shadow-sm group-hover:border-blue-100 transition-colors">
                                 {avatarUrl ? (
                                     <img src={avatarUrl} alt="Preview" className="w-full h-full object-cover" />
                                 ) : (
-                                    <User className="w-10 h-10 text-slate-300" />
+                                    <User className="w-12 h-12 text-slate-300" />
                                 )}
                             </div>
                             <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Upload className="w-6 h-6 text-white" />
+                                <Camera className="w-8 h-8 text-white" />
                             </div>
+                            {avatarUrl && (
+                                <button 
+                                    type="button"
+                                    onClick={handleRemovePhoto}
+                                    className="absolute bottom-0 right-0 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-md transition-transform hover:scale-110"
+                                    title="Remover foto"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            )}
                         </div>
-                        <p className="text-xs text-blue-600 font-semibold cursor-pointer hover:underline" onClick={() => fileInputRef.current?.click()}>
-                            Alterar Foto
-                        </p>
+                        
+                        <div className="flex gap-2">
+                            <button 
+                                type="button"
+                                className="text-xs text-blue-600 font-bold hover:underline" 
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                {avatarUrl ? 'Alterar Foto' : 'Adicionar Foto'}
+                            </button>
+                        </div>
+
                         <input 
                             type="file" 
                             ref={fileInputRef} 

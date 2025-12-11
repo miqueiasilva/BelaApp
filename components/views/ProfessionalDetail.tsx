@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
     ChevronLeft, Mail, Phone, MapPin, Calendar, Clock, DollarSign, 
-    CheckCircle, List, User, Save, Upload, Plus, Trash2, Globe
+    CheckCircle, List, User, Save, Upload, Plus, Trash2, Globe, Camera
 } from 'lucide-react';
 import { LegacyProfessional, LegacyService } from '../../types';
 import Card from '../shared/Card';
@@ -34,9 +34,26 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     });
 
     const [activeTab, setActiveTab] = useState<'perfil' | 'servicos' | 'horarios' | 'comissoes'>('perfil');
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleSave = () => {
         onSave(prof);
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const url = URL.createObjectURL(file);
+            setProf({ ...prof, avatarUrl: url });
+        }
+    };
+
+    const handleRemovePhoto = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setProf({ ...prof, avatarUrl: '' });
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
 
     const toggleService = (serviceId: number) => {
@@ -84,12 +101,40 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-slate-100 to-slate-50 z-0"></div>
                         
                         <div className="relative z-10 flex flex-col items-center">
-                            <div className="w-32 h-32 rounded-full border-4 border-white shadow-md overflow-hidden bg-slate-200 group cursor-pointer relative">
-                                <img src={prof.avatarUrl} alt={prof.name} className="w-full h-full object-cover" />
+                            <div 
+                                className="w-32 h-32 rounded-full border-4 border-white shadow-md overflow-hidden bg-slate-200 group cursor-pointer relative"
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                {prof.avatarUrl ? (
+                                    <img src={prof.avatarUrl} alt={prof.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center bg-slate-200 text-slate-400">
+                                        <User size={48} />
+                                    </div>
+                                )}
+                                
                                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Upload className="text-white w-8 h-8" />
+                                    <Camera className="text-white w-8 h-8" />
                                 </div>
                             </div>
+                            
+                            {/* Hidden File Input */}
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                className="hidden" 
+                                accept="image/*"
+                                onChange={handleFileChange}
+                            />
+
+                            {prof.avatarUrl && (
+                                <button 
+                                    onClick={handleRemovePhoto}
+                                    className="mt-2 text-xs text-red-500 font-bold hover:text-red-700 flex items-center gap-1 bg-white/80 px-2 py-1 rounded-full shadow-sm backdrop-blur-sm"
+                                >
+                                    <Trash2 size={12} /> Remover Foto
+                                </button>
+                            )}
                         </div>
 
                         <div className="relative z-10 flex-1 text-center md:text-left pt-2">
