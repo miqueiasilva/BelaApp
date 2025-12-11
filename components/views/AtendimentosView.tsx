@@ -543,23 +543,23 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                 key={app.id}
                                                 ref={(el) => { appointmentRefs.current.set(app.id, el); }}
                                                 onClick={(e) => { e.stopPropagation(); if (app.status !== 'bloqueado') setActiveAppointmentDetail(app); }}
-                                                className={`absolute w-[95%] left-1/2 -translate-x-1/2 rounded-lg shadow-sm border leading-tight overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-[1.02] hover:z-10 ${getStatusColor(app.status)} ${isSmall ? 'p-1' : 'p-1.5'}`}
+                                                className={`absolute w-[95%] left-1/2 -translate-x-1/2 rounded-lg shadow-sm border leading-tight overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-[1.02] hover:z-10 ${getStatusColor(app.status)} ${isSmall ? 'p-0.5' : 'p-1.5'}`}
                                                 style={getAppointmentStyle(app.start, app.end)}
                                             >
                                                 <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-lg"></div>
                                                 
-                                                <div className={`flex flex-col h-full relative z-10 pl-2 pr-1 ${isSmall ? 'pt-0' : 'pt-0.5'}`}>
+                                                <div className={`flex flex-col h-full relative z-10 pl-2 pr-1 ${isSmall ? 'justify-center' : 'pt-0.5'}`}>
                                                     {/* Header: Time & Notes */}
                                                     <div className={`flex justify-between items-start ${isSmall ? 'mb-0' : 'mb-0.5'}`}>
                                                         <span className={`font-bold bg-white/60 rounded text-slate-700 backdrop-blur-sm shadow-sm tracking-tight ${isSmall ? 'text-[9px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'}`}>
                                                             {format(app.start, 'HH:mm')}
                                                         </span>
-                                                        {app.notas && <FileText size={isSmall ? 8 : 10} className="text-slate-500 ml-1 mt-0.5" />}
+                                                        {app.notas && !isSmall && <FileText size={10} className="text-slate-500 ml-1 mt-0.5" />}
                                                     </div>
 
                                                     {/* Body: Client & Service */}
-                                                    <div className="flex-1 min-h-0 flex flex-col justify-center">
-                                                        <p className={`font-extrabold text-slate-900 truncate ${isSmall ? 'text-[11px] leading-3' : 'text-sm leading-tight mb-0.5'}`}>
+                                                    <div className={`flex-1 min-h-0 flex flex-col ${isSmall ? 'justify-center' : 'justify-center'}`}>
+                                                        <p className={`font-extrabold text-slate-900 truncate ${isSmall ? 'text-[10px] leading-3' : 'text-sm leading-tight mb-0.5'}`}>
                                                             {app.client ? app.client.nome : 'Bloqueio'}
                                                         </p>
                                                         <p className={`font-medium text-slate-600 truncate flex items-center gap-1 ${isSmall ? 'text-[9px] leading-3' : 'text-[11px] leading-tight'}`}>
