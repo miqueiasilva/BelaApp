@@ -2,7 +2,7 @@
 import React, { useState, useRef } from 'react';
 import { 
     ChevronLeft, Mail, Phone, MapPin, Calendar, Clock, DollarSign, 
-    CheckCircle, List, User, Save, Upload, Plus, Trash2, Globe, Camera
+    CheckCircle, List, User, Save, Upload, Plus, Trash2, Globe, Camera, Scissors
 } from 'lucide-react';
 import { LegacyProfessional, LegacyService } from '../../types';
 import Card from '../shared/Card';
@@ -160,9 +160,9 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         <nav className="-mb-px flex gap-8 overflow-x-auto scrollbar-hide">
                             {[
                                 { id: 'perfil', label: 'PERFIL' },
-                                { id: 'servicos', label: 'SERVIÇOS' }, // AKA Configurações in screenshot
-                                { id: 'horarios', label: 'HORÁRIOS' }, // AKA Atividades context but fits better
-                                { id: 'comissoes', label: 'COMISSÕES' }, // AKA Salários
+                                { id: 'servicos', label: 'SERVIÇOS' },
+                                { id: 'horarios', label: 'HORÁRIOS' },
+                                { id: 'comissoes', label: 'COMISSÕES' },
                             ].map((tab) => (
                                 <button
                                     key={tab.id}
@@ -266,26 +266,26 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         <div className="animate-in slide-in-from-bottom-2">
                             <Card title="Serviços Habilitados" icon={<List size={20}/>}>
                                 <p className="text-sm text-slate-500 mb-6">Selecione quais serviços {prof.name.split(' ')[0]} pode realizar.</p>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     {services.map(service => {
                                         const isSelected = (prof.services || []).includes(service.id);
                                         return (
                                             <div 
                                                 key={service.id} 
                                                 onClick={() => toggleService(service.id)}
-                                                className={`p-4 rounded-xl border cursor-pointer transition-all flex items-center justify-between group ${
+                                                className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between group select-none ${
                                                     isSelected 
-                                                    ? 'border-orange-500 bg-orange-50' 
-                                                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                                                    ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-200' 
+                                                    : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50'
                                                 }`}
                                             >
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`w-5 h-5 rounded-md flex items-center justify-center border ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-slate-300 bg-white'}`}>
-                                                        {isSelected && <CheckCircle size={14} className="text-white" />}
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    <div className={`w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center border transition-colors ${isSelected ? 'bg-orange-500 border-orange-500 text-white' : 'border-slate-200 bg-slate-50 text-slate-400 group-hover:border-slate-300'}`}>
+                                                        {isSelected ? <CheckCircle size={18} /> : <Scissors size={18} />}
                                                     </div>
-                                                    <div>
-                                                        <p className={`font-bold text-sm ${isSelected ? 'text-orange-900' : 'text-slate-700'}`}>{service.name}</p>
-                                                        <p className="text-xs text-slate-500">{service.duration} min • R$ {service.price.toFixed(2)}</p>
+                                                    <div className="min-w-0">
+                                                        <p className={`font-bold text-sm truncate ${isSelected ? 'text-orange-900' : 'text-slate-700'}`}>{service.name}</p>
+                                                        <p className="text-xs text-slate-500 truncate">{service.duration} min • R$ {service.price.toFixed(2)}</p>
                                                     </div>
                                                 </div>
                                             </div>

@@ -1,9 +1,13 @@
 
 import React, { useState, useMemo } from 'react';
 import { services, professionals, mockOnlineConfig } from '../../data/mockData';
-import { ChevronLeft, Calendar, Clock, Check, MapPin, Star, ArrowRight } from 'lucide-react';
-import { format, addDays, startOfToday, isSameDay, setHours, setMinutes } from 'date-fns';
+import { 
+    ChevronLeft, Calendar, Clock, Check, MapPin, Star, 
+    Search, Heart, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2 
+} from 'lucide-react';
+import { format, addDays, startOfToday, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { LegacyService } from '../../types';
 
 // --- Types for the Wizard ---
 type Step = 'service' | 'professional' | 'datetime' | 'form' | 'success';
@@ -15,10 +19,41 @@ const PublicBookingPreview: React.FC = () => {
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [clientForm, setClientForm] = useState({ name: '', phone: '', notes: '' });
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    // Accordion state for categories
+    const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
+        'Mais Agendados': true,
+        'Sobrancelhas': true,
+        'Cílios': false,
+        'Estética': false,
+        'Geral': false
+    });
 
     // Helper to get objects from IDs
     const serviceObj = useMemo(() => Object.values(services).find(s => s.id === selectedService), [selectedService]);
     const profObj = useMemo(() => professionals.find(p => p.id === selectedProfessional), [selectedProfessional]);
+
+    // Data Filtering & Grouping
+    const groupedServices = useMemo<Record<string, LegacyService[]>>(() => {
+        const allServices = Object.values(services);
+        const filtered = allServices.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
+        
+        const groups: Record<string, LegacyService[]> = {};
+        
+        // Mock "Mais Agendados" - taking first 3
+        if (!searchTerm) {
+            groups['Mais Agendados'] = allServices.slice(0, 3);
+        }
+
+        filtered.forEach(service => {
+            const cat = service.category || 'Geral';
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push(service);
+        });
+
+        return groups;
+    }, [searchTerm]);
 
     // Mock Time Slots Generation
     const timeSlots = useMemo(() => {
@@ -37,6 +72,16 @@ const PublicBookingPreview: React.FC = () => {
         return Array.from({ length: 14 }, (_, i) => addDays(startOfToday(), i));
     }, []);
 
+    const toggleCategory = (cat: string) => {
+        setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
+    };
+
+    const handleSelectService = (id: number) => {
+        setSelectedService(id);
+        // Small delay for visual feedback
+        setTimeout(() => setStep('professional'), 200);
+    };
+
     const handleNext = () => {
         if (step === 'service' && selectedService) setStep('professional');
         else if (step === 'professional' && selectedProfessional) setStep('datetime');
@@ -50,9 +95,11 @@ const PublicBookingPreview: React.FC = () => {
         else if (step === 'form') setStep('datetime');
     };
 
+    // --- RENDERERS ---
+
     if (step === 'success') {
         return (
-            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans">
                 <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full">
                     <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                         <Check className="w-10 h-10 text-green-600" />
@@ -77,7 +124,7 @@ const PublicBookingPreview: React.FC = () => {
                         Receber comprovante no WhatsApp
                     </button>
                     <button 
-                        onClick={() => window.location.reload()} // Simple reset for preview
+                        onClick={() => window.location.reload()}
                         className="text-slate-500 font-medium hover:text-slate-800 text-sm"
                     >
                         Fazer outro agendamento
@@ -88,131 +135,195 @@ const PublicBookingPreview: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans">
-            {/* Sticky Header Mobile */}
-            <div className="bg-white shadow-sm sticky top-0 z-20">
-                <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
-                    {step !== 'service' ? (
-                        <button onClick={handleBack} className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full">
-                            <ChevronLeft />
-                        </button>
-                    ) : (
-                        <div className="w-10"></div> // Spacer
-                    )}
-                    <span className="font-semibold text-slate-800">Agendamento Online</span>
-                    <div className="w-10 text-right text-xs font-bold text-orange-500">
-                        {step === 'service' && '1/4'}
-                        {step === 'professional' && '2/4'}
-                        {step === 'datetime' && '3/4'}
-                        {step === 'form' && '4/4'}
-                    </div>
-                </div>
-                {/* Progress Bar */}
-                <div className="h-1 bg-slate-100 w-full">
-                    <div 
-                        className="h-full bg-orange-500 transition-all duration-300"
-                        style={{ width: step === 'service' ? '25%' : step === 'professional' ? '50%' : step === 'datetime' ? '75%' : '100%' }}
-                    ></div>
-                </div>
-            </div>
-
-            <div className="max-w-md mx-auto pb-20">
-                
-                {/* Hero Info (Only on first step) */}
-                {step === 'service' && (
-                    <div className="bg-white p-6 mb-4">
-                        <div className="flex items-center gap-4 mb-4">
-                            <img src={mockOnlineConfig.logoUrl} alt="Logo" className="w-16 h-16 rounded-full border border-slate-100 shadow-sm" />
-                            <div>
-                                <h1 className="text-xl font-bold text-slate-800 leading-tight">{mockOnlineConfig.studioName}</h1>
-                                <div className="flex items-center gap-1 text-amber-500 text-sm font-bold mt-1">
-                                    <Star className="w-4 h-4 fill-current" /> 4.9 <span className="text-slate-400 font-normal ml-1">(120 avaliações)</span>
+        <div className="min-h-screen bg-[#FAFAFA] font-sans pb-20">
+            
+            {/* --- HEADER (Reference Style) --- */}
+            <header className="bg-white pt-6 pb-4 px-4 shadow-sm sticky top-0 z-20">
+                <div className="max-w-3xl mx-auto">
+                    {step === 'service' ? (
+                        /* Studio Profile Header */
+                        <div className="flex flex-col md:flex-row items-center md:items-start text-center md:text-left gap-4 mb-4">
+                            <div className="relative">
+                                <img src={mockOnlineConfig.logoUrl} alt="Logo" className="w-24 h-24 rounded-full border border-slate-100 shadow-sm object-cover" />
+                                <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-500 border-2 border-white rounded-full" title="Aberto Agora"></div>
+                            </div>
+                            <div className="flex-1">
+                                <h1 className="text-xl font-bold text-slate-800">{mockOnlineConfig.studioName}</h1>
+                                <p className="text-xs text-slate-500 mt-1">Avenida Santina Gomes de Andrade, 4 - Loja 04, Centro</p>
+                                <div className="flex items-center justify-center md:justify-start gap-1 text-amber-500 text-sm font-bold mt-2">
+                                    <Star className="w-4 h-4 fill-current" /> 5.0 <span className="text-amber-600 font-normal">- Ótimo</span> <span className="text-slate-400 font-normal ml-1">(4 avaliações)</span>
+                                </div>
+                                
+                                {/* Action Buttons */}
+                                <div className="flex items-center justify-center md:justify-start gap-4 mt-4 text-xs font-semibold text-slate-600">
+                                    <button className="flex items-center gap-1 hover:text-orange-500 transition-colors"><ImageIcon size={16}/> Fotos</button>
+                                    <button className="flex items-center gap-1 hover:text-orange-500 transition-colors"><Info size={16}/> Informações</button>
+                                    <button className="flex items-center gap-1 hover:text-orange-500 transition-colors"><Heart size={16}/> Favorito</button>
+                                    <button className="flex items-center gap-1 hover:text-orange-500 transition-colors"><Share2 size={16}/> Compartilhar</button>
                                 </div>
                             </div>
                         </div>
-                        <p className="text-slate-600 text-sm leading-relaxed mb-3">{mockOnlineConfig.description}</p>
-                        <div className="flex items-center gap-2 text-slate-500 text-sm">
-                            <MapPin className="w-4 h-4" />
-                            <span>São Paulo, SP</span>
-                        </div>
-                    </div>
-                )}
-
-                {/* Step 1: Services */}
-                {step === 'service' && (
-                    <div className="px-4 space-y-3">
-                        <h2 className="font-bold text-slate-700 mb-2">Selecione um serviço</h2>
-                        {Object.values(services).map(service => (
-                            <button
-                                key={service.id}
-                                onClick={() => { setSelectedService(service.id); setTimeout(() => setStep('professional'), 200); }}
-                                className="w-full bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between hover:border-orange-300 hover:shadow-md transition-all group"
-                            >
-                                <div className="text-left">
-                                    <h3 className="font-bold text-slate-800 group-hover:text-orange-600 transition-colors">{service.name}</h3>
-                                    <p className="text-xs text-slate-500 mt-1">{service.duration} min • <span className="font-medium text-slate-700">R$ {service.price.toFixed(2)}</span></p>
-                                </div>
-                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-colors">
-                                    <ArrowRight className="w-4 h-4" />
-                                </div>
+                    ) : (
+                        /* Navigation Header (Steps 2-4) */
+                        <div className="flex items-center justify-between py-2">
+                            <button onClick={handleBack} className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full">
+                                <ChevronLeft />
                             </button>
+                            <span className="font-semibold text-slate-800">
+                                {step === 'professional' && 'Escolha o Profissional'}
+                                {step === 'datetime' && 'Data e Horário'}
+                                {step === 'form' && 'Finalizar Agendamento'}
+                            </span>
+                            <div className="w-8"></div>
+                        </div>
+                    )}
+
+                    {/* Progress Bar (Steps 2-4) */}
+                    {step !== 'service' && (
+                        <div className="h-1 bg-slate-100 w-full mt-2 rounded-full overflow-hidden">
+                            <div 
+                                className="h-full bg-orange-500 transition-all duration-300"
+                                style={{ width: step === 'professional' ? '33%' : step === 'datetime' ? '66%' : '100%' }}
+                            ></div>
+                        </div>
+                    )}
+                </div>
+            </header>
+
+            <div className="max-w-3xl mx-auto px-4 mt-6">
+                
+                {/* --- STEP 1: SERVICE SELECTION (Catalog Style) --- */}
+                {step === 'service' && (
+                    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+                        {/* Search Bar */}
+                        <div className="relative">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                            <input 
+                                type="text" 
+                                placeholder="Pesquisar Serviço..." 
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-12 pr-4 py-3 bg-slate-100 border-none rounded-xl text-slate-700 focus:bg-white focus:ring-2 focus:ring-slate-200 transition-all outline-none"
+                            />
+                        </div>
+
+                        {/* Service List by Category */}
+                        {Object.entries(groupedServices).map(([category, items]) => (
+                            <div key={category} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                                {/* Accordion Header */}
+                                <button 
+                                    onClick={() => toggleCategory(category)}
+                                    className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors"
+                                >
+                                    <h3 className="font-bold text-slate-800 text-sm md:text-base">{category}</h3>
+                                    {expandedCategories[category] ? <ChevronUp className="text-slate-400 w-5 h-5" /> : <ChevronDown className="text-slate-400 w-5 h-5" />}
+                                </button>
+
+                                {/* List Items */}
+                                {expandedCategories[category] && (
+                                    <div className="divide-y divide-slate-100">
+                                        {(items as LegacyService[]).map(service => (
+                                            <div key={service.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors group">
+                                                <div className="flex items-start gap-3">
+                                                    <div className="mt-1 w-4 h-4 rounded-full border-2 border-slate-300 group-hover:border-orange-500 flex-shrink-0"></div>
+                                                    <div>
+                                                        <p className="font-semibold text-slate-700 text-sm md:text-base">{service.name}</p>
+                                                        {/* Optional Description */}
+                                                        {/* <p className="text-xs text-slate-400 mt-1 line-clamp-2">Descrição detalhada do serviço aqui...</p> */}
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="text-right flex flex-col items-end gap-2 min-w-[80px]">
+                                                    <div>
+                                                        <span className="block text-sm font-bold text-slate-600">R$ {service.price.toFixed(2)}</span>
+                                                        <span className="block text-[10px] text-slate-400">{service.duration}m</span>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleSelectService(service.id)}
+                                                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-1.5 px-4 rounded-lg shadow-sm transition-colors"
+                                                    >
+                                                        Selecionar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         ))}
+                        
+                        {Object.keys(groupedServices).length === 0 && (
+                            <div className="text-center py-10 text-slate-400">
+                                <p>Nenhum serviço encontrado.</p>
+                            </div>
+                        )}
                     </div>
                 )}
 
-                {/* Step 2: Professionals */}
+                {/* --- STEP 2: PROFESSIONAL --- */}
                 {step === 'professional' && (
-                    <div className="px-4 space-y-3 pt-4">
-                        <h2 className="font-bold text-slate-700 mb-2">Quem vai te atender?</h2>
+                    <div className="space-y-4 animate-in slide-in-from-right-8 duration-300">
+                        <div className="bg-orange-50 border border-orange-100 p-4 rounded-xl mb-4">
+                            <p className="text-sm text-orange-800">
+                                Serviço selecionado: <b>{serviceObj?.name}</b> (R$ {serviceObj?.price.toFixed(2)})
+                            </p>
+                        </div>
+
                         <button
-                            onClick={() => { setSelectedProfessional(-1); setStep('datetime'); }} // -1 for "Any"
-                            className="w-full bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:border-orange-300 transition-all"
+                            onClick={() => { setSelectedProfessional(-1); setStep('datetime'); }}
+                            className="w-full bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:border-orange-300 transition-all group"
                         >
-                             <div className="w-12 h-12 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-lg">
+                             <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-xl group-hover:bg-orange-500 group-hover:text-white transition-colors">
                                 ?
                              </div>
                              <div className="text-left">
-                                 <h3 className="font-bold text-slate-800">Qualquer profissional disponível</h3>
+                                 <h3 className="font-bold text-slate-800 text-lg">Qualquer profissional</h3>
                                  <p className="text-xs text-slate-500">Encontraremos o horário mais próximo</p>
                              </div>
                         </button>
                         
-                        {professionals.map(prof => (
-                            <button
-                                key={prof.id}
-                                onClick={() => { setSelectedProfessional(prof.id); setStep('datetime'); }}
-                                className="w-full bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:border-orange-300 transition-all"
-                            >
-                                <img src={prof.avatarUrl} alt={prof.name} className="w-12 h-12 rounded-full object-cover" />
-                                <div className="text-left">
-                                    <h3 className="font-bold text-slate-800">{prof.name}</h3>
-                                    <p className="text-xs text-slate-500">Especialista em Cílios e Sobrancelhas</p>
-                                </div>
-                            </button>
-                        ))}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {professionals.map(prof => (
+                                <button
+                                    key={prof.id}
+                                    onClick={() => { setSelectedProfessional(prof.id); setStep('datetime'); }}
+                                    className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:border-orange-300 transition-all text-left"
+                                >
+                                    <img src={prof.avatarUrl} alt={prof.name} className="w-14 h-14 rounded-full object-cover border-2 border-slate-100" />
+                                    <div>
+                                        <h3 className="font-bold text-slate-800">{prof.name}</h3>
+                                        <p className="text-xs text-slate-500">Especialista</p>
+                                        <div className="flex items-center gap-1 mt-1">
+                                            <Star className="w-3 h-3 text-amber-400 fill-current" />
+                                            <span className="text-xs font-bold text-slate-600">4.9</span>
+                                        </div>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 )}
 
-                {/* Step 3: Date & Time */}
+                {/* --- STEP 3: DATE & TIME --- */}
                 {step === 'datetime' && (
-                    <div className="px-4 pt-4 space-y-6">
+                    <div className="space-y-6 animate-in slide-in-from-right-8 duration-300">
                         {/* Horizontal Date Picker */}
-                        <div>
-                            <h2 className="font-bold text-slate-700 mb-3">Escolha uma data</h2>
-                            <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                            <h2 className="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide">Escolha uma data</h2>
+                            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                                 {dates.map(date => {
                                     const selected = isSameDay(date, selectedDate);
                                     return (
                                         <button
                                             key={date.toISOString()}
                                             onClick={() => setSelectedDate(date)}
-                                            className={`flex-shrink-0 w-16 h-20 rounded-xl flex flex-col items-center justify-center border transition-all ${
+                                            className={`flex-shrink-0 w-14 h-20 rounded-xl flex flex-col items-center justify-center border transition-all ${
                                                 selected 
                                                 ? 'bg-slate-800 text-white border-slate-800 shadow-lg scale-105' 
-                                                : 'bg-white text-slate-600 border-slate-200'
+                                                : 'bg-slate-50 text-slate-500 border-transparent hover:bg-slate-100'
                                             }`}
                                         >
-                                            <span className="text-xs font-medium uppercase">{format(date, 'EEE', { locale: ptBR })}</span>
+                                            <span className="text-[10px] font-bold uppercase">{format(date, 'EEE', { locale: ptBR })}</span>
                                             <span className="text-xl font-bold">{format(date, 'dd')}</span>
                                         </button>
                                     )
@@ -221,17 +332,17 @@ const PublicBookingPreview: React.FC = () => {
                         </div>
 
                         {/* Time Slots Grid */}
-                        <div>
-                             <h2 className="font-bold text-slate-700 mb-3">Horários disponíveis</h2>
-                             <div className="grid grid-cols-4 gap-3">
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                             <h2 className="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide">Horários disponíveis</h2>
+                             <div className="grid grid-cols-4 sm:grid-cols-5 gap-3">
                                 {timeSlots.map(time => (
                                     <button
                                         key={time}
                                         onClick={() => setSelectedTime(time)}
-                                        className={`py-2 rounded-lg text-sm font-medium border transition-all ${
+                                        className={`py-2 rounded-lg text-sm font-bold border transition-all ${
                                             selectedTime === time
                                             ? 'bg-orange-500 text-white border-orange-500 shadow-md'
-                                            : 'bg-white text-slate-700 border-slate-200 hover:border-orange-300'
+                                            : 'bg-white text-slate-600 border-slate-200 hover:border-orange-300 hover:text-orange-600'
                                         }`}
                                     >
                                         {time}
@@ -240,77 +351,85 @@ const PublicBookingPreview: React.FC = () => {
                              </div>
                         </div>
                         
-                        <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-slate-200 z-20">
-                            <div className="max-w-md mx-auto">
+                        <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-slate-200 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                            <div className="max-w-3xl mx-auto">
                                 <button 
                                     onClick={handleNext}
                                     disabled={!selectedTime}
-                                    className="w-full bg-slate-800 text-white font-bold py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-900 transition"
+                                    className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-900 transition flex items-center justify-center gap-2"
                                 >
-                                    Continuar
+                                    Continuar para Dados
                                 </button>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Step 4: Form */}
+                {/* --- STEP 4: FORM --- */}
                 {step === 'form' && (
-                    <div className="px-4 pt-4 space-y-6">
-                        <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 mb-6">
-                            <h3 className="font-bold text-orange-800 text-sm mb-2">Resumo do Agendamento</h3>
-                            <div className="space-y-1 text-sm text-orange-700">
-                                <p><b>Serviço:</b> {serviceObj?.name}</p>
-                                <p><b>Profissional:</b> {selectedProfessional === -1 ? 'Qualquer disponível' : profObj?.name}</p>
-                                <p><b>Data:</b> {format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })} às {selectedTime}</p>
+                    <div className="space-y-6 animate-in slide-in-from-right-8 duration-300 pb-24">
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                            <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2">Resumo do Agendamento</h3>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-500">Serviço</span>
+                                <span className="font-bold text-slate-800">{serviceObj?.name}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-500">Profissional</span>
+                                <span className="font-bold text-slate-800">{selectedProfessional === -1 ? 'Qualquer disponível' : profObj?.name}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-500">Data e Hora</span>
+                                <span className="font-bold text-slate-800">{format(selectedDate, "dd/MM", { locale: ptBR })} às {selectedTime}</span>
+                            </div>
+                            <div className="flex justify-between text-sm pt-2 border-t border-slate-100">
+                                <span className="text-slate-500 font-bold">Total Estimado</span>
+                                <span className="font-bold text-green-600 text-lg">R$ {serviceObj?.price.toFixed(2)}</span>
                             </div>
                         </div>
 
-                        <div>
-                            <h2 className="font-bold text-slate-700 mb-4">Seus dados</h2>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-semibold text-slate-600 mb-1">Nome Completo</label>
-                                    <input 
-                                        type="text" 
-                                        placeholder="Seu nome"
-                                        value={clientForm.name}
-                                        onChange={(e) => setClientForm({...clientForm, name: e.target.value})}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-orange-500 outline-none bg-white"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-semibold text-slate-600 mb-1">WhatsApp / Celular</label>
-                                    <input 
-                                        type="tel" 
-                                        placeholder="(00) 00000-0000"
-                                        value={clientForm.phone}
-                                        onChange={(e) => setClientForm({...clientForm, phone: e.target.value})}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-orange-500 outline-none bg-white"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-semibold text-slate-600 mb-1">Observações (Opcional)</label>
-                                    <textarea 
-                                        placeholder="Alguma preferência ou restrição?"
-                                        value={clientForm.notes}
-                                        onChange={(e) => setClientForm({...clientForm, notes: e.target.value})}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-orange-500 outline-none bg-white h-24 resize-none"
-                                    />
-                                </div>
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                            <h2 className="font-bold text-slate-800">Seus dados</h2>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nome Completo</label>
+                                <input 
+                                    type="text" 
+                                    value={clientForm.name}
+                                    onChange={(e) => setClientForm({...clientForm, name: e.target.value})}
+                                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none bg-slate-50 focus:bg-white transition-all"
+                                    placeholder="Como gostaria de ser chamado(a)?"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">WhatsApp / Celular</label>
+                                <input 
+                                    type="tel" 
+                                    value={clientForm.phone}
+                                    onChange={(e) => setClientForm({...clientForm, phone: e.target.value})}
+                                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none bg-slate-50 focus:bg-white transition-all"
+                                    placeholder="(00) 00000-0000"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Observações (Opcional)</label>
+                                <textarea 
+                                    value={clientForm.notes}
+                                    onChange={(e) => setClientForm({...clientForm, notes: e.target.value})}
+                                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none bg-slate-50 focus:bg-white h-24 resize-none transition-all"
+                                    placeholder="Tem alguma alergia ou preferência?"
+                                />
                             </div>
                         </div>
 
-                        <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-slate-200 z-20">
-                             <div className="max-w-md mx-auto">
+                        <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-slate-200 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                             <div className="max-w-3xl mx-auto">
                                 <button 
                                     onClick={handleNext}
                                     disabled={!clientForm.name || !clientForm.phone}
-                                    className="w-full bg-green-500 text-white font-bold py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-600 transition shadow-lg shadow-green-200"
+                                    className="w-full bg-green-600 text-white font-bold py-3.5 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-700 transition shadow-lg shadow-green-200"
                                 >
                                     Confirmar Agendamento
                                 </button>
-                                <p className="text-center text-xs text-slate-400 mt-2">Ao confirmar, você concorda com a política de cancelamento.</p>
                             </div>
                         </div>
                     </div>
