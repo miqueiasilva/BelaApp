@@ -13,6 +13,10 @@ import RelatoriosView from './components/views/RelatoriosView';
 import ConfiguracoesView from './components/views/ConfiguracoesView';
 import PublicBookingPreview from './components/views/PublicBookingPreview';
 import VendasView from './components/views/VendasView';
+import ComandasView from './components/views/ComandasView';
+import CaixaView from './components/views/CaixaView';
+import ServicosView from './components/views/ServicosView';
+import ProdutosView from './components/views/ProdutosView';
 import ViewPlaceholder from './components/views/ViewPlaceholder';
 import { mockTransactions } from './data/mockData';
 import { FinancialTransaction } from './types';
@@ -35,7 +39,7 @@ export type ViewState =
   | 'public_preview'; 
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewState>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewState>('servicos');
   
   // Shared State for Financial Transactions
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
@@ -87,13 +91,13 @@ export default function App() {
       case 'vendas':
         return <VendasView onAddTransaction={handleAddTransaction} />;
       case 'comandas':
-        return <ViewPlaceholder title="Comandas Digitais" />;
+        return <ComandasView onAddTransaction={handleAddTransaction} />;
       case 'caixa':
-        return <ViewPlaceholder title="Controle de Caixa" />;
+        return <CaixaView />;
       case 'servicos':
-        return <ViewPlaceholder title="Catálogo de Serviços" />;
+        return <ServicosView />;
       case 'produtos':
-        return <ViewPlaceholder title="Gestão de Estoque" />;
+        return <ProdutosView />;
       default:
         return <DashboardView onNavigate={setCurrentView} />;
     }

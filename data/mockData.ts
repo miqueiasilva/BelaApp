@@ -1,5 +1,5 @@
 
-import { LegacyProfessional, Client, LegacyService, LegacyAppointment, OnlineBookingConfig, Review, AnalyticsData, FinancialTransaction, ChatConversation } from '../types';
+import { LegacyProfessional, Client, LegacyService, LegacyAppointment, OnlineBookingConfig, Review, AnalyticsData, FinancialTransaction, ChatConversation, Product } from '../types';
 import { startOfDay, setHours, setMinutes, subDays, addDays, subMinutes } from 'date-fns';
 
 const today = new Date();
@@ -221,4 +221,15 @@ export const mockConversations: ChatConversation[] = [
             { id: '1', sender: 'client', text: 'Bom dia! Tem horário para sábado?', timestamp: subMinutes(new Date(), 5), status: 'sent' }
         ]
     }
+];
+
+// --- Mock Products ---
+export const mockProducts: Product[] = [
+    { id: 101, nome: 'Shampoo Hidratante 300ml', preco: 85.00, custo: 35.00, qtd: 12, ativo: true, sku: 'SH-300' },
+    { id: 102, nome: 'Condicionador Reparador', preco: 92.00, custo: 40.00, qtd: 8, ativo: true, sku: 'CD-REP' },
+    { id: 103, nome: 'Óleo Reparador de Pontas', preco: 45.00, custo: 15.00, qtd: 25, ativo: true, sku: 'OL-RP' },
+    { id: 104, nome: 'Máscara de Nutrição', preco: 120.00, custo: 55.00, qtd: 3, ativo: true, sku: 'MS-NUT' },
+    { id: 105, nome: 'Kit Manicure Descartável', preco: 5.00, custo: 1.50, qtd: 150, ativo: true, sku: 'KT-MAN' },
+    { id: 106, nome: 'Esmalte Importado Vermelho', preco: 35.00, custo: 12.00, qtd: 15, ativo: true, sku: 'ES-VRM' },
+    { id: 107, nome: 'Cílios Fio a Fio (Caixa)', preco: 0, custo: 25.00, qtd: 4, ativo: false, sku: 'CX-CIL' }, // Uso interno
 ];

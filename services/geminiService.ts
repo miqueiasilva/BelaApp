@@ -1,3 +1,4 @@
+
 // This is a mock service to simulate Gemini API calls.
 // In a real application, you would import and use @google/genai here.
 
@@ -7,6 +8,33 @@ const insights = [
     "Notamos que clientes que fazem 'Corte e Barba' costumam retornar a cada 25 dias. Envie um lembrete automático para agendamento.",
     "A profissional Maria Silva teve a maior média de avaliação (4.9 estrelas) este mês. Destaque-a nas redes sociais!",
 ];
+
+const topicInsights: Record<string, string[]> = {
+    financeiro: [
+        "Divergência detectada no fechamento de caixa de ontem: R$ 15,50 a menos no PIX. Verifique os comprovantes.",
+        "As despesas com 'Produtos de Limpeza' aumentaram 20% este mês. Vale a pena pesquisar novos fornecedores.",
+        "Sua margem de lucro nos serviços de 'Estética' está em 45%, excelente! Foque em vender mais este item.",
+        "Previsão de fluxo de caixa: Você tem R$ 2.500,00 a pagar na próxima sexta-feira. O saldo atual cobre com folga."
+    ],
+    agenda: [
+        "A agenda de amanhã tem 3 horários vagos entre 14h e 16h. Que tal enviar uma oferta relâmpago?",
+        "Hoje é sexta-feira e a agenda está 95% ocupada. Prepare a equipe para um dia movimentado!",
+        "Há uma alta taxa de cancelamentos nas segundas-feiras de manhã. Considere exigir um sinal para agendamentos neste período.",
+        "Jéssica Félix está com a agenda lotada pelos próximos 3 dias. Sugira outros profissionais para novos clientes."
+    ],
+    clientes: [
+        "A cliente 'Ana Paula' não vem há 45 dias. O ciclo médio dela é de 30 dias. Envie um 'Oi, sumida!'.",
+        "5 novos clientes se cadastraram essa semana vindo do Instagram. A campanha está funcionando.",
+        "Temos 3 aniversariantes hoje! O sistema já preparou as mensagens de parabéns com cupom de 10%.",
+        "O Ticket Médio dos clientes fidelizados é 2x maior que os eventuais. Invista no programa de fidelidade."
+    ],
+    marketing: [
+        "O post sobre 'Botox Capilar' teve alto engajamento. Impulsione-o para atrair mais agendamentos.",
+        "Sugestão de campanha: 'Semana do Amigo'. Traga um amigo e ganhe 15% de desconto.",
+        "As avaliações no Google Meu Negócio subiram para 4.9. Responda os últimos comentários para manter o engajamento.",
+        "Clientes que agendam pelo WhatsApp convertem 30% mais. Divulgue seu link direto nas redes."
+    ]
+};
 
 const financialAlerts = [
     "Divergência detectada no fechamento de caixa de ontem: R$ 15,50 a menos no PIX. Verifique os comprovantes.",
@@ -26,6 +54,11 @@ const simulateApiCall = <T,>(data: T, delay?: number): Promise<T> => {
 
 export const getDashboardInsight = async (): Promise<string> => {
     return simulateApiCall(getRandomItem(insights));
+};
+
+export const getInsightByTopic = async (topic: string): Promise<string> => {
+    const list = topicInsights[topic] || insights;
+    return simulateApiCall(getRandomItem(list));
 };
 
 export const getFinancialAlert = async (): Promise<string> => {

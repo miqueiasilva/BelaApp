@@ -537,7 +537,7 @@ const ConfiguracoesView: React.FC = () => {
             {serviceModal.open && (
                 <ServiceModal 
                     service={serviceModal.data}
-                    availableCategories={categories.filter(c => c !== 'Todas')}
+                    availableCategories={categories.filter(c => c !== 'Todas')} // Add categories
                     onClose={() => setServiceModal({ open: false, data: null })} 
                     onSave={handleSaveService} 
                 />
