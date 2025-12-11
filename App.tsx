@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import ErrorBoundary from "./components/ErrorBoundary";
 import MainLayout from './components/layout/MainLayout';
@@ -11,6 +12,7 @@ import WhatsAppView from './components/views/WhatsAppView';
 import RelatoriosView from './components/views/RelatoriosView'; 
 import ConfiguracoesView from './components/views/ConfiguracoesView';
 import PublicBookingPreview from './components/views/PublicBookingPreview';
+import VendasView from './components/views/VendasView';
 import ViewPlaceholder from './components/views/ViewPlaceholder';
 import { mockTransactions } from './data/mockData';
 import { FinancialTransaction } from './types';
@@ -83,7 +85,7 @@ export default function App() {
       case 'configuracoes':
         return <ConfiguracoesView />;
       case 'vendas':
-        return <ViewPlaceholder title="PDV - Vendas Rápidas" />;
+        return <VendasView onAddTransaction={handleAddTransaction} />;
       case 'comandas':
         return <ViewPlaceholder title="Comandas Digitais" />;
       case 'caixa':

@@ -23,7 +23,7 @@ class ErrorBoundary extends Component<Props, State> {
     console.error("App crash capturado pelo ErrorBoundary:", error, errorInfo);
   }
 
-  public render() {
+  public render(): ReactNode {
     if (this.state.hasError) {
       return (
         <div
