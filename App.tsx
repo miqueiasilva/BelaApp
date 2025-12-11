@@ -67,6 +67,13 @@ const AppContent = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // Reset view when user logs out
+  useEffect(() => {
+    if (!user) {
+      setCurrentView('dashboard');
+    }
+  }, [user]);
+
   if (loading) {
       return (
           <div className="min-h-screen flex items-center justify-center bg-slate-50">

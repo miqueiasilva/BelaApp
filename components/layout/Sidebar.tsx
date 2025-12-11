@@ -42,9 +42,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     };
 
     const handleLogout = () => {
-        if(window.confirm('Deseja realmente sair?')) {
-            signOut();
-        }
+        // Instant logout without confirmation for better UX flow
+        signOut();
     };
 
     const renderItem = (item: any) => {
@@ -104,10 +103,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                     </div>
                     <button 
                         onClick={handleLogout}
-                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors" 
-                        title="Sair"
+                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors group" 
+                        title="Sair do Sistema"
                     >
-                        <LogOut size={18} />
+                        <LogOut size={20} className="group-hover:scale-110 transition-transform" />
                     </button>
                 </div>
             </div>
