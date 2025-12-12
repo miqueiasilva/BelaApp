@@ -40,7 +40,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (session?.user) {
                 mapSupabaseUserToAppUser(session.user);
             } else {
-                setUser(null);
+                // Only clear user if we are not currently logged in as the demo user
+                // This prevents the auth listener from logging out our fake demo session
+                setUser(currentUser => {
+                    if (currentUser?.id === 'demo-admin-id') return currentUser;
+                    return null;
+                });
                 setLoading(false);
             }
         });
@@ -68,6 +73,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const signIn = async (email: string, pass: string) => {
         setLoading(true);
+
+        // --- DEMO BYPASS ---
+        // Allows access if the backend user hasn't been created yet.
+        if (email === 'admin@bela.com' && pass === '123123') {
+            // Simulate network delay for realism
+            await new Promise(resolve => setTimeout(resolve, 800));
+            
+            const demoUser: User = {
+                id: 'demo-admin-id',
+                nome: 'Admin Demo',
+                email: 'admin@bela.com',
+                papel: 'admin',
+                avatar_url: 'https://i.pravatar.cc/150?img=12',
+                ativo: true
+            };
+            setUser(demoUser);
+            setLoading(false);
+            return { error: null };
+        }
+        // -------------------
+
         try {
             const { data, error } = await supabase.auth.signInWithPassword({
                 email,
@@ -76,7 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (error) {
                 setLoading(false);
-                return { error: 'E-mail ou senha incorretos.' }; // Generic message or error.message
+                return { error: 'E-mail ou senha incorretos.' };
             }
 
             // State update handled by onAuthStateChange
@@ -107,6 +133,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const signOut = async () => {
         setLoading(true);
+        // If demo user, just clear state
+        if (user?.id === 'demo-admin-id') {
+            setUser(null);
+            setLoading(false);
+            return;
+        }
+        
         await supabase.auth.signOut();
         // State update handled by onAuthStateChange
     };
