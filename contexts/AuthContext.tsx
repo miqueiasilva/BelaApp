@@ -7,6 +7,7 @@ interface AuthContextType {
     user: User | null;
     signIn: (email: string, pass: string) => Promise<{ error: string | null }>;
     signInWithGoogle: () => Promise<{ error: string | null }>;
+    signInWithGithub: () => Promise<{ error: string | null }>;
     signOut: () => void;
     loading: boolean;
 }
@@ -61,7 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // We also check user_metadata for stored names/avatars.
         const appUser: User = {
             id: supaUser.id,
-            nome: supaUser.user_metadata?.full_name || supaUser.email?.split('@')[0] || 'Usuário',
+            nome: supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'Usuário',
             email: supaUser.email || '',
             papel: (supaUser.user_metadata?.role as UserRole) || 'admin', 
             avatar_url: supaUser.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${supaUser.email}`,
@@ -131,6 +132,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    const signInWithGithub = async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase.auth.signInWithOAuth({
+                provider: 'github',
+                options: {
+                    redirectTo: window.location.origin
+                }
+            });
+
+            if (error) throw error;
+            return { error: null };
+        } catch (err) {
+            setLoading(false);
+            return { error: 'Erro ao conectar com GitHub.' };
+        }
+    };
+
     const signOut = async () => {
         setLoading(true);
         // If demo user, just clear state
@@ -145,7 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ user, signIn, signInWithGoogle, signOut, loading }}>
+        <AuthContext.Provider value={{ user, signIn, signInWithGoogle, signInWithGithub, signOut, loading }}>
             {children}
         </AuthContext.Provider>
     );
