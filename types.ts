@@ -144,6 +144,28 @@ export interface OrderItem {
   valor_total: number;
 }
 
+export interface Command {
+  id: number;
+  client_name?: string;
+  client_id?: number;
+  professional_id?: string;
+  status: 'aberta' | 'fechando' | 'paga';
+  total: number;
+  created_at: Date;
+  items?: CommandItem[];
+}
+
+export interface CommandItem {
+  id: number;
+  command_id: number;
+  item_type: 'servico' | 'produto' | 'cortesia';
+  item_id?: number;
+  item_name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+}
+
 export interface Campaign {
     id: number;
     tipo: string;
