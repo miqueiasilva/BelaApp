@@ -1,12 +1,12 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Loader2, Lock, Mail, Eye, EyeOff, ArrowRight, CheckCircle2, XCircle, User, ArrowLeft, Send } from 'lucide-react';
+import { Loader2, Lock, Mail, Eye, EyeOff, ArrowRight, CheckCircle2, XCircle, User, ArrowLeft, Send, Github, Database } from 'lucide-react';
 
 type AuthMode = 'login' | 'register' | 'forgot';
 
 const LoginView: React.FC = () => {
-    const { signIn, signUp, resetPassword, signInWithGoogle } = useAuth();
+    const { signIn, signUp, resetPassword, signInWithGoogle, signInWithGithub } = useAuth();
     
     // Form State
     const [email, setEmail] = useState('');
@@ -74,6 +74,12 @@ const LoginView: React.FC = () => {
         setError(null);
         setIsLoading(true);
         await signInWithGoogle();
+    };
+
+    const handleGithubLogin = async () => {
+        setError(null);
+        setIsLoading(true);
+        await signInWithGithub();
     };
 
     // --- Render Helpers ---
@@ -165,7 +171,7 @@ const LoginView: React.FC = () => {
                             </div>
                         </div>
 
-                        {mode !== 'forgot' && (
+                        {(mode === 'login' || mode === 'register') && (
                             <div className="space-y-1 animate-in slide-in-from-right-4 fade-in">
                                 <label className="text-xs font-semibold text-slate-300 uppercase ml-1">Senha</label>
                                 <div className="relative group">
@@ -178,7 +184,7 @@ const LoginView: React.FC = () => {
                                         onChange={(e) => setPassword(e.target.value)}
                                         className="block w-full pl-10 pr-10 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
                                         placeholder="••••••"
-                                        required={mode !== 'forgot'}
+                                        required
                                         minLength={6}
                                     />
                                     <button
@@ -243,12 +249,12 @@ const LoginView: React.FC = () => {
                                 <span className="w-full border-b border-slate-600/50"></span>
                             </div>
 
-                            <div>
+                            <div className="grid grid-cols-2 gap-3">
                                 <button
                                     type="button"
                                     onClick={handleGoogleLogin}
                                     disabled={isLoading}
-                                    className="w-full flex justify-center items-center gap-2 py-3 px-4 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-bold transition-all shadow-lg active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed text-xs"
+                                    className="flex justify-center items-center gap-2 py-3 px-4 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-bold transition-all shadow-lg active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed text-xs"
                                 >
                                     <svg className="w-5 h-5" viewBox="0 0 24 24">
                                         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -256,16 +262,33 @@ const LoginView: React.FC = () => {
                                         <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
                                         <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                                     </svg>
-                                    Continuar com Google
+                                    Google
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleGithubLogin}
+                                    disabled={isLoading}
+                                    className="flex justify-center items-center gap-2 py-3 px-4 bg-[#24292F] hover:bg-[#24292F]/90 text-white rounded-xl font-bold transition-all shadow-lg active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed text-xs"
+                                >
+                                    <Github className="w-5 h-5" />
+                                    GitHub
                                 </button>
                             </div>
                         </>
                     )}
 
                     {mode === 'login' && (
-                        <div className="mt-4 text-center text-sm text-slate-400">
-                            <p>Login de Teste: <b>admin@bela.com</b> / <b>123123</b></p>
-                        </div>
+                        <>
+                            <div className="mt-6 flex justify-center">
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-medium">
+                                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                                    Banco de Dados Conectado
+                                </div>
+                            </div>
+                            <div className="mt-4 text-center text-sm text-slate-400">
+                                <p>Login de Teste: <b>admin@bela.com</b> / <b>123123</b></p>
+                            </div>
+                        </>
                     )}
                 </div>
                 
