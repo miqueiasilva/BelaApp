@@ -22,14 +22,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Check active session on load
         const checkSession = async () => {
             try {
-                const { data: { session } } = await supabase.auth.getSession();
+                // Add a timeout to prevent the app from hanging on the loading screen
+                // if Supabase is unreachable or slow.
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Session check timeout')), 5000)
+                );
+                
+                const sessionPromise = supabase.auth.getSession();
+
+                // @ts-ignore
+                const { data } = await Promise.race([sessionPromise, timeoutPromise]);
+                const session = data?.session;
+
                 if (session?.user) {
                     mapSupabaseUserToAppUser(session.user);
                 } else {
                     setLoading(false);
                 }
             } catch (error) {
-                console.error("Error checking session:", error);
+                console.error("Error checking session or timeout:", error);
                 setLoading(false);
             }
         };
