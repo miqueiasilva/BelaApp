@@ -37,32 +37,33 @@ const SelectionModal: React.FC<SelectionModalProps> = ({
   // Use useEffect to focus input safely after mount
   useEffect(() => {
     if (inputRef.current) {
-        inputRef.current.focus();
+        // Small timeout to ensure DOM is ready
+        setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, []);
 
   return (
-    <div className="absolute inset-0 bg-white z-10 flex flex-col">
-      <header className="flex-shrink-0 flex items-center p-4 border-b">
+    <div className="absolute inset-0 bg-white z-10 flex flex-col animate-in fade-in duration-200">
+      <header className="flex-shrink-0 flex items-center p-4 border-b bg-white">
         <div className="flex-1"></div>
         <h2 className="flex-1 text-lg font-bold text-center">{title}</h2>
         <div className="flex-1 flex justify-end items-center gap-2">
           {onNew && (
             <button 
-                onClick={onNew} 
+                onClick={(e) => { e.stopPropagation(); onNew(); }}
                 className="p-1 text-slate-600 hover:text-orange-500 hover:bg-orange-50 rounded-full transition-colors"
                 title="Cadastrar Novo"
             >
                 <Plus size={24} />
             </button>
           )}
-          <button onClick={onClose} className="p-1 text-slate-600 hover:text-slate-900">
+          <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-1 text-slate-600 hover:text-slate-900">
               <X size={24} />
           </button>
         </div>
       </header>
       
-      <div className="p-4 border-b">
+      <div className="p-4 border-b bg-white">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
           <input
@@ -81,8 +82,13 @@ const SelectionModal: React.FC<SelectionModalProps> = ({
           {filteredItems.map(item => (
             <li key={item.id}>
               <button
-                onClick={() => onSelect(item)}
-                className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-slate-50 border-b"
+                type="button"
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSelect(item);
+                }}
+                className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-slate-50 border-b transition-colors active:bg-slate-100"
               >
                 <span className="font-medium">{item.name}</span>
                  <div className="flex items-center gap-2 text-orange-500">
@@ -96,7 +102,10 @@ const SelectionModal: React.FC<SelectionModalProps> = ({
              <li className="p-8 text-center text-slate-500">
                 <p>Nenhum item encontrado.</p>
                 {onNew && (
-                    <button onClick={onNew} className="mt-2 text-orange-600 font-bold text-sm hover:underline">
+                    <button 
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNew(); }} 
+                        className="mt-2 text-orange-600 font-bold text-sm hover:underline"
+                    >
                         Cadastrar Novo
                     </button>
                 )}

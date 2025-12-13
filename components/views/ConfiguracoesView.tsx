@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, User, Scissors, Clock, Bell, Store, Save, Plus, Trash2, Edit2, Search, Filter, Download, FolderPen, ChevronLeft, Menu, ChevronRight } from 'lucide-react';
+import { Settings, User, Scissors, Clock, Bell, Store, Save, Plus, Trash2, Edit2, Search, Filter, Download, FolderPen, ChevronLeft, Menu, ChevronRight, Database, CheckCircle, AlertTriangle } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
@@ -9,17 +9,23 @@ import { ServiceModal, ProfessionalModal } from '../modals/ConfigModals';
 import { LegacyService, LegacyProfessional } from '../../types';
 import ContextMenu from '../shared/ContextMenu';
 import ProfessionalDetail from './ProfessionalDetail';
+import { testConnection } from '../../services/supabaseClient';
 
 const ConfiguracoesView: React.FC = () => {
     const [activeTab, setActiveTab] = useState('studio');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'error'>('checking');
 
     // Initial check for mobile
     useEffect(() => {
         if (window.innerWidth < 768) {
             setIsSidebarOpen(false);
         }
+        // Check DB status on mount
+        testConnection().then(connected => {
+            setDbStatus(connected ? 'connected' : 'error');
+        });
     }, []);
 
     const handleTabChange = (tabId: string) => {
@@ -232,6 +238,24 @@ const ConfiguracoesView: React.FC = () => {
                         </button>
                     ))}
                 </nav>
+                <div className="p-4 border-t border-slate-100">
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Banco de Dados</p>
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                            {dbStatus === 'checking' && <span className="text-slate-500">Verificando...</span>}
+                            {dbStatus === 'connected' && (
+                                <span className="text-green-600 flex items-center gap-1">
+                                    <CheckCircle size={14} /> Conectado (Supabase)
+                                </span>
+                            )}
+                            {dbStatus === 'error' && (
+                                <span className="text-red-500 flex items-center gap-1">
+                                    <AlertTriangle size={14} /> Modo Demo (Offline)
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>
             </aside>
 
             {/* Main Content */}

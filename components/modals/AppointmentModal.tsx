@@ -179,7 +179,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     setIsSaving(true);
     
     try {
-        // Simulate network delay to prevent immediate unmount jitter and validate async handling
+        // Simulate network delay
         await new Promise(resolve => setTimeout(resolve, 600));
         
         // Construct final object
@@ -188,8 +188,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             name: selectedServices.length > 1 
                 ? `${selectedServices[0].name} + ${selectedServices.length - 1}` 
                 : selectedServices[0].name,
-            price: manualPrice, // Uses the editable price
-            duration: manualDuration // Uses the editable duration
+            price: manualPrice,
+            duration: manualDuration
         };
 
         const finalClient = { ...formData.client, email: clientEmail };
@@ -198,38 +198,36 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             ...formData,
             client: finalClient,
             service: compositeService,
-            // Append service details to notes if multiple
             notas: selectedServices.length > 1 
                 ? `${formData.notas || ''} \n[Serviços: ${selectedServices.map(s => s.name).join(', ')}]`
                 : formData.notas
         } as LegacyAppointment;
 
-        // Directly call save. Parent handles notification and closing.
-        // Important: We do NOT call setIsSaving(false) here because the component will unmount.
         onSave(finalAppointment);
         
     } catch (err) {
         console.error("Error saving appointment:", err);
         setError("Ocorreu um erro ao salvar o agendamento.");
-        setIsSaving(false); // Only reset state if we are staying on this screen (error case)
+        setIsSaving(false);
     }
   };
   
-  // CRITICAL FIX: Use requestAnimationFrame to defer state update (unmount) until after click event bubbles
+  // Use setTimeout(0) to defer state updates that unmount components
+  // This allows the event loop to clear the current click event stack
   const handleSelectClient = (client: Client) => {
-    requestAnimationFrame(() => {
+    setTimeout(() => {
         setFormData(prev => ({ ...prev, client }));
         setClientEmail(client.email || ''); 
         setSelectionModal(null);
         if (error) setError(null);
-    });
+    }, 0);
   };
 
   const handleOpenNewClientModal = () => {
-      requestAnimationFrame(() => {
+      setTimeout(() => {
           setSelectionModal(null);
           setIsClientModalOpen(true);
-      });
+      }, 0);
   };
 
   const handleSaveNewClient = (newClient: Client) => {
@@ -240,11 +238,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
   
   const handleAddService = (service: LegacyService) => {
-    requestAnimationFrame(() => {
+    setTimeout(() => {
         setSelectedServices(prev => [...prev, service]);
         setSelectionModal(null);
         if (error) setError(null);
-    });
+    }, 0);
   };
 
   const handleRemoveService = (index: number) => {
@@ -254,11 +252,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handleSelectProfessional = (professional: LegacyProfessional) => {
-    requestAnimationFrame(() => {
+    setTimeout(() => {
         setFormData(prev => ({ ...prev, professional }));
         setSelectionModal(null);
         if (error) setError(null);
-    });
+    }, 0);
   };
   
   return (
