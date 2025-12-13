@@ -1,12 +1,29 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { initialAppointments, mockTransactions, clients, professionals } from "../data/mockData";
 import { format, isSameDay } from "date-fns";
-import { ptBR } from "date-fns/locale";
 
 // --- Configuration ---
-// A chave é obtida automaticamente do ambiente. 
-// O componente assume que process.env.API_KEY está configurado.
-const apiKey = process.env.API_KEY;
+// Função segura para obter a chave de API em diferentes ambientes (Vite, Next, Node, Vanilla)
+const getApiKey = () => {
+    try {
+        // @ts-ignore
+        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+            // @ts-ignore
+            return process.env.API_KEY;
+        }
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
+            // @ts-ignore
+            return import.meta.env.VITE_API_KEY;
+        }
+    } catch (e) {
+        console.warn("Ambiente não suporta acesso a variáveis de ambiente padrão.");
+    }
+    return null;
+};
+
+const apiKey = getApiKey();
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 const modelId = "gemini-2.5-flash";
 
