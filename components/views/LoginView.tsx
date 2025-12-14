@@ -1,12 +1,12 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Loader2, Lock, Mail, Eye, EyeOff, ArrowRight, CheckCircle2, XCircle, User, ArrowLeft, Send, Github, Database } from 'lucide-react';
+import { Loader2, Lock, Mail, Eye, EyeOff, ArrowRight, CheckCircle2, XCircle, User, ArrowLeft, Send } from 'lucide-react';
 
 type AuthMode = 'login' | 'register' | 'forgot';
 
 const LoginView: React.FC = () => {
-    const { signIn, signUp, resetPassword, signInWithGoogle, signInWithGithub } = useAuth();
+    const { signIn, signUp, resetPassword } = useAuth();
     
     // Form State
     const [email, setEmail] = useState('');
@@ -68,18 +68,6 @@ const LoginView: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    };
-
-    const handleGoogleLogin = async () => {
-        setError(null);
-        setIsLoading(true);
-        await signInWithGoogle();
-    };
-
-    const handleGithubLogin = async () => {
-        setError(null);
-        setIsLoading(true);
-        await signInWithGithub();
     };
 
     // --- Render Helpers ---
