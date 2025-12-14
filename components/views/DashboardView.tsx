@@ -247,7 +247,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                         <QuickAction icon={PlusCircle} label="Agendar" color="bg-orange-500" onClick={() => onNavigate('agenda')} />
                         <QuickAction icon={UserPlus} label="Novo Cliente" color="bg-blue-500" onClick={() => onNavigate('clientes')} />
                         <QuickAction icon={Globe} label="Agenda Online" color="bg-purple-500" onClick={() => onNavigate('agenda_online')} />
-                        <QuickAction icon={ShoppingBag} label="Venda Rápida" color="bg-green-500" onClick={() => {}} />
+                        <QuickAction icon={ShoppingBag} label="Venda Rápida" color="bg-green-500" onClick={() => onNavigate('vendas')} />
                         <QuickAction icon={TrendingUp} label="Fechar Caixa" color="bg-slate-800" onClick={() => onNavigate('financeiro')} />
                     </div>
 
