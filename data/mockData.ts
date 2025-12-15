@@ -1,11 +1,6 @@
 
 import { LegacyProfessional, Client, LegacyService, LegacyAppointment, OnlineBookingConfig, Review, AnalyticsData, FinancialTransaction, ChatConversation, Product } from '../types';
-import startOfDay from 'date-fns/startOfDay';
-import setHours from 'date-fns/setHours';
-import setMinutes from 'date-fns/setMinutes';
-import subDays from 'date-fns/subDays';
-import addDays from 'date-fns/addDays';
-import subMinutes from 'date-fns/subMinutes';
+import { startOfDay, setHours, setMinutes, subDays, addDays, subMinutes } from 'date-fns';
 
 const today = new Date();
 const createTime = (hour: number, minute: number) => setMinutes(setHours(startOfDay(today), hour), minute);

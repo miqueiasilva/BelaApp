@@ -3,9 +3,7 @@ import React, { useState } from 'react';
 import { LegacyAppointment, LegacyProfessional } from '../../types';
 import { services as serviceMap } from '../../data/mockData';
 import { X } from 'lucide-react';
-import format from 'date-fns/format';
-import setHours from 'date-fns/setHours';
-import setMinutes from 'date-fns/setMinutes';
+import { format, setHours, setMinutes } from 'date-fns';
 
 interface BlockTimeModalProps {
   professional: LegacyProfessional;

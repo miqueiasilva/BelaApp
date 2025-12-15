@@ -4,7 +4,7 @@ import Card from '../shared/Card';
 // FIX: Use legacy types with aliases to match mock data structure and resolve type errors.
 import { LegacyAppointment as Appointment, LegacyService as Service, LegacyProfessional as Professional, Client, AppointmentStatus } from '../../types';
 import { Calendar, Clock, User, Scissors, DollarSign, Tag, Info, X } from 'lucide-react';
-import format from 'date-fns/format';
+import { format } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
 
 // Mock Data

@@ -8,7 +8,7 @@ import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { mockOnlineConfig, mockReviews, mockAnalytics } from '../../data/mockData';
 import { Review } from '../../types';
-import format from 'date-fns/format';
+import { format } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
 
 // Helper for Tabs

@@ -5,7 +5,7 @@ import JaciBotAssistant from '../shared/JaciBotAssistant';
 import { getDashboardInsight } from '../../services/geminiService';
 import { initialAppointments, professionals } from '../../data/mockData';
 import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, ArrowRight, Clock, Globe } from 'lucide-react';
-import format from 'date-fns/format';
+import { format } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
 import { safe, toNumber } from '../../utils/normalize';
 import SafePie from '../charts/SafePie';

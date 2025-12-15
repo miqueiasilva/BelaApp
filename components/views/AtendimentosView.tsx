@@ -2,24 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { initialAppointments, professionals as mockProfessionals } from '../../data/mockData';
 import { LegacyAppointment, LegacyProfessional, AppointmentStatus, FinancialTransaction } from '../../types';
-import format from 'date-fns/format';
-import setHours from 'date-fns/setHours';
-import setMinutes from 'date-fns/setMinutes';
-import startOfDay from 'date-fns/startOfDay';
-import roundToNearestMinutes from 'date-fns/roundToNearestMinutes';
-import addDays from 'date-fns/addDays';
-import subDays from 'date-fns/subDays';
-import addWeeks from 'date-fns/addWeeks';
-import subWeeks from 'date-fns/subWeeks';
-import addMonths from 'date-fns/addMonths';
-import subMonths from 'date-fns/subMonths';
-import startOfWeek from 'date-fns/startOfWeek';
-import endOfWeek from 'date-fns/endOfWeek';
-import startOfMonth from 'date-fns/startOfMonth';
-import endOfMonth from 'date-fns/endOfMonth';
-import eachDayOfInterval from 'date-fns/eachDayOfInterval';
-import isSameDay from 'date-fns/isSameDay';
-import isWithinInterval from 'date-fns/isWithinInterval';
+import { format, setHours, setMinutes, startOfDay, roundToNearestMinutes, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isWithinInterval } from 'date-fns';
 import { 
     ChevronLeft, ChevronRight, Plus, Edit, Lock, Trash2, MessageSquare, 
     ShoppingCart, FileText, Calendar as CalendarIcon, Share2, Bell, 

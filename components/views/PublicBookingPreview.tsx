@@ -5,11 +5,7 @@ import {
     ChevronLeft, Calendar, Clock, Check, MapPin, Star, 
     Search, Heart, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2, Plus, Minus, Trash2
 } from 'lucide-react';
-import format from 'date-fns/format';
-import addDays from 'date-fns/addDays';
-import startOfToday from 'date-fns/startOfToday';
-import isSameDay from 'date-fns/isSameDay';
-import addMinutes from 'date-fns/addMinutes';
+import { format, addDays, startOfToday, isSameDay, addMinutes } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
 import { LegacyService } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
