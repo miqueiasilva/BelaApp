@@ -2,21 +2,21 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Get Environment Variables
-// We use direct access (import.meta.env.VARIABLE) so Vite can statically replace 
-// these strings with the actual values during build/serve. 
-// Using optional chaining (?. ) or dynamic access often breaks Vite's replacement regex.
-
+// We access these directly so Vite can perform static replacement during the build.
 // @ts-ignore
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 // @ts-ignore
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Warn but don't crash during build time if keys are missing
+// Critical check: If these are missing, auth will definitely fail.
+// We warn in the console to make debugging easier.
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase URL or Key missing. Authentication will fail in production if not set.');
+  console.warn('CRITICAL: Supabase URL or Key is missing. Authentication will fail. Check your .env file or Vercel Environment Variables.');
 }
 
 // Create single instance for the app
+// We provide a fallback string to prevent the app from crashing immediately on load if keys are missing,
+// allowing the UI to at least render (and potentially show an error message later).
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co', 
   supabaseAnonKey || 'placeholder',
@@ -31,7 +31,7 @@ export const supabase = createClient(
 
 // Helper to check connection status (used in Settings)
 export async function testConnection() {
-    if (!supabaseUrl || supabaseUrl === 'https://placeholder.supabase.co') return false;
+    if (!supabaseUrl || !supabaseAnonKey) return false;
     try {
         // Simple health check query - checks if we can reach the Auth service
         const { data, error } = await supabase.auth.getSession();
