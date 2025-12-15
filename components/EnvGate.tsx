@@ -7,8 +7,9 @@ interface EnvGateProps {
 }
 
 const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
-  const [url, setUrl] = useState('');
-  const [key, setKey] = useState('');
+  // Pre-fill with provided credentials for convenience
+  const [url, setUrl] = useState('https://rxtwmwrgcilmsldtqdfe.supabase.co');
+  const [key, setKey] = useState('sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x');
 
   if (isConfigured) {
     return <>{children}</>;
@@ -30,7 +31,7 @@ const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
           </div>
           <h1 className="text-2xl font-bold text-slate-800">Configuração Necessária</h1>
           <p className="text-slate-500 text-sm mt-2">
-            As variáveis de ambiente do Supabase não foram detectadas. Por favor, configure-as manualmente abaixo para continuar.
+            As variáveis de ambiente do Supabase não foram detectadas. Por favor, confirme as configurações abaixo para continuar.
           </p>
         </div>
 
@@ -39,7 +40,7 @@ const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
             <div className="flex gap-2">
               <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
               <p className="text-xs text-amber-700">
-                Esses dados serão salvos no <strong>LocalStorage</strong> do seu navegador apenas para este ambiente de preview.
+                Esses dados serão salvos no <strong>LocalStorage</strong> do seu navegador para habilitar a conexão neste ambiente.
               </p>
             </div>
           </div>
@@ -77,7 +78,7 @@ const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
             className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-orange-200 transition-all flex items-center justify-center gap-2 mt-4"
           >
             <Save size={18} />
-            Salvar e Recarregar
+            Salvar e Conectar
           </button>
         </form>
       </div>
