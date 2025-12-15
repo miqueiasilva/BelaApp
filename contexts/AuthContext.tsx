@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { User as SupabaseUser, Session } from '@supabase/supabase-js';
+import { User as SupabaseUser } from '@supabase/supabase-js';
 
 // Extended User type to include role/papel
 export type AppUser = SupabaseUser & {
@@ -28,21 +28,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   // Helper to fetch extra profile data from 'public.profiles'
+  // Designed to NOT crash if the table doesn't exist yet
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('full_name, papel, avatar_url')
         .eq('id', authUser.id)
-        .single();
+        .maybeSingle(); // Use maybeSingle to avoid errors if 0 rows
 
-      if (error) {
-        // If profile doesn't exist yet, return basic user with default role
-        // This prevents app crash if the SQL trigger didn't run or table is missing
-        console.warn("Profile fetch warning:", error.message);
+      if (error || !data) {
+        // Fallback: Use metadata if profile table row is missing
         return {
             ...authUser,
-            papel: 'admin', // Default fallback for first setup
+            papel: 'admin', // Default role for first user/fallback
             nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
             avatar_url: authUser.user_metadata?.avatar_url
         };
@@ -55,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         avatar_url: data.avatar_url || authUser.user_metadata?.avatar_url
       };
     } catch (e) {
+      // Ultimate fallback
       return { ...authUser, papel: 'admin', nome: 'Usuário' };
     }
   };
@@ -81,8 +81,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // 2. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth Event:", event);
-      
       if (session?.user) {
         const appUser = await fetchProfile(session.user);
         if (mounted) setUser(appUser);
@@ -108,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email, 
         password,
         options: {
-            data: { full_name: name } // This metadata triggers the profile creation in SQL
+            data: { full_name: name } // This metadata triggers the profile creation in SQL if configured
         }
     });
   };
@@ -117,13 +115,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: `${window.location.origin}/`
       },
     });
   };
 
   const resetPassword = async (email: string) => {
-    // Redirects to /reset-password route
     return await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });

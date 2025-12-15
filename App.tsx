@@ -6,7 +6,7 @@ import { ViewState, FinancialTransaction } from './types';
 // Layout & Views
 import MainLayout from './components/layout/MainLayout';
 import LoginView from './components/views/LoginView';
-import ResetPasswordView from './components/views/ResetPasswordView'; // Ensure this matches import
+import ResetPasswordView from './components/views/ResetPasswordView';
 import DashboardView from './components/views/DashboardView';
 import AtendimentosView from './components/views/AtendimentosView';
 import AgendaOnlineView from './components/views/AgendaOnlineView';
@@ -62,7 +62,6 @@ const AppContent: React.FC = () => {
   }
 
   // Password Reset Flow (Priority over login)
-  // Checks both pathname (Vercel rewrite) and hash (standard logic)
   if (pathname === '/reset-password' || hash === '#/reset-password') {
     return <ResetPasswordView />;
   }

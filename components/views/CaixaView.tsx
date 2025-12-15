@@ -3,11 +3,11 @@ import React, { useState, useMemo } from 'react';
 import { 
     Archive, Lock, Unlock, ArrowUpCircle, ArrowDownCircle, 
     DollarSign, AlertTriangle, Calculator, Calendar, History,
-    Save, X, CheckCircle
+    X
 } from 'lucide-react';
 import Card from '../shared/Card';
 import { format } from 'date-fns';
-import { ptBR as pt } from 'date-fns/locale';
+import { pt } from 'date-fns/locale';
 import Toast, { ToastType } from '../shared/Toast';
 
 // --- Types ---
@@ -328,7 +328,7 @@ const CaixaView: React.FC = () => {
                     </Card>
 
                     {/* Summary / Calculator */}
-                    <Card title="Resumo do Fechamento" icon={<CheckCircle size={20}/>}>
+                    <Card title="Resumo do Fechamento" icon={<Calculator size={20}/>}>
                         <div className="space-y-4">
                             <div className="p-4 bg-slate-50 rounded-xl space-y-2">
                                 <div className="flex justify-between text-sm">

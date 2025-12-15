@@ -8,7 +8,7 @@ import {
     ShoppingCart, FileText, Calendar as CalendarIcon, Share2, Bell, 
     RotateCcw, ChevronDown, List, Clock, Filter, DollarSign, CheckCircle, Circle 
 } from 'lucide-react';
-import { ptBR as pt } from 'date-fns/locale';
+import { pt } from 'date-fns/locale';
 
 import AppointmentModal from '../modals/AppointmentModal';
 import BlockTimeModal from '../modals/BlockTimeModal';

@@ -68,8 +68,6 @@ const LoginView: React.FC = () => {
                 const { error } = await signUp(email, password, name);
                 if (error) throw error;
                 setSuccessMessage("Conta criada! Verifique seu e-mail para confirmar.");
-                // Optional: switch to login mode after delay
-                // setTimeout(() => handleModeChange('login'), 3000);
             } else if (mode === 'forgot') {
                 const { error } = await resetPassword(email);
                 if (error) throw error;
