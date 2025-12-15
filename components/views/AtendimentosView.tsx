@@ -1,12 +1,11 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { initialAppointments, professionals as mockProfessionals } from '../../data/mockData';
-import { LegacyAppointment, LegacyProfessional, AppointmentStatus, FinancialTransaction } from '../../types';
+import { LegacyAppointment, AppointmentStatus, FinancialTransaction } from '../../types';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval } from 'date-fns';
 import { 
-    ChevronLeft, ChevronRight, Plus, Edit, Lock, Trash2, MessageSquare, 
-    ShoppingCart, FileText, Calendar as CalendarIcon, Share2, Bell, 
-    RotateCcw, ChevronDown, List, Clock, Filter, DollarSign, CheckCircle, Circle 
+    ChevronLeft, ChevronRight, Plus, Lock, MessageSquare, 
+    Share2, Bell, RotateCcw, ChevronDown, List, Clock, 
+    CheckCircle, DollarSign, FileText, Calendar as CalendarIcon 
 } from 'lucide-react';
 import { pt } from 'date-fns/locale';
 
@@ -21,7 +20,7 @@ const START_HOUR = 8;
 const END_HOUR = 20; // Extended for visibility
 const PIXELS_PER_MINUTE = 80 / 60; // 80px for every 60 minutes
 
-// --- Date Helper Functions (replacing missing date-fns imports) ---
+// --- Date Helper Functions ---
 
 function setHours(date: Date, hours: number): Date {
     const d = new Date(date);
@@ -138,7 +137,7 @@ const TimelineIndicator = () => {
     return (
         <div className="absolute w-full z-10 pointer-events-none" style={{ top: `${topPosition}px` }}>
             <div className="h-px bg-red-500 w-full relative">
-                <div className="absolute -left-1 -top-1 w-2.5 h-2.5 bg-red-500 rounded-full"></div>
+                <div className="absolute -left-1 -top-1 w-2.5 h-2.5 bg-red-500 rounded-full shadow-sm"></div>
             </div>
         </div>
     );
@@ -171,7 +170,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     // Mobile State
     const [activeMobileProfId, setActiveMobileProfId] = useState<number>(mockProfessionals[0].id);
     const [isMobile, setIsMobile] = useState(false);
-    const [isMobileProfSidebarOpen, setIsMobileProfSidebarOpen] = useState(true); // New state for sidebar
+    const [isMobileProfSidebarOpen, setIsMobileProfSidebarOpen] = useState(true);
 
     const [modalState, setModalState] = useState<{ type: 'appointment' | 'block'; data: any } | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; options: any[] } | null>(null);
@@ -222,8 +221,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     // --- Logic: Dynamic Columns Generation ---
     const columns = useMemo<DynamicColumn[]>(() => {
         if (periodType === 'Semana') {
-            // In Week view, columns are always Days of the week
-            const start = startOfWeek(currentDate, { weekStartsOn: 1 }); // Monday start
+            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
             const days = eachDayOfInterval({ start, end });
             return days.map(day => ({
@@ -236,11 +234,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
 
         if (viewType === 'Profissional') {
-            // On mobile, show ALL filtered professionals to allow horizontal scrolling, 
-            // instead of just the 'activeMobileProfId' one.
-            // The sidebar will be used to scrollTo the column.
+            // Filter only valid professionals
             const profs = mockProfessionals.filter(p => visibleProfIds.includes(p.id));
-            
             return profs.map(p => ({
                 id: p.id,
                 title: p.name,
@@ -251,10 +246,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
 
         if (viewType === 'Andamento') {
-            // Kanban columns
             return [
                 { id: 'agendado', title: 'Agendados', type: 'status' },
-                { id: 'confirmado', title: 'Confirmados', type: 'status' }, // Includes whatsapp/manual
+                { id: 'confirmado', title: 'Confirmados', type: 'status' },
                 { id: 'chegou', title: 'Chegou', type: 'status' },
                 { id: 'em_atendimento', title: 'Em Atendimento', type: 'status' },
                 { id: 'concluido', title: 'Concluídos', type: 'status' }
@@ -271,11 +265,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         return [];
     }, [viewType, periodType, currentDate, visibleProfIds]);
 
-    // --- Logic: Filtering Appointments for the View ---
+    // --- Grid Styling Calculation ---
+    const gridStyle = useMemo(() => {
+        const colsCount = columns.length || 1;
+        // Use minmax with a specific pixel value to enforce horizontal scrolling if needed
+        // Instead of 1fr which can collapse to 0
+        const minWidth = isMobile ? '170px' : '180px';
+        return {
+            gridTemplateColumns: `60px repeat(${colsCount}, minmax(${minWidth}, 1fr))`
+        };
+    }, [columns.length, isMobile]);
+
+    // --- Logic: Filtering Appointments ---
     const filteredAppointments = useMemo(() => {
         let relevantApps = appointments;
 
-        // 1. Date Filtering
         if (periodType === 'Dia') {
             relevantApps = appointments.filter(a => isSameDay(a.start, currentDate));
         } else if (periodType === 'Semana') {
@@ -289,7 +293,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } else if (periodType === 'Fila de Espera') {
             relevantApps = appointments.filter(a => a.status === 'em_espera');
         }
-        // 'Lista' shows current day by default or could be all future. Let's stick to Day for Lista for consistency or range.
         if (periodType === 'Lista') {
              relevantApps = appointments.filter(a => isSameDay(a.start, currentDate));
         }
@@ -302,22 +305,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         if (periodType === 'Semana') {
             return cols.find(c => isSameDay(app.start, c.data));
         }
-        
         if (viewType === 'Profissional') {
             return cols.find(c => c.id === app.professional.id);
         }
-
         if (viewType === 'Andamento') {
             if (app.status === 'confirmado' || app.status === 'confirmado_whatsapp') return cols.find(c => c.id === 'confirmado');
             return cols.find(c => c.id === app.status);
         }
-
         if (viewType === 'Pagamento') {
-            // Mock logic: 'concluido' assumes paid for this demo, others pending
             const isPaid = app.status === 'concluido'; 
             return cols.find(c => c.id === (isPaid ? 'pago' : 'pendente'));
         }
-
         return null;
     };
 
@@ -332,7 +330,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const handleMobileSidebarClick = (profId: number) => {
         setActiveMobileProfId(profId);
-        // Smooth scroll to the professional's column
         const el = columnRefs.current.get(profId);
         if (el) {
             el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
@@ -384,12 +381,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         const hour = Math.floor(totalMinutes / 60);
         const minute = totalMinutes % 60;
 
-        // Determine date based on column type
         const baseDate = column.type === 'date' ? column.data : currentDate;
         const clickedTime = setMinutes(setHours(baseDate, hour), minute);
         const roundedTime = roundToNearestMinutes(clickedTime, { nearestTo: 15 });
-
-        // Determine professional based on column type
         const prof = column.type === 'professional' ? column.data : undefined;
 
         setContextMenu({
@@ -401,8 +395,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             ],
         });
     };
-
-    // --- Render Components ---
 
     const DateDisplay = () => {
         let text = "";
@@ -437,7 +429,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         </div>
                         <div className="h-8 w-px bg-slate-200 mx-2 hidden md:block"></div>
                         <div className="flex items-center gap-2">
-                            {/* Period Dropdown */}
                             <div className="relative" ref={periodDropdownRef}>
                                 <button onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
                                     {periodType} <ChevronDown size={16} />
@@ -473,7 +464,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         <DateDisplay />
                     </div>
 
-                    {/* View Type Dropdown (Only show for Timeline views) */}
                     {(periodType === 'Dia' || periodType === 'Semana') && (
                         <div className="relative" ref={viewDropdownRef}>
                             <button onClick={() => setIsViewDropdownOpen(!isViewDropdownOpen)} className="flex items-center gap-2 text-sm font-bold text-slate-700 hover:text-slate-900 uppercase tracking-wide">
@@ -496,13 +486,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             </header>
 
             <div className="flex flex-1 overflow-hidden relative">
-                {/* Mobile Professional Sidebar (Left Tabs) - Acts as Navigation Anchor */}
+                {/* Mobile Sidebar */}
                 {isMobile && periodType === 'Dia' && viewType === 'Profissional' && (
                     <>
-                        {/* Sidebar Panel */}
-                        <div 
-                            className={`flex flex-col bg-slate-50 border-r border-slate-200 transition-all duration-300 ease-in-out z-20 ${isMobileProfSidebarOpen ? 'w-20' : 'w-0 overflow-hidden'}`}
-                        >
+                        <div className={`flex flex-col bg-slate-50 border-r border-slate-200 transition-all duration-300 ease-in-out z-20 ${isMobileProfSidebarOpen ? 'w-20' : 'w-0 overflow-hidden'}`}>
                             <div className="flex-1 overflow-y-auto scrollbar-hide py-4 flex flex-col items-center gap-4 w-20 pb-20">
                                 {mockProfessionals.map(prof => (
                                     <button 
@@ -521,8 +508,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 ))}
                             </div>
                         </div>
-
-                        {/* Toggle Button */}
                         <button 
                             onClick={() => setIsMobileProfSidebarOpen(!isMobileProfSidebarOpen)}
                             className="absolute z-30 top-1/2 -translate-y-1/2 bg-white border border-slate-200 rounded-r-lg p-1.5 shadow-md text-slate-500 hover:text-orange-500 transition-all"
@@ -538,9 +523,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     
                     {/* 1. TIMELINE GRID (Dia / Semana) */}
                     {(periodType === 'Dia' || periodType === 'Semana') && (
-                        <div className="relative min-h-full">
+                        <div className="relative min-h-full min-w-full">
                             {/* Headers */}
-                            <div className="grid sticky top-0 z-40 shadow-sm border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isMobile ? '170px' : '1fr'}, 1fr))` }}>
+                            <div className="grid sticky top-0 z-40 shadow-sm border-b border-slate-200 bg-white" style={gridStyle}>
                                 <div className="border-r border-slate-200 h-16 bg-white sticky left-0 z-50"></div>
                                 {columns.map((col, index) => (
                                     <div key={col.id} ref={(el) => { if(el) columnRefs.current.set(col.id, el) }} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-16 bg-slate-50/50">
@@ -578,7 +563,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             </div>
 
                             {/* Grid Body */}
-                            <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isMobile ? '170px' : '1fr'}, 1fr))` }}>
+                            <div className="grid relative" style={gridStyle}>
                                 {/* Time Column */}
                                 <div className="border-r border-slate-200 bg-white sticky left-0 z-30">
                                     {timeSlots.map(time => (
@@ -590,7 +575,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
                                 {/* Dynamic Columns */}
                                 {columns.map((col, index) => {
-                                    // Filter apps for this column
                                     const colApps = filteredAppointments.filter(app => {
                                         const assignedCol = getColumnForAppointment(app, columns);
                                         return assignedCol?.id === col.id;
@@ -636,7 +620,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                     <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-lg"></div>
                                                     
                                                     <div className={`flex flex-col h-full relative z-10 pl-2 pr-1 ${isSmall ? 'justify-center' : 'pt-0.5'}`}>
-                                                        {/* Header: Time & Notes */}
                                                         <div className={`flex justify-between items-start ${isSmall ? 'mb-0' : 'mb-0.5'}`}>
                                                             <span className={`font-bold bg-white/60 rounded text-slate-700 backdrop-blur-sm shadow-sm tracking-tight ${isSmall ? 'text-[9px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'}`}>
                                                                 {format(app.start, 'HH:mm')}
@@ -644,7 +627,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                             {app.notas && !isSmall && <FileText size={10} className="text-slate-500 ml-1 mt-0.5" />}
                                                         </div>
 
-                                                        {/* Body: Client & Service */}
                                                         <div className={`flex-1 min-h-0 flex flex-col ${isSmall ? 'justify-center' : 'justify-center'}`}>
                                                             <p className={`font-extrabold text-slate-900 truncate ${isSmall ? 'text-[10px] leading-3' : 'text-sm leading-tight mb-0.5'}`}>
                                                                 {app.client ? app.client.nome : 'Bloqueio'}
@@ -654,7 +636,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                             </p>
                                                         </div>
 
-                                                        {/* Footer: Price (if Payment view) */}
                                                         {viewType === 'Pagamento' && !isSmall && (
                                                             <div className="mt-auto pt-1 flex items-center gap-1 text-[10px] font-bold text-green-700 opacity-90 border-t border-black/5">
                                                                 <span>R$ {app.service.price.toFixed(2)}</span>
@@ -662,7 +643,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                             </div>
                                                         )}
                                                     </div>
-
                                                     {app.status === 'confirmado_whatsapp' && <div className="absolute bottom-1 right-1 w-2 h-2 rounded-full bg-green-500 shadow-sm ring-1 ring-white" title="Confirmado via WhatsApp"></div>}
                                                 </div>
                                             )})}
@@ -710,7 +690,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         </div>
                     )}
 
-                    {/* 3. MONTH VIEW (Simplified Grid) */}
+                    {/* 3. MONTH VIEW */}
                     {periodType === 'Mês' && (
                         <div className="p-4 h-full flex flex-col">
                             <div className="grid grid-cols-7 gap-1 flex-1">
@@ -720,7 +700,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 {(() => {
                                     const start = startOfMonth(currentDate);
                                     const end = endOfMonth(currentDate);
-                                    const startDay = start.getDay(); // 0-6
+                                    const startDay = start.getDay(); 
                                     const daysInMonth = eachDayOfInterval({ start, end });
                                     const blanks = Array.from({ length: startDay }, (_, i) => i);
 
