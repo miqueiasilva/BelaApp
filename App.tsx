@@ -1,79 +1,130 @@
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { supabase } from "../services/supabaseClient";
+import React, { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ViewState, FinancialTransaction } from './types';
 
-type AppUser = {
-  id: string;
-  email?: string | null;
-  papel?: string | null;   // <- vem do profiles
-  nome?: string | null;    // opcional
+// Layout & Views
+import MainLayout from './components/layout/MainLayout';
+import LoginView from './components/views/LoginView';
+import ResetPasswordView from './components/views/ResetPasswordView';
+import DashboardView from './components/views/DashboardView';
+import AtendimentosView from './components/views/AtendimentosView';
+import AgendaOnlineView from './components/views/AgendaOnlineView';
+import WhatsAppView from './components/views/WhatsAppView';
+import FinanceiroView from './components/views/FinanceiroView';
+import ClientesView from './components/views/ClientesView';
+import RelatoriosView from './components/views/RelatoriosView';
+import ConfiguracoesView from './components/views/ConfiguracoesView';
+import RemuneracoesView from './components/views/RemuneracoesView';
+import VendasView from './components/views/VendasView';
+import ComandasView from './components/views/ComandasView';
+import CaixaView from './components/views/CaixaView';
+import ProdutosView from './components/views/ProdutosView';
+import ServicosView from './components/views/ServicosView';
+import PublicBookingPreview from './components/views/PublicBookingPreview';
+
+import { mockTransactions } from './data/mockData';
+
+const AppContent: React.FC = () => {
+  const { user, loading } = useAuth();
+  const [currentView, setCurrentView] = useState<ViewState>('dashboard');
+  const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
+  const [hash, setHash] = useState(window.location.hash);
+
+  // Simple Hash Router for Auth flows
+  useEffect(() => {
+    const handleHashChange = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Handle Loading State
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-slate-500 font-medium">Carregando BelaApp...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- PUBLIC ROUTES ---
+  
+  // Public Booking Page (No Auth Required)
+  if (hash === '#/public-preview') {
+    return <PublicBookingPreview />;
+  }
+
+  // Password Reset Flow
+  if (hash === '#/reset-password') {
+    return <ResetPasswordView />;
+  }
+
+  // --- AUTHENTICATION CHECK ---
+  
+  if (!user) {
+    return <LoginView />;
+  }
+
+  // --- PROTECTED APP ---
+
+  const handleAddTransaction = (t: FinancialTransaction) => {
+    setTransactions(prev => [t, ...prev]);
+  };
+
+  const renderView = () => {
+    switch (currentView) {
+      case 'dashboard':
+        return <DashboardView onNavigate={setCurrentView} />;
+      case 'agenda':
+        return <AtendimentosView onAddTransaction={handleAddTransaction} />;
+      case 'agenda_online':
+        return <AgendaOnlineView />;
+      case 'whatsapp':
+        return <WhatsAppView />;
+      case 'financeiro':
+        return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
+      case 'clientes':
+        return <ClientesView />;
+      case 'relatorios':
+        return <RelatoriosView />;
+      case 'configuracoes':
+        return <ConfiguracoesView />;
+      case 'remuneracoes':
+        return <RemuneracoesView />;
+      case 'vendas':
+        return <VendasView onAddTransaction={handleAddTransaction} />;
+      case 'comandas':
+        return <ComandasView onAddTransaction={handleAddTransaction} />;
+      case 'caixa':
+        return <CaixaView />;
+      case 'produtos':
+        return <ProdutosView />;
+      case 'servicos':
+        return <ServicosView />;
+      case 'public_preview':
+        // This case redirects to the public view but keeps context if needed, 
+        // though usually we just change window location hash above.
+        window.location.hash = '/public-preview';
+        return null;
+      default:
+        return <DashboardView onNavigate={setCurrentView} />;
+    }
+  };
+
+  return (
+    <MainLayout currentView={currentView} onNavigate={setCurrentView}>
+      {renderView()}
+    </MainLayout>
+  );
 };
 
-type AuthCtx = {
-  user: AppUser | null;
-  loading: boolean;
-  signIn: (email: string, password: string) => Promise<any>;
-  signUp: (email: string, password: string) => Promise<any>;
-  signInWithGoogle: () => Promise<any>;
-  resetPassword: (email: string) => Promise<any>;
-  signOut: () => Promise<void>;
-};
-
-const AuthContext = createContext<AuthCtx | null>(null);
-
-async function fetchProfile(userId: string) {
-  // Ajuste os campos conforme sua tabela profiles
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, papel, nome")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data; // pode ser null se não existir
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
 }
-
-async function ensureProfileExists(userId: string, email?: string | null) {
-  // cria perfil se não existir
-  const { data: existing } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (existing?.id) return;
-
-  // Ajuste valores default como você quiser
-  const { error } = await supabase.from("profiles").insert({
-    id: userId,
-    papel: "admin",
-    nome: email ?? "Usuário",
-  });
-
-  if (error) throw error;
-}
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const hydrate = async () => {
-    setLoading(true);
-    try {
-      const { data } = await supabase.auth.getUser();
-      const authUser = data.user;
-
-      if (!authUser) {
-        setUser(null);
-        return;
-      }
-
-      // garante que tenha profile
-      await ensureProfileExists(authUser.id, authUser.email);
-
-      const profile = await fetchProfile(authUser.id);
-
-      setUser({
-        id: authUser.id,
-        email: authUser.email,
-        papel: prof

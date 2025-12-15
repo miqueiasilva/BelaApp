@@ -2,8 +2,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { Calendar, Tag, DollarSign, Send, Edit, Trash2, User, MoreVertical, X } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import format from 'date-fns/format';
+import ptBR from 'date-fns/locale/pt-BR';
 import StatusUpdatePopover from './StatusUpdatePopover';
 
 interface AppointmentDetailPopoverProps {

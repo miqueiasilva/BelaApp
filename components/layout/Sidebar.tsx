@@ -4,7 +4,7 @@ import {
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
     Star, Package, Users, Settings, BarChart, Globe, Banknote, LogOut
 } from 'lucide-react';
-import { ViewState } from '../../types';
+import { ViewState, UserRole } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { hasAccess } from '../../utils/permissions';
 
@@ -48,7 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 
     // Filter function based on permissions
     const filterItems = (items: typeof menuItems) => {
-        return items.filter(item => hasAccess(user?.papel, item.id as ViewState));
+        return items.filter(item => hasAccess(user?.papel as UserRole, item.id as ViewState));
     };
 
     const filteredMenu = filterItems(menuItems);

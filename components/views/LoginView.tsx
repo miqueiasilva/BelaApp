@@ -5,7 +5,7 @@ import { Loader2, Lock, Mail, Eye, EyeOff, ArrowRight, CheckCircle2, XCircle, Us
 
 type AuthMode = 'login' | 'register' | 'forgot';
 
-// Google Icon SVG Component for crisp rendering
+// Google Icon SVG
 const GoogleIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -34,7 +34,6 @@ const LoginView: React.FC = () => {
         setError(null);
         setSuccessMessage(null);
         setPassword('');
-        // Keep email populated as it's often reused
     };
 
     const handleModeChange = (newMode: AuthMode) => {
@@ -46,13 +45,11 @@ const LoginView: React.FC = () => {
         setError(null);
         setIsLoading(true);
         try {
-            const result = await signInWithGoogle();
-            if (result.error) setError(result.error);
-        } catch (err) {
-            setError("Erro ao conectar com Google.");
-        } finally {
-            // Note: If successful, the page will redirect, so loading state persists visually which is desired
-            setTimeout(() => setIsLoading(false), 2000); 
+            const { error } = await signInWithGoogle();
+            if (error) throw error;
+        } catch (err: any) {
+            setError(err.message || "Erro ao conectar com Google.");
+            setIsLoading(false);
         }
     };
 
@@ -64,37 +61,24 @@ const LoginView: React.FC = () => {
 
         try {
             if (mode === 'login') {
-                const result = await signIn(email, password);
-                if (result.error) setError(result.error);
+                const { error } = await signIn(email, password);
+                if (error) throw error;
             } else if (mode === 'register') {
-                if (!name) {
-                    setError("Por favor, informe seu nome.");
-                    setIsLoading(false);
-                    return;
-                }
-                const result = await signUp(email, password, name);
-                if (result.error) {
-                    setError(result.error);
-                } else {
-                    setSuccessMessage("Conta criada com sucesso! Verifique seu e-mail para confirmar.");
-                    // Optional: Switch to login or keep showing success
-                }
+                const { error } = await signUp(email, password);
+                if (error) throw error;
+                setSuccessMessage("Conta criada! Se o login não for automático, verifique seu e-mail.");
+                if(!error) setTimeout(() => handleModeChange('login'), 2000);
             } else if (mode === 'forgot') {
-                const result = await resetPassword(email);
-                if (result.error) {
-                    setError(result.error);
-                } else {
-                    setSuccessMessage("Se o e-mail estiver cadastrado, você receberá um link de recuperação.");
-                }
+                const { error } = await resetPassword(email);
+                if (error) throw error;
+                setSuccessMessage("Link de recuperação enviado para o e-mail.");
             }
-        } catch (err) {
-            setError("Ocorreu um erro inesperado. Tente novamente.");
+        } catch (err: any) {
+            setError(err.message || "Ocorreu um erro inesperado.");
         } finally {
             setIsLoading(false);
         }
     };
-
-    // --- Render Helpers ---
 
     const getTitle = () => {
         switch (mode) {
@@ -104,57 +88,48 @@ const LoginView: React.FC = () => {
         }
     };
 
-    const getSubtitle = () => {
-        switch (mode) {
-            case 'register': return 'Comece a gerenciar seu estúdio hoje';
-            case 'forgot': return 'Informe seu e-mail para receber o link';
-            default: return 'Gestão Inteligente para Estúdios de Beleza';
-        }
-    };
-
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-900 relative overflow-hidden">
-            {/* Background Effects */}
+            {/* Background */}
             <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
-                <div className="absolute -top-32 -left-32 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-                <div className="absolute top-0 -right-32 w-96 h-96 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-                <div className="absolute -bottom-32 left-20 w-96 h-96 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-slate-800/50 rounded-full blur-3xl opacity-40"></div>
+                <div className="absolute -top-32 -left-32 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+                <div className="absolute top-0 -right-32 w-96 h-96 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+                <div className="absolute -bottom-32 left-20 w-96 h-96 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
             </div>
 
             <div className="w-full max-w-md p-8 relative z-10">
-                <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8 transition-all duration-300">
+                <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8">
                     
                     <div className="text-center mb-6">
-                        <div className="w-16 h-16 bg-gradient-to-tr from-orange-400 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-500/20">
+                        <div className="w-16 h-16 bg-gradient-to-tr from-orange-400 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
                             <span className="text-white font-bold text-3xl">B</span>
                         </div>
                         <h1 className="text-2xl font-bold text-white mb-2">{getTitle()}</h1>
-                        <p className="text-slate-300 text-sm">{getSubtitle()}</p>
+                        <p className="text-slate-300 text-sm">Gestão Inteligente para Estúdios de Beleza</p>
                     </div>
 
                     <div className="space-y-5">
                         {error && (
-                            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-xl text-red-200 text-sm text-center flex items-center justify-center gap-2 animate-in fade-in">
-                                <XCircle className="w-4 h-4" />
+                            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-xl text-red-200 text-sm flex items-center gap-2">
+                                <XCircle className="w-4 h-4 flex-shrink-0" />
                                 {error}
                             </div>
                         )}
                         {successMessage && (
-                            <div className="p-3 bg-green-500/10 border border-green-500/50 rounded-xl text-green-200 text-sm text-center flex items-center justify-center gap-2 animate-in fade-in">
-                                <CheckCircle2 className="w-4 h-4" />
+                            <div className="p-3 bg-green-500/10 border border-green-500/50 rounded-xl text-green-200 text-sm flex items-center gap-2">
+                                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                                 {successMessage}
                             </div>
                         )}
 
-                        {/* --- GOOGLE LOGIN BUTTON --- */}
+                        {/* Google Button */}
                         {(mode === 'login' || mode === 'register') && (
                             <>
                                 <button
                                     type="button"
                                     onClick={handleGoogleLogin}
                                     disabled={isLoading}
-                                    className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-bold py-3.5 rounded-xl hover:bg-slate-50 transition-all shadow-sm active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed group"
+                                    className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-bold py-3.5 rounded-xl hover:bg-slate-50 transition-all shadow-sm active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
                                 >
                                     {isLoading ? <Loader2 className="animate-spin w-5 h-5 text-slate-400"/> : <GoogleIcon />}
                                     <span>Entrar com Google</span>
@@ -162,7 +137,7 @@ const LoginView: React.FC = () => {
 
                                 <div className="relative flex items-center py-2">
                                     <div className="flex-grow border-t border-slate-600/50"></div>
-                                    <span className="flex-shrink-0 mx-4 text-xs font-semibold text-slate-400 uppercase tracking-wide">ou continue com e-mail</span>
+                                    <span className="flex-shrink-0 mx-4 text-xs font-semibold text-slate-400 uppercase">ou via e-mail</span>
                                     <div className="flex-grow border-t border-slate-600/50"></div>
                                 </div>
                             </>
@@ -170,17 +145,15 @@ const LoginView: React.FC = () => {
 
                         <form onSubmit={handleSubmit} className="space-y-4">
                             {mode === 'register' && (
-                                <div className="space-y-1 animate-in slide-in-from-left-4 fade-in">
-                                    <label className="text-xs font-semibold text-slate-300 uppercase ml-1">Nome Completo</label>
-                                    <div className="relative group">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                            <User className="h-5 w-5 text-slate-400 group-focus-within:text-white transition-colors" />
-                                        </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-slate-300 uppercase ml-1">Nome</label>
+                                    <div className="relative">
+                                        <User className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
                                         <input
                                             type="text"
                                             value={name}
                                             onChange={(e) => setName(e.target.value)}
-                                            className="block w-full pl-10 pr-3 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                                            className="block w-full pl-10 pr-3 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
                                             placeholder="Seu Nome"
                                             required={mode === 'register'}
                                         />
@@ -190,15 +163,13 @@ const LoginView: React.FC = () => {
 
                             <div className="space-y-1">
                                 <label className="text-xs font-semibold text-slate-300 uppercase ml-1">E-mail</label>
-                                <div className="relative group">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <Mail className="h-5 w-5 text-slate-400 group-focus-within:text-white transition-colors" />
-                                    </div>
+                                <div className="relative">
+                                    <Mail className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
                                     <input
                                         type="email"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
-                                        className="block w-full pl-10 pr-3 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                                        className="block w-full pl-10 pr-3 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
                                         placeholder="seu@email.com"
                                         required
                                     />
@@ -206,17 +177,15 @@ const LoginView: React.FC = () => {
                             </div>
 
                             {(mode === 'login' || mode === 'register') && (
-                                <div className="space-y-1 animate-in slide-in-from-right-4 fade-in">
+                                <div className="space-y-1">
                                     <label className="text-xs font-semibold text-slate-300 uppercase ml-1">Senha</label>
-                                    <div className="relative group">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                            <Lock className="h-5 w-5 text-slate-400 group-focus-within:text-white transition-colors" />
-                                        </div>
+                                    <div className="relative">
+                                        <Lock className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
                                         <input
                                             type={showPassword ? "text" : "password"}
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
-                                            className="block w-full pl-10 pr-10 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                                            className="block w-full pl-10 pr-10 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
                                             placeholder="••••••"
                                             required
                                             minLength={6}
@@ -233,12 +202,8 @@ const LoginView: React.FC = () => {
                             )}
 
                             {mode === 'login' && (
-                                <div className="flex items-center justify-between text-sm">
-                                    <label className="flex items-center text-slate-300 cursor-pointer">
-                                        <input type="checkbox" className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500 focus:ring-offset-slate-900" />
-                                        <span className="ml-2">Lembrar de mim</span>
-                                    </label>
-                                    <button type="button" onClick={() => handleModeChange('forgot')} className="text-orange-400 hover:text-orange-300 font-medium transition-colors">
+                                <div className="flex justify-end text-sm">
+                                    <button type="button" onClick={() => handleModeChange('forgot')} className="text-orange-400 hover:text-orange-300">
                                         Esqueceu a senha?
                                     </button>
                                 </div>
@@ -247,13 +212,13 @@ const LoginView: React.FC = () => {
                             <button
                                 type="submit"
                                 disabled={isLoading}
-                                className="w-full flex justify-center items-center gap-2 py-3.5 px-4 border border-transparent rounded-xl shadow-lg shadow-orange-500/20 text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 focus:ring-offset-slate-900 transition-all transform active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
+                                className="w-full flex justify-center items-center gap-2 py-3.5 px-4 rounded-xl shadow-lg text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 transition-all active:scale-95 disabled:opacity-70"
                             >
                                 {isLoading ? (
                                     <Loader2 className="animate-spin h-5 w-5" />
                                 ) : (
                                     <>
-                                        {mode === 'login' && <>Entrar no Sistema <ArrowRight className="h-5 w-5" /></>}
+                                        {mode === 'login' && <>Entrar <ArrowRight className="h-5 w-5" /></>}
                                         {mode === 'register' && <>Criar Conta <CheckCircle2 className="h-5 w-5" /></>}
                                         {mode === 'forgot' && <>Enviar Link <Send className="h-4 w-4" /></>}
                                     </>
@@ -261,24 +226,19 @@ const LoginView: React.FC = () => {
                             </button>
                         </form>
                         
-                        {/* Secondary Actions */}
                         <div className="flex justify-center mt-4">
                             {mode === 'login' ? (
                                 <p className="text-sm text-slate-400">
-                                    Não tem uma conta? <button type="button" onClick={() => handleModeChange('register')} className="text-white font-bold hover:underline">Cadastre-se</button>
+                                    Não tem conta? <button type="button" onClick={() => handleModeChange('register')} className="text-white font-bold hover:underline">Cadastre-se</button>
                                 </p>
                             ) : (
-                                <button type="button" onClick={() => handleModeChange('login')} className="text-sm text-slate-400 flex items-center gap-1 hover:text-white transition-colors">
-                                    <ArrowLeft className="w-4 h-4" /> Voltar para o login
+                                <button type="button" onClick={() => handleModeChange('login')} className="text-sm text-slate-400 flex items-center gap-1 hover:text-white">
+                                    <ArrowLeft className="w-4 h-4" /> Voltar para login
                                 </button>
                             )}
                         </div>
                     </div>
                 </div>
-                
-                <p className="mt-8 text-center text-xs text-slate-500">
-                    &copy; 2025 BelaApp. Todos os direitos reservados.
-                </p>
             </div>
         </div>
     );

@@ -1,8 +1,11 @@
+
 import React, { useState } from 'react';
 import { LegacyAppointment, LegacyProfessional } from '../../types';
 import { services as serviceMap } from '../../data/mockData';
 import { X } from 'lucide-react';
-import { format, set } from 'date-fns';
+import format from 'date-fns/format';
+import setHours from 'date-fns/setHours';
+import setMinutes from 'date-fns/setMinutes';
 
 interface BlockTimeModalProps {
   professional: LegacyProfessional;
@@ -23,10 +26,10 @@ const BlockTimeModal: React.FC<BlockTimeModalProps> = ({ professional, startTime
     }
     
     const [startHour, startMinute] = startTimeStr.split(':').map(Number);
-    const finalStartTime = set(startTime, { hours: startHour, minutes: startMinute });
+    const finalStartTime = setMinutes(setHours(startTime, startHour), startMinute);
 
     const [endHour, endMinute] = endTime.split(':').map(Number);
-    const finalEndTime = set(startTime, { hours: endHour, minutes: endMinute });
+    const finalEndTime = setMinutes(setHours(startTime, endHour), endMinute);
 
     if (finalEndTime <= finalStartTime) {
       alert('O horário de término deve ser posterior ao de início.');

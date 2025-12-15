@@ -1,7 +1,11 @@
+
 import React, { useState, useMemo } from 'react';
 import { initialAppointments, professionals } from '../../data/mockData';
-import { format, isSameMonth, subMonths, addMonths } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import format from 'date-fns/format';
+import isSameMonth from 'date-fns/isSameMonth';
+import subMonths from 'date-fns/subMonths';
+import addMonths from 'date-fns/addMonths';
+import ptBR from 'date-fns/locale/pt-BR';
 import { Wallet, ChevronDown, ChevronUp, Download, CheckCircle } from 'lucide-react';
 
 const DEFAULT_COMMISSION_RATE = 0.5; // 50%
