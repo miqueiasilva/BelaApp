@@ -1,52 +1,31 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Helper to safely get env vars from various sources
-const getEnvVar = (key: string): string | null => {
-  // 1. Try Vite's import.meta.env
-  try {
-    // @ts-ignore
-    if (import.meta.env && import.meta.env[key]) {
-      // @ts-ignore
-      return import.meta.env[key];
-    }
-  } catch (e) {}
-
-  // 2. Try window.__ENV__ (common in docker/preview builds)
-  try {
-    // @ts-ignore
-    if (typeof window !== 'undefined' && window.__ENV__ && window.__ENV__[key]) {
-      // @ts-ignore
-      return window.__ENV__[key];
-    }
-  } catch (e) {}
-
-  // 3. Try LocalStorage (User override)
-  try {
-    if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem(key);
-    }
-  } catch (e) {}
-
-  return null;
+// Helper to get env vars safely using Vite standard
+const getEnv = (key: string): string => {
+  // @ts-ignore
+  return (import.meta as any).env ? (import.meta as any).env[key] || '' : '';
 };
 
-const supabaseUrl = getEnvVar('VITE_SUPABASE_URL');
-const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
+// Access environment variables directly via Vite
+// Fallback to local storage for manual configuration via EnvGate
+const envUrl = getEnv('VITE_SUPABASE_URL');
+const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
+
+const localUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('VITE_SUPABASE_URL') : null;
+const localKey = typeof localStorage !== 'undefined' ? localStorage.getItem('VITE_SUPABASE_ANON_KEY') : null;
+
+const supabaseUrl = envUrl || localUrl;
+const supabaseAnonKey = envKey || localKey;
 
 export const isConfigured = !!(supabaseUrl && supabaseAnonKey);
 
-// We export a client if configured, otherwise null (cast as Client to satisfy TS imports downstream)
-// The EnvGate component prevents usage of this null client.
+// Initialize client ONLY if configured to prevent runtime crash on load
+// We cast as SupabaseClient to satisfy TypeScript usage in other files
 export const supabase = (isConfigured 
-  ? createClient(supabaseUrl!, supabaseAnonKey!, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      }
-    }) 
+  ? createClient(supabaseUrl!, supabaseAnonKey!) 
   : null) as unknown as SupabaseClient;
 
+// Helpers for the EnvGate component
 export const saveSupabaseConfig = (url: string, key: string) => {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem('VITE_SUPABASE_URL', url);
