@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Helper para ler variáveis de ambiente de forma segura no Vite
+// Helper seguro para ler variáveis de ambiente no Vite
 const getEnvVar = (key: string): string | undefined => {
   try {
     // @ts-ignore
@@ -9,7 +9,7 @@ const getEnvVar = (key: string): string | undefined => {
       return import.meta.env[key];
     }
   } catch (e) {
-    console.warn('Ambiente não suporta import.meta.env');
+    console.warn('Ambiente não suporta import.meta.env ou variável ausente');
   }
   return undefined;
 };
@@ -18,25 +18,23 @@ const supabaseUrl = getEnvVar('VITE_SUPABASE_URL');
 const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
 
 // Verifica se a configuração está completa
-// Se false, o app deve operar em modo "Mock/Demo" sem travar
 export const isConfigured = !!(supabaseUrl && supabaseAnonKey);
 
 // Inicializa o cliente apenas se configurado corretamente
-// Se não houver chaves, 'supabase' será null, e o resto do app deve lidar com isso (usando AuthContext mockado ou dados locais)
+// Se não houver chaves, 'supabase' será null, permitindo fallback para modo Mock/Demo
 export const supabase = isConfigured 
   ? createClient(supabaseUrl as string, supabaseAnonKey as string) 
   : null;
 
-// Funções legadas mantidas para compatibilidade, mas sem efeito real de persistência insegura
+// Funções legadas mantidas para compatibilidade de interface
 export const saveSupabaseConfig = (url: string, key: string) => {
-  console.warn("A configuração manual foi desativada. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no arquivo .env ou no painel da Vercel.");
+  console.warn("A configuração manual foi desativada. Use variáveis de ambiente (arquivo .env).");
 };
 
 export const clearSupabaseConfig = () => {
     // No-op
 }
 
-// Teste de conexão seguro
 export async function testConnection() {
     if (!isConfigured || !supabase) return false;
     try {
