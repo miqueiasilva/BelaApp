@@ -81,7 +81,7 @@ const LoginView: React.FC = () => {
         } catch (err: any) {
             console.error("Auth Error:", err);
             
-            // Tratamento robusto de erros para evitar [object Object]
+            // Robust error handling logic
             let msg = "Ocorreu um erro inesperado.";
             
             if (typeof err === 'string') {
@@ -90,20 +90,13 @@ const LoginView: React.FC = () => {
                 msg = err.message;
             } else if (err?.error_description) {
                 msg = err.error_description;
-            } else {
-                // Se for um objeto desconhecido, tenta stringify ou mensagem genérica
-                try {
-                    msg = JSON.stringify(err);
-                } catch {
-                    msg = "Erro desconhecido.";
-                }
             }
 
-            // Tradução amigável de erros comuns do Supabase
+            // Tradução amigável
             if (msg.includes("Invalid login credentials")) msg = "E-mail ou senha incorretos.";
             if (msg.includes("User not found")) msg = "Usuário não encontrado.";
             if (msg.includes("weak_password")) msg = "A senha deve ter pelo menos 6 caracteres.";
-            if (msg.includes("already registered") || msg.includes("User already registered")) msg = "Este e-mail já está cadastrado.";
+            if (msg.includes("already registered")) msg = "Este e-mail já está cadastrado.";
 
             setError(msg);
         } finally {

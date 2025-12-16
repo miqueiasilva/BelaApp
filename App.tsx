@@ -31,7 +31,7 @@ const AppContent: React.FC = () => {
   const [hash, setHash] = useState(window.location.hash);
   const [pathname, setPathname] = useState(window.location.pathname);
 
-  // Router listener simples para hash
+  // Router listener simples
   useEffect(() => {
     const handleHashChange = () => setHash(window.location.hash);
     window.addEventListener('hashchange', handleHashChange);
@@ -56,18 +56,17 @@ const AppContent: React.FC = () => {
     return <PublicBookingPreview />;
   }
 
-  // Suporte a rota de reset tanto via path quanto hash
   if (pathname === '/reset-password' || hash === '#/reset-password') {
     return <ResetPasswordView />;
   }
 
-  // 3. Verificação de Autenticação
-  // Se não tiver usuário logado, exibe a tela de Login
+  // 3. Verificação de Autenticação (Ponto Crítico para Login)
+  // Se não tiver usuário, exibe Login.
   if (!user) {
     return <LoginView />;
   }
 
-  // 4. Aplicação Protegida (Dashboard e outras views)
+  // 4. Aplicação Protegida (Usuário Logado)
   const handleAddTransaction = (t: FinancialTransaction) => {
     setTransactions(prev => [t, ...prev]);
   };
