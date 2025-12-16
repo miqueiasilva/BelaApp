@@ -1,48 +1,42 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Helper to get env vars safely using Vite standard
-const getEnv = (key: string): string => {
-  // @ts-ignore
-  return (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env[key] : '';
+// Helper para ler variáveis de ambiente de forma segura no Vite
+const getEnvVar = (key: string): string | undefined => {
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      // @ts-ignore
+      return import.meta.env[key];
+    }
+  } catch (e) {
+    console.warn('Ambiente não suporta import.meta.env');
+  }
+  return undefined;
 };
 
-// Access environment variables directly via Vite
-// Fallback to local storage for manual configuration via EnvGate is preserved for functionality
-const envUrl = getEnv('VITE_SUPABASE_URL');
-const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
+const supabaseUrl = getEnvVar('VITE_SUPABASE_URL');
+const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
 
-const localUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('VITE_SUPABASE_URL') : null;
-const localKey = typeof localStorage !== 'undefined' ? localStorage.getItem('VITE_SUPABASE_ANON_KEY') : null;
-
-const supabaseUrl = envUrl || localUrl;
-const supabaseAnonKey = envKey || localKey;
-
+// Verifica se a configuração está completa
+// Se false, o app deve operar em modo "Mock/Demo" sem travar
 export const isConfigured = !!(supabaseUrl && supabaseAnonKey);
 
-// Initialize client ONLY if configured to prevent runtime crash on load
-// Explicitly typed as any to allow null check downstream without strict SupabaseClient type enforcement crashing the build if types differ
+// Inicializa o cliente apenas se configurado corretamente
+// Se não houver chaves, 'supabase' será null, e o resto do app deve lidar com isso (usando AuthContext mockado ou dados locais)
 export const supabase = isConfigured 
-  ? createClient(supabaseUrl!, supabaseAnonKey!) 
+  ? createClient(supabaseUrl as string, supabaseAnonKey as string) 
   : null;
 
-// Helpers for the EnvGate component
+// Funções legadas mantidas para compatibilidade, mas sem efeito real de persistência insegura
 export const saveSupabaseConfig = (url: string, key: string) => {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('VITE_SUPABASE_URL', url);
-    localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
-    window.location.reload();
-  }
+  console.warn("A configuração manual foi desativada. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no arquivo .env ou no painel da Vercel.");
 };
 
 export const clearSupabaseConfig = () => {
-    if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem('VITE_SUPABASE_URL');
-        localStorage.removeItem('VITE_SUPABASE_ANON_KEY');
-        window.location.reload();
-    }
+    // No-op
 }
 
-// Helper to check connection status
+// Teste de conexão seguro
 export async function testConnection() {
     if (!isConfigured || !supabase) return false;
     try {
