@@ -212,6 +212,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     };
 
                     const startTime = new Date(row.date || row.start_time); 
+                    // Calculate end time or default to 30 mins if not provided (DB doesn't have it)
                     const endTime = row.end_time 
                         ? new Date(row.end_time) 
                         : new Date(startTime.getTime() + 30 * 60000);
@@ -410,19 +411,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             // 1. Construct ISO Date robustly
             // The modal returns 'app.start' as a Date object correctly.
             const dataIso = app.start.toISOString();
-            const dataEndIso = app.end.toISOString();
 
-            // 2. Prepare Payload with correct column mapping
+            // 2. Prepare Payload with STRICT column mapping based on error report
+            // Table only accepts: client_name, service_name, date, value, status
             const payload = {
                 client_name: app.client?.nome || 'Cliente Sem Nome',
                 service_name: app.service.name,
-                professional_name: app.professional.name,
                 date: dataIso, // 'timestamptz'
-                start_time: dataIso, // Optional Legacy
-                end_time: dataEndIso, // Optional Legacy
                 status: app.status || 'agendado',
                 value: app.service.price || 0,
-                notes: app.notas
+                // Note: end_time, professional_name, notes removed to ensure compatibility with strict schema
             };
 
             console.log('Enviando agendamento para Supabase:', payload);
