@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { initialAppointments, professionals as mockProfessionals, clients as mockClients, services as mockServicesMap } from '../../data/mockData';
+import { initialAppointments, professionals as mockProfessionals, services as mockServicesMap } from '../../data/mockData';
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction } from '../../types';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval } from 'date-fns';
 import { 
@@ -18,8 +18,8 @@ import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
 
 const START_HOUR = 8;
-const END_HOUR = 20; // Extended for visibility
-const PIXELS_PER_MINUTE = 80 / 60; // 80px for every 60 minutes
+const END_HOUR = 20; 
+const PIXELS_PER_MINUTE = 80 / 60; 
 
 // --- Date Helper Functions ---
 
@@ -86,7 +86,7 @@ interface DynamicColumn {
     subtitle?: string;
     avatarUrl?: string;
     type: 'professional' | 'status' | 'payment' | 'date';
-    data?: any; // To hold original object (Professional, Date, etc)
+    data?: any; 
 }
 
 // --- Helper Functions ---
@@ -187,39 +187,58 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const viewDropdownRef = useRef<HTMLDivElement>(null);
     const periodDropdownRef = useRef<HTMLDivElement>(null);
 
-    // --- Data Persistence Logic ---
+    // --- Data Persistence Logic (READ) ---
     const fetchAppointments = async () => {
         setIsLoadingData(true);
         try {
-            // Attempt to fetch from Supabase
-            const { data, error } = await supabase.from('appointments').select('*');
+            // Updated Query to reflect simplified Text-Based Schema
+            const { data, error } = await supabase
+                .from('appointments')
+                .select('*');
             
             if (error) {
-                console.warn("Supabase fetch error (table might be missing), using mocks.", error.message);
-                // Keeping initialAppointments (mock data) if fetch fails
+                console.warn("Supabase fetch error:", error.message);
                 return;
             }
 
             if (data && data.length > 0) {
                 const mappedAppointments: LegacyAppointment[] = data.map(row => {
-                    // Reconstruct object relationships from IDs using Mock data for now (since relational tables might not be populated/linked)
-                    const client = mockClients.find(c => c.id === row.client_id) || { id: row.client_id || 0, nome: 'Cliente (Importado)', consent: true };
-                    const professional = mockProfessionals.find(p => p.id == row.user_id) || mockProfessionals[0];
-                    const serviceMapArray = Object.values(mockServicesMap);
-                    const service = serviceMapArray.find(s => s.id === row.service_id) || serviceMapArray[0];
+                    // Match simplified backend text columns to UI object structure
+                    // If backend columns are text, we reconstruct the objects on the fly
+                    
+                    // Reconstruct Professional
+                    // Try to find matching mock professional by name, or use default
+                    const profName = row.professional_name || row.user_id || 'Profissional';
+                    const matchedProf = mockProfessionals.find(p => p.name === profName) || {
+                        ...mockProfessionals[0],
+                        name: profName,
+                        id: row.user_id || 999 
+                    };
 
                     return {
                         id: row.id,
-                        start: new Date(row.inicio), // Assumes 'inicio' column
-                        end: new Date(row.fim),     // Assumes 'fim' column
+                        start: new Date(row.start_time || row.date), // Adapts to 'start_time' or 'date'
+                        end: new Date(row.end_time || new Date(new Date(row.start_time || row.date).getTime() + 30*60000)), // Fallback 30 min
                         status: row.status as AppointmentStatus,
-                        notas: row.notas,
-                        client,
-                        professional,
-                        service
+                        notas: row.notes || row.notas,
+                        client: { 
+                            id: 0, 
+                            nome: row.client_name || 'Cliente Sem Nome', 
+                            consent: true 
+                        },
+                        professional: matchedProf,
+                        service: { 
+                            id: 0, 
+                            name: row.service_name || 'Serviço', 
+                            price: parseFloat(row.value || 0), 
+                            duration: 30, 
+                            color: 'blue' 
+                        }
                     };
                 });
                 setAppointments(mappedAppointments);
+            } else {
+                setAppointments([]); // Clear if DB is empty
             }
         } catch (e) {
             console.error("Unexpected error fetching appointments:", e);
@@ -315,8 +334,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     // --- Grid Styling Calculation ---
     const gridStyle = useMemo(() => {
         const colsCount = columns.length || 1;
-        // Use minmax with a specific pixel value to enforce horizontal scrolling if needed
-        // Instead of 1fr which can collapse to 0
         const minWidth = isMobile ? '170px' : '180px';
         return {
             gridTemplateColumns: `60px repeat(${colsCount}, minmax(${minWidth}, 1fr))`
@@ -353,7 +370,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             return cols.find(c => isSameDay(app.start, c.data));
         }
         if (viewType === 'Profissional') {
-            return cols.find(c => c.id === app.professional.id);
+            return cols.find(c => c.title === app.professional.name || c.id === app.professional.id);
         }
         if (viewType === 'Andamento') {
             if (app.status === 'confirmado' || app.status === 'confirmado_whatsapp') return cols.find(c => c.id === 'confirmado');
@@ -383,65 +400,41 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     };
 
+    // --- SAVE (CREATE/UPDATE) LOGIC - Text Based ---
     const handleSaveAppointment = async (app: LegacyAppointment) => {
         // Optimistic UI Update
-        let isNew = false;
         setAppointments(prev => {
             const existing = prev.find(a => a.id === app.id);
             if (existing) return prev.map(a => a.id === app.id ? app : a);
-            isNew = true;
             return [...prev, { ...app, id: Date.now() }];
         });
         setModalState(null);
 
-        // Supabase Insert/Update
+        // Supabase Insert/Update (Simplified Text Columns)
         try {
             const payload = {
-                client_id: app.client?.id,
-                user_id: app.professional.id,
-                service_id: app.service.id,
-                inicio: app.start.toISOString(),
-                fim: app.end.toISOString(),
+                client_name: app.client?.nome, // Sending Name as Text
+                service_name: app.service.name, // Sending Service Name as Text
+                professional_name: app.professional.name, // Sending Prof Name
+                start_time: app.start.toISOString(),
+                end_time: app.end.toISOString(),
                 status: app.status,
-                notas: app.notas,
-                origem: 'interno'
+                notes: app.notas,
+                value: app.service.price,
+                // Fallback for strict table schemas
+                date: app.start.toISOString(), 
             };
 
-            // Check if ID is likely a DB ID (Supabase uses auto-incrementing int8 or uuids, mock uses small ints or timestamps)
-            // If it's a timestamp-generated ID from previous optimistic update (very large number), treat as new insert if not found in DB
-            // Simplified: If app has an ID, try update. If error or not found, try insert. 
-            // Better strategy: We can't easily know if 'Date.now()' ID exists in DB. 
-            // So we treat 'id' < 100000 (mock) or typical timestamp as "potentially new" if we strictly used DB IDs.
-            // For this hotfix, assume `upsert` or check existence.
-            
-            // To be safe and simple: If it was an edit of a persisted item, it has a real DB ID. 
-            // If it was just created, it has Date.now() ID. 
-            // We'll rely on a flag or just Insert always for new, Update for existing.
-            
-            // NOTE: Since we are mixing mocks and real data, querying by ID might fail if ID is from Mock.
-            
-            // HOTFIX STRATEGY:
-            // 1. Try to find appointment in DB by start time and user to detect duplicates? No.
-            // 2. Just Insert for now to guarantee persistence. (Upsert needs primary key)
-            
-            // If we are editing (app.id exists in our list), we try to update.
-            const { error } = await supabase.from('appointments').upsert({
-                ...payload,
-                // Only send ID if it looks like a valid DB ID (not generated by Date.now() which is huge, unless DB uses bigints)
-                // Let's assume if it's in the list, we pass the ID. If it fails, we strip ID and insert.
-                ...(isNew ? {} : { id: app.id }) 
-            });
+            // Check if ID exists and is likely from DB (not temp timestamp)
+            const isUpdate = app.id && app.id < 1000000000000; 
 
-            if (error) {
-                // Fallback: If upsert failed (maybe ID didn't exist), try pure insert
-                if (!isNew) {
-                     await supabase.from('appointments').insert([payload]);
-                } else {
-                    throw error;
-                }
+            if (isUpdate) {
+                await supabase.from('appointments').update(payload).eq('id', app.id);
+            } else {
+                await supabase.from('appointments').insert([payload]);
             }
 
-            await fetchAppointments(); // Re-fetch to get consistent state
+            await fetchAppointments(); // Re-fetch to sync IDs
             showToast('Dados salvos no servidor!', 'success');
 
         } catch (error) {
@@ -470,7 +463,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             await supabase.from('appointments').update({ status: newStatus }).eq('id', appointmentId);
             showToast(`Status atualizado para ${newStatus.replace('_', ' ')}`, 'success');
         } catch (e) {
-            // silent fail or toast
+            // silent fail
         }
     };
     
@@ -693,7 +686,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 {columns.map((col, index) => {
                                     const colApps = filteredAppointments.filter(app => {
                                         const assignedCol = getColumnForAppointment(app, columns);
-                                        return assignedCol?.id === col.id;
+                                        return assignedCol?.id === col.id || (col.type === 'professional' && assignedCol?.title === col.title);
                                     });
 
                                     return (
