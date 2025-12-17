@@ -21,6 +21,17 @@ const START_HOUR = 8;
 const END_HOUR = 20; 
 const PIXELS_PER_MINUTE = 80 / 60; 
 
+// --- Resource Mapping ---
+// Hardcoded map to ensure ID consistency between Frontend and Database
+const RESOURCE_MAP: Record<string, number> = {
+    'Jacilene Félix': 1,
+    'Graziela Oliveira': 2,
+    'Jéssica Félix': 3,
+    'Glezia': 4,
+    'Elda Priscila': 5,
+    'Herlon': 6
+};
+
 // --- Date Helper Functions ---
 
 function setHours(date: Date, hours: number): Date {
@@ -213,14 +224,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     // Se não tiver fim, assume 30min
                     const endTime = new Date(startTime.getTime() + 30 * 60000);
 
-                    // Normaliza Profissional: 
-                    // Se o banco não tem 'professional_name', usa o primeiro da lista mockada para garantir exibição
-                    const profName = row.professional_name;
-                    let matchedProf = mockProfessionals[0]; 
+                    // --- RESOURCE MAPPING LOGIC ---
+                    // Tenta identificar o profissional correto usando resource_id ou professional_name
+                    let matchedProf = mockProfessionals[0];
                     
-                    if (profName) {
-                        const found = mockProfessionals.find(p => p.name === profName);
-                        if (found) matchedProf = found;
+                    if (row.resource_id) {
+                        const foundById = mockProfessionals.find(p => p.id === Number(row.resource_id));
+                        if (foundById) matchedProf = foundById;
+                    } else if (row.professional_name) {
+                        const foundByName = mockProfessionals.find(p => p.name === row.professional_name);
+                        if (foundByName) matchedProf = foundByName;
                     }
 
                     // Monta o objeto LegacyAppointment
@@ -420,12 +433,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             // 1. Construct ISO Date robustly
             const dateIso = app.start.toISOString();
 
-            // 2. Prepare Payload - STRICTLY CLEAN
-            // Explicitly defining the object prevents any stray properties
-            // Table only accepts: client_name, service_name, date, value, status
+            // 2. Prepare Payload - STRICTLY CLEAN with Resource Mapping
+            // RESOURCE MAPPING: Ensure the appointment goes to the correct column
+            const mappedResourceId = RESOURCE_MAP[app.professional.name] || app.professional.id;
+
             const payload = {
                 client_name: app.client?.nome || 'Cliente Sem Nome',
                 service_name: app.service.name,
+                professional_name: app.professional.name, // Explicitly save name
+                resource_id: mappedResourceId,            // Explicitly save mapped ID
                 date: dateIso,
                 value: typeof app.service.price === 'number' ? app.service.price : parseFloat(app.service.price || '0'),
                 status: app.status || 'agendado'
@@ -434,7 +450,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             console.log('Payload Limpo para Supabase:', payload);
 
             // 3. Check for ID to decide Insert vs Update
-            // We assume IDs < 1 trillion are real DB IDs (Supabase usually uses int8, mock uses Date.now())
             if (app.id && typeof app.id === 'number' && app.id < 1000000000000) {
                  const { error } = await supabase
                     .from('appointments')
