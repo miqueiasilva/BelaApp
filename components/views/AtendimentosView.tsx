@@ -409,18 +409,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
         try {
             // 1. Construct ISO Date robustly
-            // The modal returns 'app.start' as a Date object correctly.
             const dataIso = app.start.toISOString();
 
-            // 2. Prepare Payload with STRICT column mapping based on error report
-            // Table only accepts: client_name, service_name, date, value, status
+            // 2. Prepare Payload with STRICT column mapping
+            // IMPORTANT: Removed 'end_time' and 'duration' as they are not columns in the DB.
             const payload = {
                 client_name: app.client?.nome || 'Cliente Sem Nome',
                 service_name: app.service.name,
                 date: dataIso, // 'timestamptz'
                 status: app.status || 'agendado',
-                value: app.service.price || 0,
-                // Note: end_time, professional_name, notes removed to ensure compatibility with strict schema
+                value: parseFloat((app.service.price || 0).toString())
             };
 
             console.log('Enviando agendamento para Supabase:', payload);
