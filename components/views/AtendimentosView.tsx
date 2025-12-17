@@ -409,23 +409,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
         try {
             // 1. Construct ISO Date robustly
-            const dataIso = app.start.toISOString();
+            const dateIso = app.start.toISOString();
 
-            // 2. Prepare Payload with STRICT column mapping
-            // IMPORTANT: Removed 'end_time' and 'duration' as they are not columns in the DB.
+            // 2. Prepare Payload - STRICTLY CLEAN
+            // Explicitly defining the object prevents any stray properties
+            // Table only accepts: client_name, service_name, date, value, status
             const payload = {
                 client_name: app.client?.nome || 'Cliente Sem Nome',
                 service_name: app.service.name,
-                date: dataIso, // 'timestamptz'
-                status: app.status || 'agendado',
-                value: parseFloat((app.service.price || 0).toString())
+                date: dateIso,
+                value: typeof app.service.price === 'number' ? app.service.price : parseFloat(app.service.price || '0'),
+                status: app.status || 'agendado'
             };
 
-            console.log('Enviando agendamento para Supabase:', payload);
+            console.log('Payload Limpo para Supabase:', payload);
 
             // 3. Check for ID to decide Insert vs Update
+            // We assume IDs < 1 trillion are real DB IDs (Supabase usually uses int8, mock uses Date.now())
             if (app.id && typeof app.id === 'number' && app.id < 1000000000000) {
-                 // Update (assuming real DB ID)
                  const { error } = await supabase
                     .from('appointments')
                     .update(payload)
@@ -433,7 +434,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                  
                  if (error) throw error;
             } else {
-                // Insert New
                 const { error } = await supabase
                     .from('appointments')
                     .insert([payload]);
@@ -447,7 +447,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
         } catch (error: any) {
             console.error('Erro ao salvar no banco:', error);
-            alert(`Erro ao salvar no banco: ${error.message || 'Verifique sua conexão.'}`);
+            alert(`Erro ao salvar no banco: ${error.message || 'Verifique os logs.'}`);
         }
     };
     

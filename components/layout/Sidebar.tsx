@@ -6,6 +6,7 @@ import {
 import { ViewState, UserRole } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { hasAccess } from '../../utils/permissions';
+import { supabase } from '../../services/supabaseClient';
 
 interface SidebarProps {
     currentView: ViewState;
@@ -14,7 +15,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = '' }) => {
-    const { user, signOut } = useAuth();
+    const { user } = useAuth();
     
     const menuItems = [
         { id: 'dashboard', icon: Home, label: 'Página principal' },
@@ -42,26 +43,29 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     };
 
     const handleLogout = async () => {
-        try {
-            await signOut();
-            
-            // Salvar configuração do Supabase antes de limpar (se existir via EnvGate)
-            const sbUrl = localStorage.getItem('VITE_SUPABASE_URL');
-            const sbKey = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
-            
-            localStorage.clear();
-            
-            // Restaurar config para não bloquear o app
-            if (sbUrl && sbKey) {
-                localStorage.setItem('VITE_SUPABASE_URL', sbUrl);
-                localStorage.setItem('VITE_SUPABASE_ANON_KEY', sbKey);
-            }
+        // 1. Preservar configuração do Supabase (EnvGate) para não bloquear o app no próximo load
+        const sbUrl = localStorage.getItem('VITE_SUPABASE_URL');
+        const sbKey = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
 
-            // Forçar recarregamento para garantir estado limpo
-            window.location.href = '/';
+        // 2. Tenta avisar o Supabase (opcional, não bloqueante)
+        try {
+            await supabase.auth.signOut();
         } catch (error) {
-            console.error("Erro ao realizar logout:", error);
+            console.error("Erro silencioso ao sair do Supabase", error);
         }
+
+        // 3. Limpa TUDO do navegador
+        localStorage.clear();
+        sessionStorage.clear();
+
+        // 4. Restaura a configuração do EnvGate se existia
+        if (sbUrl && sbKey) {
+            localStorage.setItem('VITE_SUPABASE_URL', sbUrl);
+            localStorage.setItem('VITE_SUPABASE_ANON_KEY', sbKey);
+        }
+
+        // 5. Força Bruta: Redireciona via navegador (Refresh total)
+        window.location.href = '/login';
     };
 
     // Filter function based on permissions
