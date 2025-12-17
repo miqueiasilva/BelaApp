@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { services, professionals, mockOnlineConfig } from '../../data/mockData';
 import { 
     ChevronLeft, Calendar, Clock, Check, MapPin, Star, 
-    Search, Heart, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2, Plus, Minus, Trash2, Loader2
+    Search, Heart, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2, Plus, Minus, Trash2, Loader2, Mail, Phone, User
 } from 'lucide-react';
 import { format, addDays, isSameDay, addMinutes } from 'date-fns';
 import { pt } from 'date-fns/locale';
@@ -30,7 +30,10 @@ const PublicBookingPreview: React.FC = () => {
     const [selectedProfessional, setSelectedProfessional] = useState<number | null>(null);
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
-    const [clientForm, setClientForm] = useState({ name: '', phone: '', notes: '' });
+    
+    // Updated Form State to include Email
+    const [clientForm, setClientForm] = useState({ name: '', phone: '', email: '', notes: '' });
+    
     const [searchTerm, setSearchTerm] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const { user } = useAuth();
@@ -116,14 +119,27 @@ const PublicBookingPreview: React.FC = () => {
         );
     };
 
+    // Phone Mask Helper
+    const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        let value = e.target.value.replace(/\D/g, '');
+        if (value.length > 11) value = value.slice(0, 11);
+        
+        // Format (XX) XXXXX-XXXX
+        if (value.length > 2) {
+            value = `(${value.slice(0, 2)}) ${value.slice(2)}`;
+        }
+        if (value.length > 9) {
+            value = `${value.slice(0, 9)}-${value.slice(9)}`;
+        }
+        setClientForm(prev => ({ ...prev, phone: value }));
+    };
+
     const handleConfirmBooking = async () => {
         if (!clientForm.name || !clientForm.phone || !selectedTime) return;
         setIsSaving(true);
 
         try {
             // 1. Determine Resource ID (Professional Column)
-            // If user chose "Any" (-1) or null, default to column 1 (Jacilene) or distribute.
-            // Here we default to 1 to ensure it appears on the board.
             const resourceId = (selectedProfessional && selectedProfessional > 0) ? selectedProfessional : 1;
             
             // 2. Get Professional Name for display
@@ -136,17 +152,20 @@ const PublicBookingPreview: React.FC = () => {
 
             // 4. Construct Payload
             const serviceNames = selectedServicesList.map(s => s.name).join(' + ');
-            const notes = `WhatsApp: ${clientForm.phone}. ${clientForm.notes ? `Obs: ${clientForm.notes}` : ''}`;
+            
+            // Keep critical info in notes for backward compatibility
+            const notes = `WhatsApp: ${clientForm.phone}. Email: ${clientForm.email}. ${clientForm.notes ? `Obs: ${clientForm.notes}` : ''}`;
 
             const payload = {
                 client_name: clientForm.name,
+                client_phone: clientForm.phone, // New column
+                client_email: clientForm.email, // New column
                 service_name: serviceNames,
                 professional_name: professionalName,
                 resource_id: resourceId,
                 date: startDateTime.toISOString(),
                 value: totalStats.price,
-                status: 'agendado', // Default status for online bookings
-                // Store extra info in notes if DB doesn't have specific columns yet
+                status: 'agendado',
                 notes: notes 
             };
 
@@ -265,7 +284,7 @@ const PublicBookingPreview: React.FC = () => {
         <div className="min-h-screen bg-[#FAFAFA] font-sans pb-32 relative">
             <BackToAdminButton />
             
-            {/* --- HEADER (Reference Style) --- */}
+            {/* --- HEADER --- */}
             <header className="bg-white pt-6 pb-4 px-4 shadow-sm sticky top-0 z-20">
                 <div className="max-w-3xl mx-auto">
                     {step === 'service' ? (
@@ -300,7 +319,7 @@ const PublicBookingPreview: React.FC = () => {
                             <span className="font-semibold text-slate-800">
                                 {step === 'professional' && 'Escolha o Profissional'}
                                 {step === 'datetime' && 'Data e Horário'}
-                                {step === 'form' && 'Finalizar Agendamento'}
+                                {step === 'form' && 'Seus Dados'}
                             </span>
                             <div className="w-8"></div>
                         </div>
@@ -527,31 +546,51 @@ const PublicBookingPreview: React.FC = () => {
                         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
                             <h2 className="font-bold text-slate-800">Seus dados</h2>
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nome Completo</label>
-                                <input 
-                                    type="text" 
-                                    value={clientForm.name}
-                                    onChange={(e) => setClientForm({...clientForm, name: e.target.value})}
-                                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none bg-slate-50 focus:bg-white transition-all"
-                                    placeholder="Como gostaria de ser chamado(a)?"
-                                />
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nome Completo <span className="text-red-500">*</span></label>
+                                <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-3 focus-within:ring-2 focus-within:ring-orange-200 focus-within:border-orange-400 transition-all">
+                                    <User className="w-5 h-5 text-slate-400" />
+                                    <input 
+                                        type="text" 
+                                        value={clientForm.name}
+                                        onChange={(e) => setClientForm({...clientForm, name: e.target.value})}
+                                        className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
+                                        placeholder="Como gostaria de ser chamado(a)?"
+                                    />
+                                </div>
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">WhatsApp / Celular</label>
-                                <input 
-                                    type="tel" 
-                                    value={clientForm.phone}
-                                    onChange={(e) => setClientForm({...clientForm, phone: e.target.value})}
-                                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none bg-slate-50 focus:bg-white transition-all"
-                                    placeholder="(00) 00000-0000"
-                                />
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">WhatsApp / Celular <span className="text-red-500">*</span></label>
+                                <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-3 focus-within:ring-2 focus-within:ring-orange-200 focus-within:border-orange-400 transition-all">
+                                    <Phone className="w-5 h-5 text-slate-400" />
+                                    <input 
+                                        type="tel" 
+                                        value={clientForm.phone}
+                                        onChange={handlePhoneChange}
+                                        maxLength={15}
+                                        className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
+                                        placeholder="(00) 00000-0000"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">E-mail (Opcional)</label>
+                                <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-3 focus-within:ring-2 focus-within:ring-orange-200 focus-within:border-orange-400 transition-all">
+                                    <Mail className="w-5 h-5 text-slate-400" />
+                                    <input 
+                                        type="email" 
+                                        value={clientForm.email}
+                                        onChange={(e) => setClientForm({...clientForm, email: e.target.value})}
+                                        className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
+                                        placeholder="seu@email.com"
+                                    />
+                                </div>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Observações (Opcional)</label>
                                 <textarea 
                                     value={clientForm.notes}
                                     onChange={(e) => setClientForm({...clientForm, notes: e.target.value})}
-                                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none bg-slate-50 focus:bg-white h-24 resize-none transition-all"
+                                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none bg-slate-50 focus:bg-white h-24 resize-none transition-all placeholder:text-slate-400"
                                     placeholder="Tem alguma alergia ou preferência?"
                                 />
                             </div>
