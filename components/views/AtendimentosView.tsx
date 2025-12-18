@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { professionals as mockProfessionals, services as mockServicesMap } from '../../data/mockData';
+import { services as mockServicesMap } from '../../data/mockData';
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval } from 'date-fns';
 import { 
@@ -84,7 +84,7 @@ interface DynamicColumn {
     id: string | number;
     title: string;
     subtitle?: string;
-    avatarUrl?: string;
+    photo?: string; // New field for photos in header
     type: 'professional' | 'status' | 'payment' | 'date';
     data?: any; 
 }
@@ -160,9 +160,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     
     // Real Data States
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
-    const [dbProfessionals, setDbProfessionals] = useState<LegacyProfessional[]>([]);
+    const [resources, setResources] = useState<LegacyProfessional[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
-    const [visibleProfIds, setVisibleProfIds] = useState<number[]>([]);
+    const [visibleResourceIds, setVisibleResourceIds] = useState<number[]>([]);
     
     // View States
     const [viewType, setViewType] = useState<ViewType>('Profissional');
@@ -190,7 +190,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     // --- Data Persistence Logic (READ) ---
     
-    const fetchProfessionals = async () => {
+    const fetchResources = async () => {
         try {
             const { data, error } = await supabase
                 .from('professionals')
@@ -206,15 +206,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role
                 }));
-                setDbProfessionals(mapped);
-                setVisibleProfIds(mapped.map(p => p.id));
+                setResources(mapped);
+                setVisibleResourceIds(mapped.map(p => p.id));
                 if (mapped.length > 0) setActiveMobileProfId(mapped[0].id);
             }
         } catch (e) {
             console.error("Erro ao buscar profissionais:", e);
-            // Fallback for UI safety
-            setDbProfessionals(mockProfessionals);
-            setVisibleProfIds(mockProfessionals.map(p => p.id));
         }
     };
 
@@ -232,9 +229,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     const startTime = new Date(row.date); 
                     const endTime = new Date(startTime.getTime() + 30 * 60000);
 
-                    // Map to existing professionals state or fallback
-                    let matchedProf = dbProfessionals.find(p => p.id === Number(row.resource_id)) 
-                                    || dbProfessionals.find(p => p.name === row.professional_name)
+                    let matchedProf = resources.find(p => p.id === Number(row.resource_id)) 
+                                    || resources.find(p => p.name === row.professional_name)
                                     || { id: row.resource_id || 0, name: row.professional_name || 'Profissional', avatarUrl: '' };
 
                     return {
@@ -267,22 +263,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     };
 
-    // Initial load flow
     useEffect(() => {
-        const init = async () => {
-            await fetchProfessionals();
-        };
-        init();
+        fetchResources();
     }, []);
 
-    // Refresh appointments when professionals are ready or updated
     useEffect(() => {
-        if (dbProfessionals.length > 0) {
+        if (resources.length > 0) {
             fetchAppointments();
         }
-    }, [dbProfessionals]);
+    }, [resources]);
 
-    // --- Effects ---
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 768);
         handleResize();
@@ -300,7 +290,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         };
     }, []);
 
-    // --- Logic: Date Navigation ---
     const handleDateChange = (direction: number) => {
         if (periodType === 'Dia' || periodType === 'Lista' || periodType === 'Fila de Espera') {
             setCurrentDate(prev => addDays(prev, direction));
@@ -313,7 +302,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const handleResetDate = () => setCurrentDate(new Date());
 
-    // --- Logic: Dynamic Columns Generation ---
     const columns = useMemo<DynamicColumn[]>(() => {
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -329,11 +317,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
 
         if (viewType === 'Profissional') {
-            const profs = dbProfessionals.filter(p => visibleProfIds.includes(p.id));
+            const profs = resources.filter(p => visibleResourceIds.includes(p.id));
             return profs.map(p => ({
                 id: p.id,
                 title: p.name,
-                avatarUrl: p.avatarUrl,
+                photo: p.avatarUrl,
                 type: 'professional',
                 data: p
             }));
@@ -357,18 +345,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
 
         return [];
-    }, [viewType, periodType, currentDate, visibleProfIds, dbProfessionals]);
+    }, [viewType, periodType, currentDate, visibleResourceIds, resources]);
 
-    // --- Grid Styling Calculation ---
     const gridStyle = useMemo(() => {
         const colsCount = columns.length || 1;
-        const minWidth = isMobile ? '170px' : '180px';
+        const minWidth = isMobile ? '140px' : '180px';
         return {
             gridTemplateColumns: `60px repeat(${colsCount}, minmax(${minWidth}, 1fr))`
         };
     }, [columns.length, isMobile]);
 
-    // --- Logic: Filtering Appointments ---
     const filteredAppointments = useMemo(() => {
         let relevantApps = appointments;
 
@@ -392,7 +378,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         return relevantApps;
     }, [appointments, periodType, currentDate]);
 
-    // --- Logic: Assign Appointment to Column ---
     const getColumnForAppointment = (app: LegacyAppointment, cols: DynamicColumn[]) => {
         if (periodType === 'Semana') {
             return cols.find(c => isSameDay(app.start, c.data));
@@ -417,7 +402,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
     }), []);
 
-    // --- Handlers ---
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
     const handleMobileSidebarClick = (profId: number) => {
@@ -430,7 +414,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const handleSaveAppointment = async (app: LegacyAppointment) => {
         setModalState(null); 
-
         try {
             const dateIso = app.start.toISOString();
             const payload = {
@@ -488,7 +471,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const handleEditAppointment = (app: LegacyAppointment) => setModalState({ type: 'appointment', data: app });
 
     const handleNewAppointment = () => {
-        const prof = isMobile ? dbProfessionals.find(p => p.id === activeMobileProfId) : undefined;
+        const prof = isMobile ? resources.find(p => p.id === activeMobileProfId) : undefined;
         setModalState({ type: 'appointment', data: { start: currentDate, professional: prof } });
     };
 
@@ -618,7 +601,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     <>
                         <div className={`flex flex-col bg-slate-50 border-r border-slate-200 transition-all duration-300 ease-in-out z-20 ${isMobileProfSidebarOpen ? 'w-20' : 'w-0 overflow-hidden'}`}>
                             <div className="flex-1 overflow-y-auto scrollbar-hide py-4 flex flex-col items-center gap-4 w-20 pb-20">
-                                {dbProfessionals.map(prof => (
+                                {resources.map(prof => (
                                     <button 
                                         key={prof.id} 
                                         onClick={() => handleMobileSidebarClick(prof.id)} 
@@ -659,19 +642,23 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         <div className="relative min-h-full min-w-full">
                             {/* Headers */}
                             <div className="grid sticky top-0 z-40 shadow-sm border-b border-slate-200 bg-white" style={gridStyle}>
-                                <div className="border-r border-slate-200 h-16 bg-white sticky left-0 z-50"></div>
+                                <div className="border-r border-slate-200 h-24 bg-white sticky left-0 z-50"></div>
                                 {columns.map((col, index) => (
-                                    <div key={col.id} ref={(el) => { if(el) columnRefs.current.set(col.id, el) }} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-16 bg-slate-50/50">
+                                    <div key={col.id} ref={(el) => { if(el) columnRefs.current.set(col.id, el) }} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-24 bg-slate-50/50">
                                         {col.type === 'professional' && (
-                                            <div className="flex items-center gap-2">
-                                                {col.avatarUrl ? (
-                                                    <img src={col.avatarUrl} alt={col.title} className="w-8 h-8 rounded-full border border-slate-200 object-cover" />
+                                            <div className="flex flex-col items-center gap-2 py-2">
+                                                {col.photo ? (
+                                                    <img 
+                                                        src={col.photo} 
+                                                        alt={col.title} 
+                                                        className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" 
+                                                    />
                                                 ) : (
-                                                    <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
-                                                        <UserIcon size={14} className="text-slate-400" />
+                                                    <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center border-2 border-white shadow-sm">
+                                                        <UserIcon size={20} className="text-slate-400" />
                                                     </div>
                                                 )}
-                                                <span className="text-sm font-bold text-slate-800 truncate max-w-[120px]">{col.title}</span>
+                                                <span className="text-xs font-bold text-slate-700 truncate max-w-[120px]">{col.title}</span>
                                             </div>
                                         )}
                                         {col.type === 'status' && (
