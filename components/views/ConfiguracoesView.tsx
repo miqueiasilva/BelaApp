@@ -65,7 +65,7 @@ const ConfiguracoesView: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('professionals')
-                .select('*')
+                .select('*') // Busca todas as colunas incluindo photo_url
                 .order('name');
             
             if (error) throw error;
@@ -74,7 +74,7 @@ const ConfiguracoesView: React.FC = () => {
                 // Map database photo_url to avatarUrl used by components
                 const mapped = data.map((p: any) => ({
                     ...p,
-                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`
+                    avatarUrl: p.photo_url // Mantém apenas a URL real ou null
                 }));
                 setColaboradores(mapped);
             }
@@ -542,13 +542,20 @@ const ConfiguracoesView: React.FC = () => {
                                         onClick={() => setSelectedProfessionalId(colab.id)}
                                     >
                                         <div className="flex items-center gap-4">
-                                            {/* Avatar with Upload logic */}
+                                            {/* Avatar with Photo or Initials Logic */}
                                             <div className="relative group/avatar cursor-pointer" onClick={(e) => e.stopPropagation()}>
-                                                <img 
-                                                    src={colab.avatarUrl || "https://via.placeholder.com/150"} 
-                                                    alt={colab.name} 
-                                                    className="w-12 h-12 rounded-full object-cover border-2 border-orange-500 shadow-sm" 
-                                                />
+                                                {colab.photo_url ? (
+                                                    <img 
+                                                        src={colab.photo_url} 
+                                                        alt={colab.name} 
+                                                        className="w-12 h-12 rounded-full object-cover border-2 border-orange-500 shadow-sm" 
+                                                    />
+                                                ) : (
+                                                    <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold border-2 border-orange-500 shadow-sm">
+                                                        {colab.name.substring(0, 2).toUpperCase()}
+                                                    </div>
+                                                )}
+                                                
                                                 <input 
                                                     type="file" 
                                                     accept="image/*"
