@@ -1,333 +1,182 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Building2, Scissors, Users, Clock, Bell, DollarSign, 
-  Save, CheckCircle, CreditCard, AlertCircle 
+    Settings, User, Scissors, Clock, Bell, Store, Save, Plus, 
+    Trash2, Edit2, Search, Filter, ChevronLeft, Menu, ChevronRight, 
+    Camera, Loader2, MapPin, Phone, Mail, FileText, Coffee, CheckCircle,
+    CreditCard, DollarSign, Wallet, Smartphone
 } from 'lucide-react';
+import Card from '../shared/Card';
+import ToggleSwitch from '../shared/ToggleSwitch';
+import Toast, { ToastType } from '../shared/Toast';
+import { ServiceModal, ProfessionalModal } from '../modals/ConfigModals';
+import { LegacyService, LegacyProfessional } from '../../types';
+import ProfessionalDetail from './ProfessionalDetail';
 import { supabase } from '../../services/supabaseClient';
 
-// --- SUB-COMPONENTES DAS ABAS ---
+const DAYS_OF_WEEK = [
+    { key: 'monday', label: 'Segunda-feira' },
+    { key: 'tuesday', label: 'Terça-feira' },
+    { key: 'wednesday', label: 'Quarta-feira' },
+    { key: 'thursday', label: 'Quinta-feira' },
+    { key: 'friday', label: 'Sexta-feira' },
+    { key: 'saturday', label: 'Sábado' },
+    { key: 'sunday', label: 'Domingo' }
+];
 
-// 1. ABA ESTÚDIO
-const StudioTab = () => {
-  const [loading, setLoading] = useState(false);
-  const [settings, setSettings] = useState({
-    studio_name: '',
-    address: '',
-    phone: ''
-  });
+const ConfiguracoesView: React.FC = () => {
+    const [activeTab, setActiveTab] = useState('studio');
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    const fetch = async () => {
-      const { data } = await supabase.from('studio_settings').select('*').limit(1).single();
-      if (data) setSettings({ 
-        studio_name: data.studio_name || '', 
-        address: data.address || '', 
-        phone: data.phone || '' 
-      });
+    const showToast = (message: string, type: ToastType = 'success') => {
+        setToast({ message, type });
     };
-    fetch();
-  }, []);
 
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      const { data: existing } = await supabase.from('studio_settings').select('id').limit(1).single();
-      if (existing) {
-        await supabase.from('studio_settings').update(settings).eq('id', existing.id);
-      } else {
-        await supabase.from('studio_settings').insert([settings]);
-      }
-      alert('Dados do estúdio salvos!');
-    } catch (error) {
-      alert('Erro ao salvar.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 animate-in fade-in">
-      <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
-        <Building2 className="w-5 h-5 text-orange-500" /> Dados do Estúdio
-      </h3>
-      <div className="grid grid-cols-1 gap-6 max-w-2xl">
-        <div>
-          <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Nome Comercial</label>
-          <input type="text" value={settings.studio_name} onChange={e => setSettings({...settings, studio_name: e.target.value})} className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-orange-500" placeholder="Nome do seu negócio" />
-        </div>
-        <div>
-          <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Whatsapp / Telefone</label>
-          <input type="text" value={settings.phone} onChange={e => setSettings({...settings, phone: e.target.value})} className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-orange-500" placeholder="(00) 00000-0000" />
-        </div>
-        <div>
-          <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Endereço</label>
-          <input type="text" value={settings.address} onChange={e => setSettings({...settings, address: e.target.value})} className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-orange-500" placeholder="Endereço completo" />
-        </div>
-        <div className="flex justify-end pt-4">
-          <button onClick={handleSave} disabled={loading} className="bg-orange-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-600 transition-colors flex items-center gap-2">
-            <Save size={18} /> {loading ? 'Salvando...' : 'Salvar Informações'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// 2. ABA SERVIÇOS
-const ServicosTab = () => {
-  const [services, setServices] = useState<any[]>([]);
-  
-  useEffect(() => {
-    supabase.from('services').select('*').order('name').then(({ data }) => {
-      if (data) setServices(data);
+    const [studioSettings, setStudioSettings] = useState<any>({
+        id: null, studio_name: '', address: '', phone: '', general_notice: '', work_schedule: {}
     });
-  }, []);
 
-  return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 animate-in fade-in">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <Scissors className="w-5 h-5 text-orange-500" /> Catálogo de Serviços
-        </h3>
-        <span className="text-xs font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full">{services.length} cadastrados</span>
-      </div>
-      <div className="overflow-hidden border border-gray-200 rounded-lg">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 text-gray-500 font-bold uppercase text-xs">
-            <tr>
-              <th className="px-4 py-3">Serviço</th>
-              <th className="px-4 py-3 text-center">Duração</th>
-              <th className="px-4 py-3 text-right">Preço</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {services.map(service => (
-              <tr key={service.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium text-gray-800">{service.name}</td>
-                <td className="px-4 py-3 text-center text-gray-500">{service.duration} min</td>
-                <td className="px-4 py-3 text-right font-bold text-green-600">R$ {service.price?.toFixed(2)}</td>
-              </tr>
-            ))}
-             {services.length === 0 && <tr><td colSpan={3} className="p-6 text-center text-gray-400">Nenhum serviço encontrado.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-      <p className="text-xs text-gray-400 mt-4 text-center">Gerencie os serviços completos no menu "Serviços" lateral.</p>
-    </div>
-  );
-};
+    const [servicesData, setServicesData] = useState<LegacyService[]>([]);
+    const [colaboradores, setColaboradores] = useState<LegacyProfessional[]>([]);
+    const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
+    const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
 
-// 3. ABA HORÁRIOS
-const HorariosTab = () => {
-  const [loading, setLoading] = useState(false);
-  const days = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'];
-  const [schedule, setSchedule] = useState<any>({});
+    const [serviceModal, setServiceModal] = useState<{ open: boolean; data: LegacyService | null }>({ open: false, data: null });
+    const [profModal, setProfModal] = useState<{ open: boolean; data: LegacyProfessional | null }>({ open: false, data: null });
 
-  useEffect(() => {
-    const fetch = async () => {
-      const { data } = await supabase.from('studio_settings').select('work_schedule').limit(1).single();
-      if (data?.work_schedule) {
-        setSchedule(data.work_schedule);
-      } else {
-        const initial: any = {};
-        days.forEach(d => initial[d] = { active: true, start: '09:00', end: '18:00' });
-        setSchedule(initial);
-      }
+    const fetchPaymentMethods = async () => {
+        const { data, error } = await supabase.from('payment_methods').select('*').order('id');
+        if (data) setPaymentMethods(data);
     };
-    fetch();
-  }, []);
 
-  const handleChange = (day: string, field: string, value: any) => {
-    setSchedule((prev: any) => ({
-      ...prev,
-      [day]: { ...(prev[day] || { active: false, start: '09:00', end: '18:00' }), [field]: value }
-    }));
-  };
+    useEffect(() => {
+        const loadAll = async () => {
+            setIsLoading(true);
+            const { data: studio } = await supabase.from('studio_settings').select('*').limit(1).maybeSingle();
+            if (studio) setStudioSettings(studio);
 
-  const handleSave = async () => {
-    setLoading(true);
-    const { data: existing } = await supabase.from('studio_settings').select('id').limit(1).single();
-    if (existing) {
-      await supabase.from('studio_settings').update({ work_schedule: schedule }).eq('id', existing.id);
-    } else {
-      await supabase.from('studio_settings').insert([{ work_schedule: schedule }]);
-    }
-    setLoading(false);
-    alert('Horários atualizados!');
-  };
+            const { data: services } = await supabase.from('services').select('*').order('name');
+            if (services) setServicesData(services);
 
-  return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 animate-in fade-in">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-blue-500" /> Horário de Funcionamento
-        </h3>
-        <button onClick={handleSave} disabled={loading} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700">
-          {loading ? '...' : 'Salvar Grade'}
-        </button>
-      </div>
-      <div className="space-y-3">
-        {days.map(day => {
-          const cfg = schedule[day] || { active: false, start: '09:00', end: '18:00' };
-          return (
-            <div key={day} className={`flex items-center justify-between p-3 border rounded-lg ${cfg.active ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100'}`}>
-              <div className="flex items-center gap-3">
-                <input type="checkbox" checked={cfg.active} onChange={e => handleChange(day, 'active', e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
-                <span className={`capitalize font-bold w-24 ${cfg.active ? 'text-gray-700' : 'text-gray-400'}`}>{day}</span>
-              </div>
-              {cfg.active ? (
-                <div className="flex items-center gap-2">
-                  <input type="time" value={cfg.start} onChange={e => handleChange(day, 'start', e.target.value)} className="p-1 border rounded text-sm" />
-                  <span className="text-gray-400 text-xs">até</span>
-                  <input type="time" value={cfg.end} onChange={e => handleChange(day, 'end', e.target.value)} className="p-1 border rounded text-sm" />
+            const { data: profs } = await supabase.from('professionals').select('*').order('name');
+            if (profs) setColaboradores(profs);
+
+            await fetchPaymentMethods();
+            setIsLoading(false);
+        };
+        loadAll();
+    }, []);
+
+    const handleSaveFinance = async () => {
+        setIsSaving(true);
+        try {
+            const promises = paymentMethods.map(pm => 
+                supabase.from('payment_methods').update({ fee_percentage: pm.fee_percentage }).eq('id', pm.id)
+            );
+            await Promise.all(promises);
+            showToast("Taxas bancárias atualizadas!");
+        } catch (e) {
+            showToast("Erro ao salvar taxas", "error");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const renderFinanceTab = () => (
+        <div className="space-y-6 animate-in fade-in">
+            <Card title="Taxas e Formas de Pagamento" icon={<DollarSign size={18}/>}>
+                <div className="mb-6 p-4 bg-blue-50 rounded-2xl border border-blue-100 flex gap-3">
+                    <CreditCard className="text-blue-500 flex-shrink-0" size={20} />
+                    <p className="text-sm text-blue-700 leading-relaxed">
+                        Defina as taxas cobradas pela sua maquininha de cartão. Essas taxas serão descontadas das comissões se a opção estiver ativa no perfil do colaborador.
+                    </p>
                 </div>
-              ) : <span className="text-xs font-bold text-gray-400 uppercase">Fechado</span>}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
 
-// 4. ABA FINANCEIRO
-const FinanceiroTab = () => {
-  const [methods, setMethods] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+                <div className="space-y-4">
+                    {paymentMethods.map((pm, idx) => (
+                        <div key={pm.id} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:border-blue-200 transition-all shadow-sm">
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400">
+                                    {pm.name.toLowerCase().includes('cartao') || pm.name.toLowerCase().includes('credito') ? <CreditCard size={18}/> : <DollarSign size={18}/>}
+                                </div>
+                                <div>
+                                    <p className="font-bold text-slate-800 text-sm">{pm.name}</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Taxa Administrativa</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="relative">
+                                    <input 
+                                        type="number"
+                                        step="0.01"
+                                        value={pm.fee_percentage}
+                                        onChange={e => {
+                                            const newMethods = [...paymentMethods];
+                                            newMethods[idx].fee_percentage = parseFloat(e.target.value) || 0;
+                                            setPaymentMethods(newMethods);
+                                        }}
+                                        className="w-24 border border-slate-200 rounded-xl px-3 py-2 text-right font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none pr-8"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
 
-  useEffect(() => {
-    supabase.from('payment_methods').select('*').order('name').then(({ data }) => { if (data) setMethods(data); });
-  }, []);
-
-  const handleSave = async () => {
-    setLoading(true);
-    for (const m of methods) {
-      await supabase.from('payment_methods').update({ fee_percentage: parseFloat(m.fee_percentage) }).eq('id', m.id);
-    }
-    setLoading(false);
-    alert('Taxas salvas!');
-  };
-
-  return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 animate-in fade-in">
-      <div className="mb-6">
-        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><DollarSign className="w-5 h-5 text-green-600" /> Taxas de Cartão</h3>
-        <p className="text-sm text-gray-500">Defina as taxas para cálculo automático de comissões líquidas.</p>
-      </div>
-      <div className="space-y-4">
-        {methods.map(m => (
-          <div key={m.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white border rounded text-gray-500"><CreditCard size={20} /></div>
-              <div><p className="font-bold text-gray-800">{m.name}</p></div>
-            </div>
-            <div className="flex items-center gap-2">
-              <input type="number" step="0.01" value={m.fee_percentage} onChange={(e) => setMethods(methods.map(x => x.id === m.id ? { ...x, fee_percentage: e.target.value } : x))} className="w-20 p-2 text-right border border-gray-300 rounded font-bold text-sm outline-none" />
-              <span className="text-gray-500 font-bold">%</span>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-6 flex justify-end">
-        <button onClick={handleSave} disabled={loading} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 flex items-center gap-2">
-          <Save size={18} /> {loading ? 'Salvando...' : 'Salvar Taxas'}
-        </button>
-      </div>
-    </div>
-  );
-};
-
-// 5. ABA AVISOS
-const AvisosTab = () => {
-  const [notice, setNotice] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    supabase.from('studio_settings').select('general_notice').limit(1).single()
-      .then(({ data }) => { if (data) setNotice(data.general_notice || ''); });
-  }, []);
-
-  const handleSave = async () => {
-    setLoading(true);
-    const { data: existing } = await supabase.from('studio_settings').select('id').limit(1).single();
-    if (existing) {
-        await supabase.from('studio_settings').update({ general_notice: notice }).eq('id', existing.id);
-    } else {
-        await supabase.from('studio_settings').insert([{ general_notice: notice }]);
-    }
-    setLoading(false);
-    alert('Aviso publicado!');
-  };
-
-  return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 animate-in fade-in">
-       <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2"><Bell className="w-5 h-5 text-yellow-500" /> Mural de Avisos</h3>
-       <textarea rows={6} value={notice} onChange={e => setNotice(e.target.value)} className="w-full p-4 border border-gray-200 rounded-lg outline-none resize-none bg-yellow-50/30" placeholder="Escreva um comunicado para a equipe..." />
-       <div className="mt-4 flex justify-end">
-         <button onClick={handleSave} disabled={loading} className="bg-orange-500 text-white px-6 py-2 rounded-lg font-bold">
-           {loading ? 'Salvando...' : 'Publicar Aviso'}
-         </button>
-       </div>
-    </div>
-  );
-};
-
-// --- COMPONENTE PRINCIPAL ---
-
-const ConfiguracoesView = () => {
-  const [activeTab, setActiveTab] = useState('studio');
-
-  const menuItems = [
-    { id: 'studio', label: 'Estúdio', icon: Building2 },
-    { id: 'services', label: 'Serviços', icon: Scissors },
-    { id: 'collaborators', label: 'Colaboradores', icon: Users },
-    { id: 'finance', label: 'Financeiro', icon: DollarSign }, 
-    { id: 'schedule', label: 'Horários', icon: Clock },
-    { id: 'notices', label: 'Avisos', icon: Bell },
-  ];
-
-  return (
-    <div className="flex flex-col md:flex-row h-full gap-6">
-      <aside className="w-full md:w-64 bg-white rounded-lg shadow-sm border border-gray-100 p-4 h-fit">
-        <h2 className="text-xs font-bold text-gray-400 uppercase mb-4 px-2">Configurações</h2>
-        <nav className="space-y-1">
-          {menuItems.map(item => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                activeTab === item.id ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <item.icon size={18} /> {item.label}
-            </button>
-          ))}
-        </nav>
-      </aside>
-
-      <main className="flex-1 min-w-0">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">{menuItems.find(i => i.id === activeTab)?.label}</h1>
-          <p className="text-gray-500 text-sm">Gerencie as preferências globais do negócio</p>
+                <div className="mt-8 pt-4 border-t border-slate-100 flex justify-end">
+                    <button onClick={handleSaveFinance} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 transition-all disabled:opacity-50">
+                        {isSaving ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>}
+                        Salvar Taxas
+                    </button>
+                </div>
+            </Card>
         </div>
+    );
 
-        {activeTab === 'studio' && <StudioTab />}
-        {activeTab === 'finance' && <FinanceiroTab />}
-        {activeTab === 'services' && <ServicosTab />}
-        {activeTab === 'schedule' && <HorariosTab />}
-        {activeTab === 'notices' && <AvisosTab />}
-        
-        {activeTab === 'collaborators' && (
-           <div className="bg-white p-10 text-center rounded-lg border border-dashed border-gray-300">
-             <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-             <p className="text-gray-500 font-medium">Gestão de Equipe</p>
-             <p className="text-sm text-gray-400 mt-1">Utilize o menu "Colaboradores" na barra lateral esquerda principal para gerenciar perfis, comissões e permissões.</p>
-           </div>
-        )}
-      </main>
-    </div>
-  );
+    const tabs = [
+        { id: 'studio', label: 'Estúdio', icon: Store },
+        { id: 'services', label: 'Serviços', icon: Scissors },
+        { id: 'team', label: 'Colaboradores', icon: User },
+        { id: 'finance', label: 'Financeiro', icon: Wallet },
+        { id: 'schedule', label: 'Horários', icon: Clock },
+        { id: 'notifications', label: 'Avisos', icon: Bell },
+    ];
+
+    if (activeTab === 'team' && selectedProfessionalId) {
+        const selectedProf = colaboradores.find(p => p.id === selectedProfessionalId);
+        if (selectedProf) return <ProfessionalDetail professional={selectedProf} services={servicesData} onBack={() => setSelectedProfessionalId(null)} onSave={() => {}} />;
+    }
+
+    return (
+        <div className="flex h-full bg-slate-50 overflow-hidden relative font-sans">
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            <aside className={`bg-white border-r border-slate-200 flex-col flex-shrink-0 transition-all w-64 hidden md:flex`}>
+                <div className="p-6 border-b border-slate-100 flex items-center h-20">
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <Settings className="w-6 h-6 text-slate-400" /> Configurações
+                    </h2>
+                </div>
+                <nav className="flex-1 p-4 space-y-1">
+                    {tabs.map(tab => (
+                        <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === tab.id ? 'bg-orange-50 text-orange-600 shadow-sm border border-orange-100' : 'text-slate-500 hover:bg-slate-50'}`}>
+                            <tab.icon className="w-5 h-5" /> {tab.label}
+                        </button>
+                    ))}
+                </nav>
+            </aside>
+
+            <main className="flex-1 overflow-y-auto w-full">
+                <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
+                    <h3 className="text-2xl font-black text-slate-800 tracking-tight">{tabs.find(t => t.id === activeTab)?.label}</h3>
+                    {activeTab === 'finance' ? renderFinanceTab() : <div className="text-slate-400 italic">Configure as outras abas conforme necessário.</div>}
+                </div>
+            </main>
+        </div>
+    );
 };
 
 export default ConfiguracoesView;

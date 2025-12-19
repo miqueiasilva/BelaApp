@@ -1,141 +1,158 @@
 
 import React from 'react';
 import { 
-  Home, 
-  Calendar, 
-  Globe, 
-  MessageCircle, 
-  Repeat, 
-  Users, 
-  BarChart3, 
-  Settings, 
-  DollarSign, 
-  ShoppingCart, 
-  ClipboardList, 
-  Package, 
-  LogOut,
-  Box,
-  Layers
+    Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
+    Star, Package, Users, Settings, BarChart, Globe, Banknote, LogOut
 } from 'lucide-react';
+import { ViewState, UserRole } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
+import { hasAccess } from '../../utils/permissions';
 import { supabase } from '../../services/supabaseClient';
 
 interface SidebarProps {
-  activeView: string;
-  onNavigate: (view: string) => void;
-  isMobile?: boolean;
-  onCloseMobile?: () => void;
+    currentView: ViewState;
+    onNavigate: (view: ViewState) => void;
+    className?: string;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeView, onNavigate, isMobile, onCloseMobile }) => {
-  
-  const handleLogout = async () => {
-    const confirm = window.confirm("Deseja realmente sair do sistema?");
-    if (confirm) {
-      // 1. Desconecta do Supabase
-      await supabase.auth.signOut();
-      
-      // 2. Limpa qualquer lixo da memória local
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      // 3. Força o recarregamento da página para voltar ao Login
-      window.location.href = "/";
-    }
-  };
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = '' }) => {
+    const { user } = useAuth();
+    
+    const menuItems = [
+        { id: 'dashboard', icon: Home, label: 'Página principal' },
+        { id: 'agenda', icon: Calendar, label: 'Atendimentos' },
+        { id: 'agenda_online', icon: Globe, label: 'Agenda Online' },
+        { id: 'whatsapp', icon: MessageSquare, label: 'WhatsApp' },
+        { id: 'financeiro', icon: ArrowRightLeft, label: 'Fluxo de Caixa' },
+        { id: 'clientes', icon: Users, label: 'Clientes' },
+        { id: 'relatorios', icon: BarChart, label: 'Relatórios' },
+        { id: 'configuracoes', icon: Settings, label: 'Configurações' },
+    ];
 
-  const menuItems = [
-    { section: 'PRINCIPAL', items: [
-      { id: 'dashboard', label: 'Página principal', icon: Home },
-      { id: 'atendimentos', label: 'Atendimentos', icon: Calendar },
-      { id: 'agenda-online', label: 'Agenda Online', icon: Globe },
-      { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
-      { id: 'fluxo-caixa', label: 'Fluxo de Caixa', icon: Repeat },
-      { id: 'clientes', label: 'Clientes', icon: Users },
-      { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
-      { id: 'configuracoes', label: 'Configurações', icon: Settings },
-    ]},
-    { section: 'OPERACIONAL', items: [
-      { id: 'remuneracoes', label: 'Remunerações', icon: DollarSign },
-      { id: 'vendas', label: 'Vendas', icon: ShoppingCart },
-      { id: 'comandas', label: 'Comandas', icon: ClipboardList },
-      { id: 'caixa', label: 'Controle de Caixa', icon: Box }, 
-      { id: 'servicos', label: 'Serviços', icon: Layers }, // Ajustado ícone
-      { id: 'produtos', label: 'Produtos', icon: Package },
-    ]}
-  ];
+    const secondaryItems = [
+         { id: 'remuneracoes', icon: Banknote, label: 'Remunerações' },
+         { id: 'vendas', icon: ShoppingCart, label: 'Vendas' },
+         { id: 'comandas', icon: ClipboardList, label: 'Comandas' },
+         { id: 'caixa', icon: Archive, label: 'Controle de Caixa' },
+         { id: 'servicos', icon: Star, label: 'Serviços' },
+         { id: 'produtos', icon: Package, label: 'Produtos' },
+    ];
 
-  return (
-    <aside className={`
-      bg-white h-full flex flex-col border-r border-slate-200 transition-all duration-300 z-50
-      ${isMobile ? 'fixed inset-y-0 left-0 w-64 shadow-2xl' : 'w-64 relative'}
-    `}>
-      {/* Logo */}
-      <div className="p-6 flex items-center gap-3">
-        <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-orange-200 shadow-lg">
-          B
-        </div>
-        <div>
-          <h1 className="font-bold text-slate-800 text-lg leading-tight">BelaApp</h1>
-          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Studio Miqueias</p>
-        </div>
-        {isMobile && (
-           <button onClick={onCloseMobile} className="ml-auto text-slate-400 p-2">X</button>
-        )}
-      </div>
+    const handleNavigation = (e: React.MouseEvent, viewId: string) => {
+        e.preventDefault();
+        onNavigate(viewId as ViewState);
+    };
 
-      {/* Menu Scrollable */}
-      <nav className="flex-1 overflow-y-auto px-4 py-2 space-y-6 custom-scrollbar">
-        {menuItems.map((group, idx) => (
-          <div key={idx}>
-            <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-3 px-3">
-              {group.section}
-            </h3>
-            <div className="space-y-1">
-              {group.items.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    onNavigate(item.id);
-                    if (isMobile && onCloseMobile) onCloseMobile();
-                  }}
-                  className={`
-                    w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all duration-200
-                    ${activeView === item.id 
-                      ? 'bg-orange-50 text-orange-600 shadow-sm ring-1 ring-orange-100' 
-                      : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                    }
-                  `}
-                >
-                  <item.icon size={18} strokeWidth={2} className={activeView === item.id ? 'text-orange-500' : 'text-slate-400'} />
-                  {item.label}
+    const handleLogout = async () => {
+        const confirm = window.confirm("Deseja realmente sair do sistema?");
+        if (!confirm) return;
+
+        // 1. Preservar configuração do Supabase (EnvGate) para não quebrar a conexão do app
+        const sbUrl = localStorage.getItem('VITE_SUPABASE_URL');
+        const sbKey = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
+
+        try {
+            // 2. Logout do Supabase
+            await supabase.auth.signOut();
+            
+            // 3. Limpeza total de dados de sessão
+            localStorage.clear();
+            sessionStorage.clear();
+
+            // 4. Restaura EnvGate se existia, para que o próximo login funcione
+            if (sbUrl && sbKey) {
+                localStorage.setItem('VITE_SUPABASE_URL', sbUrl);
+                localStorage.setItem('VITE_SUPABASE_ANON_KEY', sbKey);
+            }
+
+            // 5. Redireciona para a raiz
+            window.location.href = '/'; 
+        } catch (error) {
+            console.error("Erro ao sair:", error);
+            // Em caso de erro crítico, tenta limpar localmente e forçar reload
+            window.location.href = '/';
+        }
+    };
+
+    // Filter function based on permissions
+    const filterItems = (items: typeof menuItems) => {
+        return items.filter(item => hasAccess(user?.papel as UserRole, item.id as ViewState));
+    };
+
+    const filteredMenu = filterItems(menuItems);
+    const filteredSecondary = filterItems(secondaryItems);
+
+    const renderItem = (item: any) => {
+        const Icon = item.icon;
+        const isActive = currentView === item.id;
+        
+        return (
+            <li key={item.label}>
+                <button 
+                    onClick={(e) => handleNavigation(e, item.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
+                    isActive 
+                    ? 'bg-orange-100 text-orange-600' 
+                    : 'text-slate-600 hover:bg-slate-200'
+                }`}>
+                    <Icon className="w-5 h-5" />
+                    <span>{item.label}</span>
                 </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </nav>
+            </li>
+        );
+    }
 
-      {/* Footer / User Profile */}
-      <div className="p-4 border-t border-slate-100 bg-slate-50/50">
-        <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-white hover:shadow-sm transition-all group cursor-pointer">
-          <div className="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border-2 border-white shadow-sm">
-             <img src="https://github.com/miqueiasilva.png" alt="User" className="w-full h-full object-cover opacity-90 group-hover:opacity-100" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-slate-700 truncate">Miqueias Cost...</p>
-            <p className="text-xs text-slate-400 truncate">Admin</p>
-          </div>
-          <button 
-            onClick={handleLogout}
-            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-            title="Sair do Sistema"
-          >
-            <LogOut size={18} />
-          </button>
-        </div>
-      </div>
-    </aside>
-  );
+    return (
+        <aside className={`bg-white border-r border-slate-200 flex flex-col h-full ${className}`}>
+            <div className="h-16 flex items-center px-4 gap-3 border-b border-slate-200 flex-shrink-0">
+                <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center font-bold text-white text-xl shadow-sm shadow-orange-200">
+                    B
+                </div>
+                <div>
+                    <h1 className="font-bold text-slate-800 text-md leading-tight">BelaApp</h1>
+                    <p className="text-[10px] text-slate-500 font-medium">Studio {user?.nome?.split(' ')[0] || 'Beleza'}</p>
+                </div>
+            </div>
+            
+            <nav className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-slate-200">
+                <div className="mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider px-3 mt-2">Principal</div>
+                <ul className="space-y-0.5">
+                    {filteredMenu.map(renderItem)}
+                </ul>
+
+                {filteredSecondary.length > 0 && (
+                    <>
+                        <div className="mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider px-3 mt-6">Operacional</div>
+                        <ul className="space-y-0.5">
+                            {filteredSecondary.map(renderItem)}
+                        </ul>
+                    </>
+                )}
+            </nav>
+
+            <div className="p-4 border-t border-slate-200 bg-slate-50">
+                <div className="flex items-center gap-3 w-full p-2 rounded-lg text-slate-600">
+                    <img 
+                        src={user?.avatar_url || `https://ui-avatars.com/api/?name=${user?.nome || 'User'}`} 
+                        alt="User" 
+                        className="w-9 h-9 rounded-full border border-slate-300"
+                    />
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-700 truncate">{user?.nome || 'Usuário'}</p>
+                        <p className="text-xs text-slate-500 capitalize">{user?.papel || 'Visitante'}</p>
+                    </div>
+                    
+                    <button 
+                        onClick={handleLogout}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer flex-shrink-0 z-10" 
+                        title="Sair do Sistema"
+                    >
+                        <LogOut size={20} />
+                    </button>
+                </div>
+            </div>
+        </aside>
+    );
 };
 
 export default Sidebar;
