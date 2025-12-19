@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { services as mockServicesMap } from '../../data/mockData';
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
@@ -84,7 +85,7 @@ interface DynamicColumn {
     id: string | number;
     title: string;
     subtitle?: string;
-    photo?: string; // New field for photos in header
+    photo?: string; 
     type: 'professional' | 'status' | 'payment' | 'date';
     data?: any; 
 }
@@ -192,9 +193,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     
     const fetchResources = async () => {
         try {
+            // FIX: Explicitly select photo_url to ensure professional images load correctly
             const { data, error } = await supabase
                 .from('professionals')
-                .select('*')
+                .select('id, name, photo_url, role')
                 .order('name');
             
             if (error) throw error;
@@ -404,6 +406,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
+    const handleShareAgenda = () => {
+        const link = window.location.href;
+        navigator.clipboard.writeText(link);
+        showToast('Link da agenda copiado para área de transferência!', 'info');
+    };
+
     const handleMobileSidebarClick = (profId: number) => {
         setActiveMobileProfId(profId);
         const el = columnRefs.current.get(profId);
@@ -518,11 +526,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     }
 
     return (
-        <div className="flex h-full bg-white relative flex-col">
+        <div className="flex h-full bg-white relative flex-col overflow-visible">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-            {/* HEADER */}
-            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30">
+            {/* HEADER - FIX: Increased padding and removed overflow-hidden */}
+            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-6 z-30">
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4">
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                         Atendimentos
@@ -530,24 +538,28 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     </h2>
                     <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
                         <div className="flex items-center gap-2 text-slate-500">
-                            <button className="p-2 hover:bg-slate-100 rounded-full transition-colors" title="Compartilhar"><Share2 size={20} /></button>
-                            <button className="p-2 hover:bg-slate-100 rounded-full transition-colors relative" title="Notificações">
-                                <Bell size={20} />
-                                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                            <button onClick={handleShareAgenda} className="p-2 hover:bg-slate-100 rounded-full transition-colors" title="Compartilhar">
+                                <Share2 size={20} />
                             </button>
-                            <button onClick={() => { handleResetDate(); fetchAppointments(); }} className="p-2 hover:bg-slate-100 rounded-full transition-colors" title="Atualizar / Hoje"><RotateCcw size={20} /></button>
+                            <button onClick={() => showToast('Nenhuma notificação nova.', 'info')} className="p-2 hover:bg-slate-100 rounded-full transition-colors relative" title="Notificações">
+                                <Bell size={20} />
+                                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+                            </button>
+                            <button onClick={() => { fetchAppointments(); showToast('Agenda atualizada.', 'success'); }} className="p-2 hover:bg-slate-100 rounded-full transition-colors" title="Atualizar">
+                                <RotateCcw size={20} className={isLoadingData ? 'animate-spin' : ''} />
+                            </button>
                         </div>
                         <div className="h-8 w-px bg-slate-200 mx-2 hidden md:block"></div>
                         <div className="flex items-center gap-2">
-                            <div className="relative" ref={periodDropdownRef}>
+                            <div className="relative z-[60]" ref={periodDropdownRef}>
                                 <button onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
                                     {periodType} <ChevronDown size={16} />
                                 </button>
                                 {isPeriodDropdownOpen && (
-                                    <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1">
-                                        <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase">Visualização</div>
+                                    <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-2xl z-[100] py-2 animate-in fade-in zoom-in-95">
+                                        <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Visualização</div>
                                         {['Dia', 'Semana', 'Mês', 'Lista', 'Fila de Espera'].map((item) => (
-                                            <button key={item} onClick={() => { setPeriodType(item as PeriodType); setIsPeriodDropdownOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-slate-50 ${periodType === item ? 'text-orange-600 font-semibold bg-orange-50' : 'text-slate-700'}`}>
+                                            <button key={item} onClick={() => { setPeriodType(item as PeriodType); setIsPeriodDropdownOpen(false); }} className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-slate-50 transition-colors ${periodType === item ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-slate-700'}`}>
                                                 {item === 'Dia' && <CalendarIcon size={16}/>}
                                                 {item === 'Semana' && <CalendarIcon size={16} className="rotate-90"/>}
                                                 {item === 'Mês' && <CalendarIcon size={16}/>}
@@ -559,33 +571,33 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     </div>
                                 )}
                             </div>
-                            <button onClick={handleNewAppointment} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg shadow-sm shadow-orange-200 transition-colors">Agendar</button>
+                            <button onClick={handleNewAppointment} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg shadow-orange-100 transition-all active:scale-95">Agendar</button>
                         </div>
                     </div>
                 </div>
 
                 <div className="flex flex-col md:flex-row items-center gap-4 md:gap-8">
                     <div className="flex items-center gap-2 w-full md:w-auto justify-between">
-                         <button onClick={handleResetDate} className="text-sm font-bold text-slate-600 hover:text-slate-900 px-2">HOJE</button>
+                         <button onClick={handleResetDate} className="text-sm font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 px-4 py-2 rounded-lg transition-colors">HOJE</button>
                         <div className="flex items-center gap-1">
-                             <button onClick={() => handleDateChange(-1)} className="p-1 hover:bg-slate-100 rounded-full text-slate-500"><ChevronLeft size={20} /></button>
-                             <button onClick={() => handleDateChange(1)} className="p-1 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight size={20} /></button>
+                             <button onClick={() => handleDateChange(-1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"><ChevronLeft size={20} /></button>
+                             <button onClick={() => handleDateChange(1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"><ChevronRight size={20} /></button>
                         </div>
                         <DateDisplay />
                     </div>
 
                     {(periodType === 'Dia' || periodType === 'Semana') && (
-                        <div className="relative" ref={viewDropdownRef}>
-                            <button onClick={() => setIsViewDropdownOpen(!isViewDropdownOpen)} className="flex items-center gap-2 text-sm font-bold text-slate-700 hover:text-slate-900 uppercase tracking-wide">
-                                {viewType === 'Profissional' ? 'Por Profissional' : viewType === 'Andamento' ? 'Por Andamento' : 'Por Pagamento'} <ChevronDown size={16} />
+                        <div className="relative z-[60]" ref={viewDropdownRef}>
+                            <button onClick={() => setIsViewDropdownOpen(!isViewDropdownOpen)} className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-800 uppercase tracking-widest bg-slate-50 px-3 py-2 rounded-lg transition-all">
+                                Agrupar: <span className="text-slate-900">{viewType === 'Profissional' ? 'Por Profissional' : viewType === 'Andamento' ? 'Por Andamento' : 'Por Pagamento'}</span> <ChevronDown size={14} />
                             </button>
                             {isViewDropdownOpen && (
-                                <div className="absolute left-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-2">
-                                    <div className="px-4 py-2 text-xs font-semibold text-slate-400">Agrupar por</div>
+                                <div className="absolute left-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-2xl z-[100] py-2 animate-in fade-in zoom-in-95">
+                                    <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Critério de Colunas</div>
                                     {['Profissional', 'Andamento', 'Pagamento'].map((item) => (
-                                        <button key={item} onClick={() => { setViewType(item as ViewType); setIsViewDropdownOpen(false); }} className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between hover:bg-slate-50 ${viewType === item ? 'text-slate-900 font-bold' : 'text-slate-600'}`}>
+                                        <button key={item} onClick={() => { setViewType(item as ViewType); setIsViewDropdownOpen(false); }} className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between hover:bg-slate-50 transition-colors ${viewType === item ? 'text-slate-900 font-bold bg-slate-50/50' : 'text-slate-600'}`}>
                                             <span>{item}</span>
-                                            {viewType === item && <div className="w-2 h-2 rounded-full bg-orange-500"></div>}
+                                            {viewType === item && <div className="w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]"></div>}
                                         </button>
                                     ))}
                                 </div>
@@ -612,13 +624,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                             {prof.avatarUrl ? (
                                                 <img src={prof.avatarUrl} alt={prof.name} className="w-full h-full rounded-full object-cover border-2 border-white" />
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center bg-slate-200 rounded-full">
-                                                    <UserIcon size={18} className="text-slate-400" />
+                                                <div className="w-full h-full flex items-center justify-center bg-orange-100 rounded-full font-bold text-orange-600 border-2 border-white text-xs">
+                                                    {prof.name.substring(0,2).toUpperCase()}
                                                 </div>
                                             )}
                                         </div>
                                         {activeMobileProfId === prof.id && (
-                                            <div className="absolute right-0 bottom-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                                            <div className="absolute right-0 bottom-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
                                         )}
                                     </button>
                                 ))}
@@ -626,10 +638,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         </div>
                         <button 
                             onClick={() => setIsMobileProfSidebarOpen(!isMobileProfSidebarOpen)}
-                            className="absolute z-30 top-1/2 -translate-y-1/2 bg-white border border-slate-200 rounded-r-lg p-1.5 shadow-md text-slate-500 hover:text-orange-500 transition-all"
+                            className="absolute z-30 top-1/2 -translate-y-1/2 bg-white border border-slate-200 rounded-r-xl p-2 shadow-lg text-slate-500 hover:text-orange-500 transition-all"
                             style={{ left: isMobileProfSidebarOpen ? '5rem' : '0' }}
                         >
-                            {isMobileProfSidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+                            {isMobileProfSidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
                         </button>
                     </>
                 )}
@@ -640,49 +652,52 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     {/* 1. TIMELINE GRID (Dia / Semana) */}
                     {(periodType === 'Dia' || periodType === 'Semana') && (
                         <div className="relative min-h-full min-w-full">
-                            {/* Headers */}
+                            {/* Headers - FIX: Consistent professional photos logic */}
                             <div className="grid sticky top-0 z-40 shadow-sm border-b border-slate-200 bg-white" style={gridStyle}>
                                 <div className="border-r border-slate-200 h-24 bg-white sticky left-0 z-50"></div>
                                 {columns.map((col, index) => (
-                                    <div key={col.id} ref={(el) => { if(el) columnRefs.current.set(col.id, el) }} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-24 bg-slate-50/50">
+                                    <div key={col.id} ref={(el) => { if(el) columnRefs.current.set(col.id, el) }} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-24 bg-slate-50/30">
                                         {col.type === 'professional' && (
-                                            <div className="flex flex-col items-center gap-2 py-2">
+                                            <div className="flex items-center gap-3 justify-center px-4 py-2 bg-white rounded-2xl border border-slate-200 shadow-sm min-w-[140px]">
                                                 {col.photo ? (
                                                     <img 
                                                         src={col.photo} 
                                                         alt={col.title} 
-                                                        className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" 
+                                                        className="w-10 h-10 rounded-full object-cover border-2 border-orange-100 shadow-sm" 
                                                     />
                                                 ) : (
-                                                    <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center border-2 border-white shadow-sm">
-                                                        <UserIcon size={20} className="text-slate-400" />
+                                                    <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold border-2 border-white shadow-sm text-sm">
+                                                        {col.title.substring(0, 2).toUpperCase()}
                                                     </div>
                                                 )}
-                                                <span className="text-xs font-bold text-slate-700 truncate max-w-[120px]">{col.title}</span>
+                                                <div className="min-w-0">
+                                                    <span className="text-xs font-bold text-slate-800 truncate block">{col.title}</span>
+                                                    <span className="text-[10px] text-slate-400 font-medium uppercase tracking-tighter">Colaborador</span>
+                                                </div>
                                             </div>
                                         )}
                                         {col.type === 'status' && (
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
                                                 <div className={`w-3 h-3 rounded-full ${
-                                                    col.id === 'agendado' ? 'bg-blue-400' : 
-                                                    col.id === 'confirmado' ? 'bg-teal-400' : 
-                                                    col.id === 'em_atendimento' ? 'bg-indigo-400' : 
-                                                    'bg-green-400'
+                                                    col.id === 'agendado' ? 'bg-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 
+                                                    col.id === 'confirmado' ? 'bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.5)]' : 
+                                                    col.id === 'em_atendimento' ? 'bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.5)]' : 
+                                                    'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]'
                                                 }`}></div>
-                                                <span className="text-sm font-bold text-slate-700">{col.title}</span>
+                                                <span className="text-sm font-bold text-slate-700 whitespace-nowrap">{col.title}</span>
                                             </div>
                                         )}
                                         {col.type === 'payment' && (
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
                                                 {col.id === 'pago' ? <CheckCircle className="w-5 h-5 text-green-500"/> : <DollarSign className="w-5 h-5 text-orange-500"/>}
-                                                <span className="text-sm font-bold text-slate-700">{col.title}</span>
+                                                <span className="text-sm font-bold text-slate-700 whitespace-nowrap">{col.title}</span>
                                             </div>
                                         )}
                                         {col.type === 'date' && (
-                                            <>
-                                                <span className={`text-xs uppercase font-bold ${isSameDay(col.data, new Date()) ? 'text-orange-600' : 'text-slate-500'}`}>{col.title}</span>
-                                                <span className={`text-lg font-bold ${isSameDay(col.data, new Date()) ? 'text-orange-600' : 'text-slate-800'}`}>{col.subtitle}</span>
-                                            </>
+                                            <div className="flex flex-col items-center">
+                                                <span className={`text-[10px] uppercase font-black tracking-widest ${isSameDay(col.data, new Date()) ? 'text-orange-600' : 'text-slate-400'}`}>{col.title}</span>
+                                                <span className={`text-xl font-black ${isSameDay(col.data, new Date()) ? 'text-orange-700' : 'text-slate-800'}`}>{col.subtitle}</span>
+                                            </div>
                                         )}
                                     </div>
                                 ))}
@@ -691,9 +706,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             {/* Grid Body */}
                             <div className="grid relative" style={gridStyle}>
                                 {/* Time Column */}
-                                <div className="border-r border-slate-200 bg-white sticky left-0 z-30">
+                                <div className="border-r border-slate-200 bg-white sticky left-0 z-30 shadow-md">
                                     {timeSlots.map(time => (
-                                        <div key={time} className="h-20 text-right pr-2 text-xs text-slate-400 font-medium relative pt-2">
+                                        <div key={time} className="h-20 text-right pr-3 text-[11px] text-slate-400 font-bold relative pt-2">
                                             <span className="-translate-y-1/2 block">{time}</span>
                                         </div>
                                     ))}
@@ -709,7 +724,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     return (
                                         <div 
                                             key={col.id} 
-                                            className={`relative border-r border-slate-200 bg-white min-h-[1600px] ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}
+                                            className={`relative border-r border-slate-200 min-h-[1600px] ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/10'}`}
                                             onContextMenu={(e) => handleContextMenu(e, col)}
                                             onClick={(e) => {
                                                 if (isMobile) {
@@ -728,7 +743,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                             }}
                                         >
                                             {/* Grid Lines */}
-                                            {timeSlots.map((_, i) => <div key={i} className="h-20 border-b border-slate-100"></div>)}
+                                            {timeSlots.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed"></div>)}
 
                                             {/* Appointments */}
                                             {colApps.map(app => {
@@ -740,24 +755,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                     key={app.id}
                                                     ref={(el) => { appointmentRefs.current.set(app.id, el); }}
                                                     onClick={(e) => { e.stopPropagation(); if (app.status !== 'bloqueado') setActiveAppointmentDetail(app); }}
-                                                    className={`absolute w-[95%] left-1/2 -translate-x-1/2 rounded-lg shadow-sm border leading-tight overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-[1.02] hover:z-10 ${getStatusColor(app.status)} ${isSmall ? 'p-0.5' : 'p-1.5'}`}
+                                                    className={`absolute w-[94%] left-1/2 -translate-x-1/2 rounded-2xl shadow-sm border leading-tight overflow-hidden cursor-pointer transition-all duration-300 hover:shadow-xl hover:scale-[1.01] hover:z-20 ${getStatusColor(app.status)} ${isSmall ? 'p-1' : 'p-2'}`}
                                                     style={getAppointmentStyle(app.start, app.end)}
                                                 >
-                                                    <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-lg"></div>
+                                                    <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-2 rounded-l-2xl"></div>
                                                     
-                                                    <div className={`flex flex-col h-full relative z-10 pl-2 pr-1 ${isSmall ? 'justify-center' : 'pt-0.5'}`}>
-                                                        <div className={`flex justify-between items-start ${isSmall ? 'mb-0' : 'mb-0.5'}`}>
-                                                            <span className={`font-bold bg-white/60 rounded text-slate-700 backdrop-blur-sm shadow-sm tracking-tight ${isSmall ? 'text-[9px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'}`}>
+                                                    <div className={`flex flex-col h-full relative z-10 pl-3 pr-1 ${isSmall ? 'justify-center' : 'pt-0.5'}`}>
+                                                        <div className={`flex justify-between items-start ${isSmall ? 'mb-0' : 'mb-1'}`}>
+                                                            <span className={`font-black bg-white/40 rounded-lg text-slate-800 backdrop-blur-sm shadow-sm tracking-tight ${isSmall ? 'text-[9px] px-1 py-0' : 'text-[10px] px-2 py-0.5'}`}>
                                                                 {format(app.start, 'HH:mm')}
                                                             </span>
-                                                            {app.notas && !isSmall && <FileText size={10} className="text-slate-500 ml-1 mt-0.5" />}
+                                                            {app.notas && !isSmall && <FileText size={12} className="text-slate-500/50 ml-1 mt-0.5" />}
                                                         </div>
 
                                                         <div className={`flex-1 min-h-0 flex flex-col ${isSmall ? 'justify-center' : 'justify-center'}`}>
-                                                            <p className={`font-extrabold text-slate-900 truncate ${isSmall ? 'text-[10px] leading-3' : 'text-sm leading-tight mb-0.5'}`}>
+                                                            <p className={`font-black text-slate-900 truncate ${isSmall ? 'text-[11px] leading-3' : 'text-sm leading-tight mb-0.5'}`}>
                                                                 {app.client ? app.client.nome : 'Bloqueio'}
                                                             </p>
-                                                            <p className={`font-medium text-slate-600 truncate flex items-center gap-1 ${isSmall ? 'text-[9px] leading-3' : 'text-[11px] leading-tight'}`}>
+                                                            <p className={`font-bold text-slate-600/80 truncate flex items-center gap-1 ${isSmall ? 'text-[9px] leading-3' : 'text-[11px] leading-tight'}`}>
                                                                 {app.service.name}
                                                             </p>
                                                         </div>
@@ -774,32 +789,40 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
                     {/* 2. LIST & WAITLIST VIEW */}
                     {(periodType === 'Lista' || periodType === 'Fila de Espera') && (
-                        <div className="p-6 max-w-4xl mx-auto">
+                        <div className="p-8 max-w-5xl mx-auto">
                              {filteredAppointments.length === 0 ? (
-                                <div className="text-center py-20 text-slate-400">
-                                    <List size={48} className="mx-auto mb-4 opacity-30" />
-                                    <p>Nenhum agendamento encontrado para este período.</p>
+                                <div className="text-center py-32 text-slate-300">
+                                    <List size={64} className="mx-auto mb-6 opacity-20" />
+                                    <p className="text-lg font-bold">Nenhum agendamento para este período.</p>
+                                    <button onClick={handleNewAppointment} className="mt-4 text-orange-500 font-bold hover:underline">Agendar Agora</button>
                                 </div>
                              ) : (
                                  <div className="space-y-4">
                                     {filteredAppointments
                                         .sort((a,b) => a.start.getTime() - b.start.getTime())
                                         .map(app => (
-                                        <div key={app.id} onClick={() => setActiveAppointmentDetail(app)} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-orange-300 transition-all cursor-pointer flex items-center justify-between">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-16 text-center">
-                                                    <p className="text-xl font-bold text-slate-800">{format(app.start, 'HH:mm')}</p>
-                                                    <p className="text-xs text-slate-500">{format(app.start, 'dd/MM')}</p>
+                                        <div key={app.id} onClick={() => setActiveAppointmentDetail(app)} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm hover:border-orange-200 hover:shadow-md transition-all cursor-pointer flex items-center justify-between group">
+                                            <div className="flex items-center gap-6">
+                                                <div className="w-20 text-center bg-slate-50 rounded-2xl p-2 group-hover:bg-orange-50 transition-colors">
+                                                    <p className="text-2xl font-black text-slate-800">{format(app.start, 'HH:mm')}</p>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{format(app.start, 'dd MMM', { locale: pt })}</p>
                                                 </div>
-                                                <div className="w-px h-10 bg-slate-200"></div>
+                                                <div className="w-px h-12 bg-slate-100"></div>
                                                 <div>
-                                                    <h4 className="font-bold text-slate-800">{app.client?.nome || 'Bloqueio'}</h4>
-                                                    <p className="text-sm text-slate-500">{app.service.name} • com {app.professional.name}</p>
+                                                    <h4 className="font-black text-slate-800 text-lg">{app.client?.nome || 'Horário Bloqueado'}</h4>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">{app.service.name}</span>
+                                                        <span className="text-slate-300">•</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <img src={app.professional.avatarUrl} className="w-5 h-5 rounded-full border border-white shadow-sm" alt="" />
+                                                            <span className="text-xs text-slate-500 font-medium">com {app.professional.name}</span>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-4">
-                                                <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize ${getStatusColor(app.status)}`}>{app.status.replace('_', ' ')}</span>
-                                                <div className="font-bold text-slate-700">R$ {app.service.price.toFixed(2)}</div>
+                                            <div className="flex items-center gap-6">
+                                                <span className={`px-4 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-wider ${getStatusColor(app.status)}`}>{app.status.replace('_', ' ')}</span>
+                                                <div className="font-black text-lg text-slate-700">R$ {app.service.price.toFixed(2)}</div>
                                             </div>
                                         </div>
                                     ))}
@@ -810,10 +833,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
                     {/* 3. MONTH VIEW */}
                     {periodType === 'Mês' && (
-                        <div className="p-4 h-full flex flex-col">
-                            <div className="grid grid-cols-7 gap-1 flex-1">
+                        <div className="p-6 h-full flex flex-col bg-white">
+                            <div className="grid grid-cols-7 gap-3 flex-1">
                                 {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
-                                    <div key={d} className="text-center py-2 text-sm font-bold text-slate-400 uppercase">{d}</div>
+                                    <div key={d} className="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{d}</div>
                                 ))}
                                 {(() => {
                                     const start = startOfMonth(currentDate);
@@ -823,20 +846,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     const blanks = Array.from({ length: startDay }, (_, i) => i);
 
                                     return [
-                                        ...blanks.map(b => <div key={`blank-${b}`} className="bg-slate-50/50 rounded-lg"></div>),
+                                        ...blanks.map(b => <div key={`blank-${b}`} className="bg-slate-50/30 rounded-3xl border border-transparent"></div>),
                                         ...daysInMonth.map(day => {
                                             const dayApps = filteredAppointments.filter(a => isSameDay(a.start, day));
                                             const isToday = isSameDay(day, new Date());
                                             return (
-                                                <div key={day.toISOString()} className={`bg-white border rounded-lg p-2 min-h-[100px] flex flex-col gap-1 transition-shadow hover:shadow-md ${isToday ? 'border-orange-300 ring-1 ring-orange-100' : 'border-slate-200'}`}>
-                                                    <span className={`text-sm font-bold mb-1 ${isToday ? 'text-orange-600' : 'text-slate-700'}`}>{format(day, 'dd')}</span>
+                                                <div key={day.toISOString()} className={`bg-white border rounded-3xl p-3 min-h-[120px] flex flex-col gap-1.5 transition-all hover:shadow-xl hover:-translate-y-1 ${isToday ? 'border-orange-300 ring-4 ring-orange-50 shadow-lg' : 'border-slate-100 shadow-sm'}`}>
+                                                    <span className={`text-lg font-black mb-1 ${isToday ? 'text-orange-600' : 'text-slate-800'}`}>{format(day, 'dd')}</span>
                                                     {dayApps.slice(0, 3).map(app => (
-                                                        <div key={app.id} className="text-[10px] truncate px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                                                        <div key={app.id} className="text-[9px] font-bold truncate px-2 py-1 rounded-xl bg-orange-50 text-orange-700 border border-orange-100 shadow-sm">
                                                             {format(app.start, 'HH:mm')} {app.client?.nome.split(' ')[0]}
                                                         </div>
                                                     ))}
                                                     {dayApps.length > 3 && (
-                                                        <div className="text-[10px] text-slate-400 text-center font-medium">
+                                                        <div className="text-[9px] font-black text-slate-400 text-center py-1 bg-slate-50 rounded-xl mt-auto">
                                                             +{dayApps.length - 3} mais
                                                         </div>
                                                     )}
@@ -874,10 +897,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             )}
 
              {/* JaciBot Floating Action Button */}
-            <div className="fixed md:absolute bottom-6 right-6 z-30">
-              <button onClick={() => setIsJaciBotOpen(true)} className="w-12 h-12 md:w-14 md:h-14 bg-orange-500 rounded-full shadow-lg flex items-center justify-center text-white hover:bg-orange-600 transition ring-2 ring-white hover:scale-110 duration-200 shadow-orange-200">
-                <MessageSquare className="w-6 h-6 md:w-7 md:h-7" />
-                <span className="absolute -top-1 -right-1 w-4 h-4 md:w-5 md:h-5 bg-red-500 text-white text-[10px] md:text-xs rounded-full flex items-center justify-center border-2 border-white">3</span>
+            <div className="fixed md:absolute bottom-8 right-8 z-[70]">
+              <button onClick={() => setIsJaciBotOpen(true)} className="w-14 h-14 md:w-16 md:h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:bg-orange-600 transition-all hover:scale-110 active:scale-95 duration-200 shadow-orange-300 ring-4 ring-white">
+                <MessageSquare className="w-7 h-7 md:w-8 md:h-8" />
+                <span className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white text-[11px] font-black rounded-full flex items-center justify-center border-4 border-white shadow-lg">3</span>
               </button>
             </div>
         </div>
