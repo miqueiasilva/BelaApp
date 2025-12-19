@@ -30,8 +30,8 @@ const PERMISSION_GROUPS = {
             { key: 'view_sales', label: 'Ver extrato de vendas' },
             { key: 'perform_checkout', label: 'Finalizar comandas/pagamentos' },
             { key: 'give_discount', label: 'Aplicar descontos em vendas' },
-            { key: 'sell_products', label: 'Pode vender produtos' }, // Nova permissão
-            { key: 'sell_packages', label: 'Pode vender pacotes' },   // Nova permissão
+            { key: 'sell_products', label: 'Pode vender produtos' }, 
+            { key: 'sell_packages', label: 'Pode vender pacotes' },   
             { key: 'view_commissions', label: 'Ver próprio relatório de comissão' }
         ]
     },
@@ -81,7 +81,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             if (data) setAllServices(data as any);
         };
 
-        // Normalização de dados JSONB e colunas novas
         const normalized = {
             ...initialProf,
             cpf: (initialProf as any).cpf || '',
@@ -112,27 +111,30 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
     // --- Handlers ---
     const handleSubmit = async () => {
+        if (loading) return;
         setLoading(true);
+        
         try {
+            // CRÍTICO: Tratamento de strings vazias para colunas do tipo DATE e JSONB
             const payload = {
-                name: prof.name,
-                role: prof.role,
-                phone: prof.phone,
-                email: prof.email,
-                active: prof.active,
-                online_booking: prof.onlineBooking,
-                pix_key: prof.pixKey,
-                commission_rate: prof.commissionRate,
-                // Novas colunas de dados pessoais
-                cpf: prof.cpf,
-                birth_date: prof.birth_date,
+                name: prof.name || '',
+                role: prof.role || '',
+                phone: prof.phone || '',
+                email: prof.email || '',
+                active: !!prof.active,
+                online_booking: !!prof.onlineBooking,
+                pix_key: prof.pixKey || '',
+                commission_rate: Number(prof.commissionRate) || 0,
+                // Dados Pessoais: Enviar NULL se estiver vazio para evitar erro de tipo no SQL
+                cpf: prof.cpf ? prof.cpf.trim() : null,
+                birth_date: prof.birth_date && prof.birth_date !== "" ? prof.birth_date : null,
                 // Colunas JSONB
-                permissions: prof.permissions,
-                services_enabled: prof.services_enabled,
-                commission_config: prof.commission_config,
-                work_schedule: prof.work_schedule,
-                notification_settings: prof.notification_settings,
-                photo_url: prof.avatarUrl
+                permissions: prof.permissions || {},
+                services_enabled: prof.services_enabled || [],
+                commission_config: prof.commission_config || {},
+                work_schedule: prof.work_schedule || {},
+                notification_settings: prof.notification_settings || {},
+                photo_url: prof.avatarUrl || null
             };
 
             const { error } = await supabase
@@ -140,14 +142,22 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 .update(payload)
                 .eq('id', prof.id);
 
-            if (error) throw error;
+            if (error) {
+                console.error("Supabase Update Error:", error);
+                throw error;
+            }
 
             alert("Configurações atualizadas com sucesso! ✅");
             onSave(prof);
             onBack();
         } catch (error: any) {
-            alert(`Erro ao salvar: ${error.message}`);
+            console.error("Erro completo ao salvar:", error);
+            alert(`Erro ao salvar colaborador: ${error.message || 'Verifique sua conexão ou dados digitados.'}`);
+            // Garantia de reset do loading em caso de catch
+            setLoading(false);
         } finally {
+            // O loading é resetado aqui apenas se o fluxo terminou (sucesso ou erro tratado)
+            // No caso de sucesso, o onBack() desmonta o componente, então o reset é opcional
             setLoading(false);
         }
     };
@@ -203,10 +213,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         </div>
     );
 
-    // Sidebar Summary Card (Referência Salão99)
     const ProfileSummaryCard = () => (
         <Card className="lg:col-span-1 flex flex-col p-0 overflow-hidden border-slate-200">
-            {/* Header com Foto e Nome */}
             <div className="bg-slate-50/50 p-6 flex flex-col items-center text-center border-b border-slate-100">
                 <div className="relative group cursor-pointer mb-4" onClick={() => fileInputRef.current?.click()}>
                     <div className="w-28 h-28 rounded-full border-4 border-white shadow-md overflow-hidden bg-slate-200">
@@ -228,7 +236,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 </div>
             </div>
 
-            {/* Atribuições (Atendimentos, Produtos, Pacotes) */}
             <div className="p-6 space-y-3 border-b border-slate-100 bg-white">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Atribuições Ativas</p>
                 
@@ -263,7 +270,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 )}
             </div>
 
-            {/* Informações Resumidas */}
             <div className="p-6 space-y-4 bg-white">
                 <div className="flex items-start gap-3">
                     <Briefcase className="w-4 h-4 text-slate-400 mt-0.5" />
@@ -299,7 +305,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
     return (
         <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans">
-            {/* Header Fixo */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-20 shadow-sm">
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"><ChevronLeft size={24} /></button>
@@ -311,10 +316,10 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 <button 
                     onClick={handleSubmit}
                     disabled={loading}
-                    className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-orange-100 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                    className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-orange-100 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
                 >
                     {loading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                    Salvar Alterações
+                    {loading ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
             </header>
 
@@ -322,13 +327,9 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 <div className="max-w-6xl mx-auto">
                     <Tabs />
 
-                    {/* ABA PERFIL */}
                     {activeTab === 'perfil' && (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-2">
-                            
-                            {/* Card de Resumo (Padrao Salão99) */}
                             <ProfileSummaryCard />
-
                             <div className="lg:col-span-2 space-y-6">
                                 <Card title="Informações de Contato">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -396,7 +397,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
-                    {/* ABA SERVICOS */}
                     {activeTab === 'servicos' && (
                         <div className="space-y-6 animate-in fade-in">
                             <Card>
@@ -446,7 +446,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
-                    {/* ABA COMISSÕES */}
                     {activeTab === 'comissoes' && (
                         <div className="space-y-6 animate-in slide-in-from-right-4">
                             <Card title="Regras de Comissionamento">
@@ -515,7 +514,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
-                    {/* ABA PERMISSOES */}
                     {activeTab === 'permissoes' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
                             {Object.entries(PERMISSION_GROUPS).map(([key, group]) => (
@@ -544,7 +542,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
-                    {/* ABA HORARIOS */}
                     {activeTab === 'horarios' && (
                         <Card title="Grade de Disponibilidade" icon={<Clock size={20} />} className="animate-in fade-in border-slate-200">
                             <div className="space-y-4">
@@ -585,7 +582,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </Card>
                     )}
 
-                    {/* ABA NOTIFICACOES */}
                     {activeTab === 'avisos' && (
                         <div className="max-w-2xl mx-auto space-y-6 animate-in slide-in-from-top-4">
                             <Card title="Alertas e Comunicados" icon={<Bell size={20} />} className="border-slate-200">
@@ -613,7 +609,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 </div>
             </main>
             
-            {/* Input oculto para Upload */}
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleUploadFoto} />
         </div>
     );
