@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
@@ -43,29 +44,34 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     };
 
     const handleLogout = async () => {
-        // 1. Preservar configuração do Supabase (EnvGate)
+        const confirm = window.confirm("Deseja realmente sair do sistema?");
+        if (!confirm) return;
+
+        // 1. Preservar configuração do Supabase (EnvGate) para não quebrar a conexão do app
         const sbUrl = localStorage.getItem('VITE_SUPABASE_URL');
         const sbKey = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
 
-        // 2. Logout do Supabase (Tenta, mas não bloqueia se falhar)
         try {
+            // 2. Logout do Supabase
             await supabase.auth.signOut();
+            
+            // 3. Limpeza total de dados de sessão
+            localStorage.clear();
+            sessionStorage.clear();
+
+            // 4. Restaura EnvGate se existia, para que o próximo login funcione
+            if (sbUrl && sbKey) {
+                localStorage.setItem('VITE_SUPABASE_URL', sbUrl);
+                localStorage.setItem('VITE_SUPABASE_ANON_KEY', sbKey);
+            }
+
+            // 5. Redireciona para a raiz
+            window.location.href = '/'; 
         } catch (error) {
-            console.error("Erro no signOut:", error);
+            console.error("Erro ao sair:", error);
+            // Em caso de erro crítico, tenta limpar localmente e forçar reload
+            window.location.href = '/';
         }
-
-        // 3. Limpeza total
-        localStorage.clear();
-        sessionStorage.clear();
-
-        // 4. Restaura EnvGate se necessário
-        if (sbUrl && sbKey) {
-            localStorage.setItem('VITE_SUPABASE_URL', sbUrl);
-            localStorage.setItem('VITE_SUPABASE_ANON_KEY', sbKey);
-        }
-
-        // 5. Força recarregamento para a tela de login
-        window.location.href = '/login';
     };
 
     // Filter function based on permissions
