@@ -5,7 +5,6 @@ import { Loader2, Lock, Mail, Eye, EyeOff, ArrowRight, CheckCircle2, XCircle, Us
 
 type AuthMode = 'login' | 'register' | 'forgot';
 
-// Google Icon SVG
 const GoogleIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -21,7 +20,7 @@ const LoginView: React.FC = () => {
     // Form State
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [name, setName] = useState(''); // For registration
+    const [name, setName] = useState('');
     
     // UI State
     const [mode, setMode] = useState<AuthMode>('login');
@@ -49,7 +48,7 @@ const LoginView: React.FC = () => {
             if (error) throw error;
         } catch (err: any) {
             console.error(err);
-            setError("Erro ao conectar com Google. Verifique a configuração do Supabase.");
+            setError("Erro ao conectar com Google. Verifique a configuração.");
             setIsLoading(false);
         }
     };
@@ -67,95 +66,65 @@ const LoginView: React.FC = () => {
             } else if (mode === 'register') {
                 const { error } = await signUp(email, password, name);
                 if (error) throw error;
-                setSuccessMessage("Conta criada! Verifique seu e-mail para confirmar.");
+                setSuccessMessage("Conta criada! Verifique seu e-mail.");
             } else if (mode === 'forgot') {
                 const { error } = await resetPassword(email);
                 if (error) throw error;
-                setSuccessMessage("Link de recuperação enviado para o e-mail.");
+                setSuccessMessage("Link de recuperação enviado.");
             }
         } catch (err: any) {
-            console.error(err);
             setError(err.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : err.message);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const getTitle = () => {
-        switch (mode) {
-            case 'register': return 'Criar Conta';
-            case 'forgot': return 'Recuperar Senha';
-            default: return 'BelaApp';
-        }
-    };
-
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-900 relative overflow-hidden">
-            {/* Background */}
-            <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
-                <div className="absolute -top-32 -left-32 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-                <div className="absolute top-0 -right-32 w-96 h-96 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-                <div className="absolute -bottom-32 left-20 w-96 h-96 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 relative overflow-hidden font-sans">
+            {/* Subtle Background Decoration */}
+            <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
+                <div className="absolute -top-24 -left-24 w-96 h-96 bg-orange-100 rounded-full opacity-50 blur-3xl"></div>
+                <div className="absolute bottom-0 right-0 w-80 h-80 bg-slate-200 rounded-full opacity-30 blur-3xl"></div>
             </div>
 
-            <div className="w-full max-w-md p-8 relative z-10">
-                <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8">
+            <div className="w-full max-w-[420px] p-6 relative z-10 animate-in fade-in zoom-in-95 duration-500">
+                <div className="bg-white rounded-[32px] shadow-2xl shadow-slate-200 border border-slate-100 p-10">
                     
-                    <div className="text-center mb-6">
-                        <div className="w-16 h-16 bg-gradient-to-tr from-orange-400 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                            <span className="text-white font-bold text-3xl">B</span>
+                    <div className="text-center mb-8">
+                        <div className="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-orange-200 rotate-3">
+                            <span className="text-white font-black text-4xl">B</span>
                         </div>
-                        <h1 className="text-2xl font-bold text-white mb-2">{getTitle()}</h1>
-                        {mode === 'login' && <p className="text-slate-300 text-sm">Gestão Inteligente para Estúdios de Beleza</p>}
+                        <h1 className="text-3xl font-black text-slate-800 tracking-tight">
+                            {mode === 'login' ? 'Bem-vindo!' : mode === 'register' ? 'Começar agora' : 'Recuperar'}
+                        </h1>
+                        <p className="text-slate-400 text-sm mt-2 font-medium">BelaApp — Gestão Inteligente</p>
                     </div>
 
-                    <div className="space-y-5">
+                    <div className="space-y-6">
                         {error && (
-                            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-xl text-red-200 text-sm flex items-center gap-2">
-                                <XCircle className="w-4 h-4 flex-shrink-0" />
+                            <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-xs font-bold flex items-center gap-3">
+                                <XCircle className="w-4 h-4" />
                                 {error}
                             </div>
                         )}
                         {successMessage && (
-                            <div className="p-3 bg-green-500/10 border border-green-500/50 rounded-xl text-green-200 text-sm flex items-center gap-2">
-                                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                            <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-green-600 text-xs font-bold flex items-center gap-3">
+                                <CheckCircle2 className="w-4 h-4" />
                                 {successMessage}
                             </div>
-                        )}
-
-                        {/* Google Button */}
-                        {(mode === 'login' || mode === 'register') && (
-                            <>
-                                <button
-                                    type="button"
-                                    onClick={handleGoogleLogin}
-                                    disabled={isLoading}
-                                    className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-bold py-3.5 rounded-xl hover:bg-slate-50 transition-all shadow-sm active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-                                >
-                                    {isLoading ? <Loader2 className="animate-spin w-5 h-5 text-slate-400"/> : <GoogleIcon />}
-                                    <span>{mode === 'login' ? 'Entrar com Google' : 'Cadastrar com Google'}</span>
-                                </button>
-
-                                <div className="relative flex items-center py-2">
-                                    <div className="flex-grow border-t border-slate-600/50"></div>
-                                    <span className="flex-shrink-0 mx-4 text-xs font-semibold text-slate-400 uppercase">ou via e-mail</span>
-                                    <div className="flex-grow border-t border-slate-600/50"></div>
-                                </div>
-                            </>
                         )}
 
                         <form onSubmit={handleSubmit} className="space-y-4">
                             {mode === 'register' && (
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold text-slate-300 uppercase ml-1">Nome</label>
-                                    <div className="relative">
-                                        <User className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
+                                    <div className="relative group">
+                                        <User className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-300 group-focus-within:text-orange-500 transition-colors" />
                                         <input
                                             type="text"
                                             value={name}
                                             onChange={(e) => setName(e.target.value)}
-                                            className="block w-full pl-10 pr-3 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
-                                            placeholder="Seu Nome"
+                                            className="block w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                                            placeholder="Seu Nome Completo"
                                             required={mode === 'register'}
                                         />
                                     </div>
@@ -163,14 +132,13 @@ const LoginView: React.FC = () => {
                             )}
 
                             <div className="space-y-1">
-                                <label className="text-xs font-semibold text-slate-300 uppercase ml-1">E-mail</label>
-                                <div className="relative">
-                                    <Mail className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
+                                <div className="relative group">
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-300 group-focus-within:text-orange-500 transition-colors" />
                                     <input
                                         type="email"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
-                                        className="block w-full pl-10 pr-3 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                                        className="block w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
                                         placeholder="seu@email.com"
                                         required
                                     />
@@ -179,22 +147,21 @@ const LoginView: React.FC = () => {
 
                             {(mode === 'login' || mode === 'register') && (
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold text-slate-300 uppercase ml-1">Senha</label>
-                                    <div className="relative">
-                                        <Lock className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
+                                    <div className="relative group">
+                                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-300 group-focus-within:text-orange-500 transition-colors" />
                                         <input
                                             type={showPassword ? "text" : "password"}
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
-                                            className="block w-full pl-10 pr-10 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
-                                            placeholder="••••••"
+                                            className="block w-full pl-12 pr-12 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                                            placeholder="••••••••"
                                             required
                                             minLength={6}
                                         />
                                         <button
                                             type="button"
                                             onClick={() => setShowPassword(!showPassword)}
-                                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white"
+                                            className="absolute inset-y-0 right-4 flex items-center text-slate-300 hover:text-slate-500"
                                         >
                                             {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                                         </button>
@@ -203,8 +170,8 @@ const LoginView: React.FC = () => {
                             )}
 
                             {mode === 'login' && (
-                                <div className="flex justify-end text-sm">
-                                    <button type="button" onClick={() => handleModeChange('forgot')} className="text-orange-400 hover:text-orange-300">
+                                <div className="flex justify-end pr-2">
+                                    <button type="button" onClick={() => handleModeChange('forgot')} className="text-orange-600 text-xs font-bold hover:underline">
                                         Esqueceu a senha?
                                     </button>
                                 </div>
@@ -213,33 +180,49 @@ const LoginView: React.FC = () => {
                             <button
                                 type="submit"
                                 disabled={isLoading}
-                                className="w-full flex justify-center items-center gap-2 py-3.5 px-4 rounded-xl shadow-lg text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 transition-all active:scale-95 disabled:opacity-70"
+                                className="w-full flex justify-center items-center gap-3 py-4 px-6 rounded-2xl shadow-xl shadow-orange-100 text-sm font-black text-white bg-orange-500 hover:bg-orange-600 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed uppercase tracking-wider"
                             >
                                 {isLoading ? (
                                     <Loader2 className="animate-spin h-5 w-5" />
                                 ) : (
                                     <>
-                                        {mode === 'login' && <>Entrar <ArrowRight className="h-5 w-5" /></>}
-                                        {mode === 'register' && <>Criar Conta <CheckCircle2 className="h-5 w-5" /></>}
-                                        {mode === 'forgot' && <>Enviar Link <Send className="h-4 w-4" /></>}
+                                        {mode === 'login' ? 'Entrar agora' : mode === 'register' ? 'Criar Conta' : 'Enviar Link'}
+                                        <ArrowRight className="h-5 w-5" />
                                     </>
                                 )}
                             </button>
                         </form>
+
+                        <div className="relative flex items-center py-2">
+                            <div className="flex-grow border-t border-slate-100"></div>
+                            <span className="flex-shrink-0 mx-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">ou</span>
+                            <div className="flex-grow border-t border-slate-100"></div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={handleGoogleLogin}
+                            disabled={isLoading}
+                            className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-bold py-4 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm active:scale-[0.98] disabled:opacity-70"
+                        >
+                            <GoogleIcon />
+                            <span className="text-sm">Continuar com Google</span>
+                        </button>
                         
-                        <div className="flex justify-center mt-4">
+                        <div className="text-center pt-2">
                             {mode === 'login' ? (
-                                <p className="text-sm text-slate-400">
-                                    Não tem conta? <button type="button" onClick={() => handleModeChange('register')} className="text-white font-bold hover:underline">Cadastre-se</button>
+                                <p className="text-xs text-slate-400 font-medium">
+                                    Novo por aqui? <button type="button" onClick={() => handleModeChange('register')} className="text-orange-600 font-black hover:underline">Crie seu estúdio</button>
                                 </p>
                             ) : (
-                                <button type="button" onClick={() => handleModeChange('login')} className="text-sm text-slate-400 flex items-center gap-1 hover:text-white">
-                                    <ArrowLeft className="w-4 h-4" /> Voltar para login
+                                <button type="button" onClick={() => handleModeChange('login')} className="text-xs text-slate-400 font-bold flex items-center gap-2 mx-auto hover:text-slate-600 transition-colors">
+                                    <ArrowLeft className="w-3 h-3" /> Voltar para o Login
                                 </button>
                             )}
                         </div>
                     </div>
                 </div>
+                <p className="mt-8 text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest">BelaApp © 2025 • Todos os direitos reservados</p>
             </div>
         </div>
     );
