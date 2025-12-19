@@ -85,6 +85,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             ...initialProf,
             cpf: (initialProf as any).cpf || '',
             birth_date: (initialProf as any).birth_date || '',
+            // FIX: Mapeamento robusto da comissão vinda do banco
+            commissionRate: (initialProf as any).commission_rate ?? initialProf.commissionRate ?? 0,
             permissions: (initialProf as any).permissions || {},
             services_enabled: (initialProf as any).services_enabled || [],
             commission_config: (initialProf as any).commission_config || { deduct_fees: false, receive_tips: true, calc_rule: 'liquido' },
@@ -123,7 +125,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 active: !!prof.active,
                 online_booking: !!prof.onlineBooking,
                 pix_key: prof.pixKey || '',
-                commission_rate: Number(prof.commissionRate) || 0,
+                // FIX: Garantia de envio como número (parseFloat para decimais)
+                commission_rate: parseFloat(prof.commissionRate) || 0,
                 cpf: prof.cpf ? prof.cpf.trim() : null,
                 birth_date: prof.birth_date && prof.birth_date !== "" ? prof.birth_date : null,
                 permissions: prof.permissions || {},
@@ -139,18 +142,14 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 .update(payload)
                 .eq('id', prof.id);
 
-            if (error) {
-                console.error("Supabase Update Error:", error);
-                throw error;
-            }
+            if (error) throw error;
 
             alert("Configurações atualizadas com sucesso! ✅");
-            onSave(prof);
+            onSave({ ...prof, commissionRate: parseFloat(prof.commissionRate) || 0 });
             onBack();
         } catch (error: any) {
-            console.error("Erro completo ao salvar:", error);
-            alert(`Erro ao salvar colaborador: ${error.message || 'Verifique sua conexão ou dados digitados.'}`);
-            setLoading(false);
+            console.error("Erro ao salvar:", error);
+            alert(`Erro ao salvar colaborador: ${error.message || 'Erro desconhecido'}`);
         } finally {
             setLoading(false);
         }
@@ -210,7 +209,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     // Sidebar Summary Card (Referência Salão99)
     const ProfileSummaryCard = () => (
         <Card className="lg:col-span-1 flex flex-col p-0 overflow-hidden border-slate-200 h-fit sticky top-6">
-            {/* Header com Foto e Nome */}
             <div className="bg-slate-50/50 p-6 flex flex-col items-center text-center border-b border-slate-100">
                 <div className="relative group cursor-pointer mb-4" onClick={() => fileInputRef.current?.click()}>
                     <div className="w-28 h-28 rounded-full border-4 border-white shadow-md overflow-hidden bg-slate-200">
@@ -232,7 +230,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 </div>
             </div>
 
-            {/* Atribuições (Atendimentos, Produtos, Pacotes) */}
             <div className="p-6 space-y-3 border-b border-slate-100 bg-white">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Atribuições Ativas</p>
                 
@@ -252,7 +249,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 </div>
             </div>
 
-            {/* Informações Pessoais e de Contato (Referência Salão99) */}
             <div className="p-6 space-y-4 bg-white">
                 <div className="flex items-start gap-3">
                     <Mail className="w-4 h-4 text-slate-400 mt-0.5" />
@@ -310,7 +306,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 <div className="max-w-6xl mx-auto">
                     <Tabs />
 
-                    {/* ABA PERFIL */}
                     {activeTab === 'perfil' && (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-2">
                             <ProfileSummaryCard />
@@ -382,7 +377,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
-                    {/* ABA SERVICOS */}
                     {activeTab === 'servicos' && (
                         <div className="space-y-6 animate-in fade-in">
                             <Card>
@@ -432,7 +426,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
-                    {/* ABA COMISSÕES */}
                     {activeTab === 'comissoes' && (
                         <div className="space-y-6 animate-in slide-in-from-right-4">
                             <Card title="Regras de Comissionamento">
@@ -443,8 +436,9 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                             <div className="flex items-center gap-4">
                                                 <input 
                                                     type="number" 
+                                                    step="0.1"
                                                     value={prof.commissionRate}
-                                                    onChange={e => setProf({...prof, commissionRate: Number(e.target.value)})}
+                                                    onChange={e => setProf({...prof, commissionRate: e.target.value})}
                                                     className="w-28 border-2 border-orange-200 rounded-2xl px-4 py-4 text-3xl font-black text-orange-600 outline-none focus:border-orange-500 bg-white"
                                                 />
                                                 <div>
@@ -501,7 +495,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
-                    {/* ABA PERMISSOES */}
                     {activeTab === 'permissoes' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
                             {Object.entries(PERMISSION_GROUPS).map(([key, group]) => (
@@ -530,7 +523,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
-                    {/* ABA HORARIOS */}
                     {activeTab === 'horarios' && (
                         <Card title="Grade de Disponibilidade" icon={<Clock size={20} />} className="animate-in fade-in border-slate-200">
                             <div className="space-y-4">
@@ -571,7 +563,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </Card>
                     )}
 
-                    {/* ABA NOTIFICACOES */}
                     {activeTab === 'avisos' && (
                         <div className="max-w-2xl mx-auto space-y-6 animate-in slide-in-from-top-4">
                             <Card title="Alertas e Comunicados" icon={<Bell size={20} />} className="border-slate-200">

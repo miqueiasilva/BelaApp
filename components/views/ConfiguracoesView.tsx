@@ -3,7 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Settings, User, Scissors, Clock, Bell, Store, Save, Plus, 
     Trash2, Edit2, Search, Filter, ChevronLeft, Menu, ChevronRight, 
-    Camera, Loader2, MapPin, Phone, Mail, FileText, Coffee, CheckCircle
+    Camera, Loader2, MapPin, Phone, Mail, FileText, Coffee, CheckCircle,
+    CreditCard, DollarSign, Wallet, Smartphone
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -49,6 +50,7 @@ const ConfiguracoesView: React.FC = () => {
     const [colaboradores, setColaboradores] = useState<LegacyProfessional[]>([]);
     const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
     const [serviceSearch, setServiceSearch] = useState('');
+    const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
 
     // --- Modals ---
     const [serviceModal, setServiceModal] = useState<{ open: boolean; data: LegacyService | null }>({ open: false, data: null });
@@ -98,11 +100,20 @@ const ConfiguracoesView: React.FC = () => {
         }
     };
 
+    const fetchPaymentMethods = async () => {
+        try {
+            const { data, error } = await supabase.from('payment_methods').select('*').order('id');
+            if (error) throw error;
+            setPaymentMethods(data || []);
+        } catch (e) { console.error(e); }
+    };
+
     useEffect(() => {
         if (window.innerWidth < 768) setIsSidebarOpen(false);
         fetchStudioSettings();
         fetchServices();
         fetchColaboradores();
+        fetchPaymentMethods();
     }, []);
 
     // --- Handlers: Save ---
@@ -163,11 +174,25 @@ const ConfiguracoesView: React.FC = () => {
     };
 
     const handleSaveProfessional = async (prof: LegacyProfessional) => {
-        // Logica simplificada para o modal, o detalhe completo usa ProfessionalDetail.tsx
         fetchColaboradores();
         setProfModal({ open: false, data: null });
         setSelectedProfessionalId(null);
         showToast(`Dados de "${prof.name}" atualizados!`);
+    };
+
+    const handleSaveFinance = async () => {
+        setIsSaving(true);
+        try {
+            const promises = paymentMethods.map(pm => 
+                supabase.from('payment_methods').update({ fee_percentage: pm.fee_percentage }).eq('id', pm.id)
+            );
+            await Promise.all(promises);
+            showToast("Taxas atualizadas com sucesso!");
+        } catch (e) {
+            showToast("Erro ao salvar taxas financeiras", "error");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     // --- Views ---
@@ -368,6 +393,58 @@ const ConfiguracoesView: React.FC = () => {
         </div>
     );
 
+    const renderFinanceTab = () => (
+        <div className="space-y-6 animate-in fade-in">
+            <Card title="Configurações Financeiras" icon={<DollarSign size={18}/>}>
+                <div className="mb-6 p-4 bg-blue-50 rounded-2xl border border-blue-100 flex gap-3">
+                    <CreditCard className="text-blue-500 flex-shrink-0" size={20} />
+                    <p className="text-sm text-blue-700 leading-relaxed">
+                        Defina as taxas cobradas pela sua maquininha de cartão. Essas taxas serão descontadas das comissões se a opção estiver ativa no perfil do colaborador.
+                    </p>
+                </div>
+
+                <div className="space-y-4">
+                    {paymentMethods.map((pm, idx) => (
+                        <div key={pm.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-white hover:border-blue-200 transition-all group">
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 group-hover:text-blue-500 shadow-sm transition-colors">
+                                    {pm.name.toLowerCase().includes('cartao') || pm.name.toLowerCase().includes('credito') || pm.name.toLowerCase().includes('debito') ? <CreditCard size={18}/> : pm.name.toLowerCase().includes('pix') ? <Smartphone className="w-4 h-4" /> : <DollarSign size={18}/>}
+                                </div>
+                                <div>
+                                    <p className="font-bold text-slate-800 text-sm">{pm.name}</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Taxa de Operação</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="relative">
+                                    <input 
+                                        type="number"
+                                        step="0.01"
+                                        value={pm.fee_percentage}
+                                        onChange={e => {
+                                            const newMethods = [...paymentMethods];
+                                            newMethods[idx].fee_percentage = Number(e.target.value);
+                                            setPaymentMethods(newMethods);
+                                        }}
+                                        className="w-24 border border-slate-200 rounded-xl px-3 py-2 text-right font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none pr-8"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="mt-8 pt-4 border-t border-slate-100 flex justify-end">
+                    <button onClick={handleSaveFinance} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 active:scale-95 disabled:opacity-50 transition-all">
+                        {isSaving ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>}
+                        Salvar Taxas
+                    </button>
+                </div>
+            </Card>
+        </div>
+    );
+
     // --- Main Render ---
 
     if (activeTab === 'team' && selectedProfessionalId) {
@@ -388,6 +465,7 @@ const ConfiguracoesView: React.FC = () => {
         { id: 'studio', label: 'Estúdio', icon: Store },
         { id: 'services', label: 'Serviços', icon: Scissors },
         { id: 'team', label: 'Colaboradores', icon: User },
+        { id: 'finance', label: 'Financeiro', icon: Wallet },
         { id: 'schedule', label: 'Horários', icon: Clock },
         { id: 'notifications', label: 'Mural de Avisos', icon: Bell },
     ];
@@ -437,6 +515,7 @@ const ConfiguracoesView: React.FC = () => {
                     {activeTab === 'studio' && renderStudioTab()}
                     {activeTab === 'services' && renderServicesTab()}
                     {activeTab === 'team' && renderTeamTab()}
+                    {activeTab === 'finance' && renderFinanceTab()}
                     {activeTab === 'schedule' && renderScheduleTab()}
                     {activeTab === 'notifications' && renderNotificationsTab()}
                 </div>
