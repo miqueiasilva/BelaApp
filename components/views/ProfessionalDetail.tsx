@@ -115,7 +115,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         setLoading(true);
         
         try {
-            // CRÍTICO: Tratamento de strings vazias para colunas do tipo DATE e JSONB
             const payload = {
                 name: prof.name || '',
                 role: prof.role || '',
@@ -125,10 +124,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 online_booking: !!prof.onlineBooking,
                 pix_key: prof.pixKey || '',
                 commission_rate: Number(prof.commissionRate) || 0,
-                // Dados Pessoais: Enviar NULL se estiver vazio para evitar erro de tipo no SQL
                 cpf: prof.cpf ? prof.cpf.trim() : null,
                 birth_date: prof.birth_date && prof.birth_date !== "" ? prof.birth_date : null,
-                // Colunas JSONB
                 permissions: prof.permissions || {},
                 services_enabled: prof.services_enabled || [],
                 commission_config: prof.commission_config || {},
@@ -153,11 +150,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         } catch (error: any) {
             console.error("Erro completo ao salvar:", error);
             alert(`Erro ao salvar colaborador: ${error.message || 'Verifique sua conexão ou dados digitados.'}`);
-            // Garantia de reset do loading em caso de catch
             setLoading(false);
         } finally {
-            // O loading é resetado aqui apenas se o fluxo terminou (sucesso ou erro tratado)
-            // No caso de sucesso, o onBack() desmonta o componente, então o reset é opcional
             setLoading(false);
         }
     };
@@ -213,8 +207,10 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         </div>
     );
 
+    // Sidebar Summary Card (Referência Salão99)
     const ProfileSummaryCard = () => (
-        <Card className="lg:col-span-1 flex flex-col p-0 overflow-hidden border-slate-200">
+        <Card className="lg:col-span-1 flex flex-col p-0 overflow-hidden border-slate-200 h-fit sticky top-6">
+            {/* Header com Foto e Nome */}
             <div className="bg-slate-50/50 p-6 flex flex-col items-center text-center border-b border-slate-100">
                 <div className="relative group cursor-pointer mb-4" onClick={() => fileInputRef.current?.click()}>
                     <div className="w-28 h-28 rounded-full border-4 border-white shadow-md overflow-hidden bg-slate-200">
@@ -228,7 +224,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                     {isUploading && <div className="absolute inset-0 bg-white/60 rounded-full flex items-center justify-center"><Loader2 className="animate-spin text-orange-500" /></div>}
                 </div>
                 <h3 className="font-bold text-slate-800 text-lg leading-tight">{prof.name || 'Novo Colaborador'}</h3>
-                <p className="text-xs text-slate-500 mt-1 truncate w-full">{prof.email || 'Email não informado'}</p>
+                <p className="text-xs text-slate-500 mt-1 truncate w-full">{prof.role || 'Cargo não definido'}</p>
                 <div className="mt-3">
                     <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${prof.active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                         {prof.active ? 'Colaborador Ativo' : 'Inativo'}
@@ -236,46 +232,33 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 </div>
             </div>
 
+            {/* Atribuições (Atendimentos, Produtos, Pacotes) */}
             <div className="p-6 space-y-3 border-b border-slate-100 bg-white">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Atribuições Ativas</p>
                 
-                {prof.services_enabled?.length > 0 ? (
-                    <div className="flex items-center gap-2 text-xs font-bold text-green-600 bg-green-50 px-3 py-2 rounded-lg">
-                        <Check size={14} /> Executa Atendimentos
-                    </div>
-                ) : (
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400 bg-slate-50 px-3 py-2 rounded-lg grayscale opacity-50">
-                        <Check size={14} /> Executa Atendimentos
-                    </div>
-                )}
+                <div className={`flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-lg transition-colors ${prof.services_enabled?.length > 0 ? 'text-green-600 bg-green-50' : 'text-slate-400 bg-slate-50 opacity-50'}`}>
+                    <CheckCircle size={14} fill={prof.services_enabled?.length > 0 ? "currentColor" : "none"} /> 
+                    Executa Atendimentos
+                </div>
 
-                {prof.permissions?.sell_products ? (
-                    <div className="flex items-center gap-2 text-xs font-bold text-green-600 bg-green-50 px-3 py-2 rounded-lg">
-                        <Check size={14} /> Vende Produtos
-                    </div>
-                ) : (
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400 bg-slate-50 px-3 py-2 rounded-lg grayscale opacity-50">
-                        <Check size={14} /> Vende Produtos
-                    </div>
-                )}
+                <div className={`flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-lg transition-colors ${prof.permissions?.sell_products ? 'text-green-600 bg-green-50' : 'text-slate-400 bg-slate-50 opacity-50'}`}>
+                    <CheckCircle size={14} fill={prof.permissions?.sell_products ? "currentColor" : "none"} /> 
+                    Vende Produtos
+                </div>
 
-                {prof.permissions?.sell_packages ? (
-                    <div className="flex items-center gap-2 text-xs font-bold text-green-600 bg-green-50 px-3 py-2 rounded-lg">
-                        <Check size={14} /> Vende Pacotes
-                    </div>
-                ) : (
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400 bg-slate-50 px-3 py-2 rounded-lg grayscale opacity-50">
-                        <Check size={14} /> Vende Pacotes
-                    </div>
-                )}
+                <div className={`flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-lg transition-colors ${prof.permissions?.sell_packages ? 'text-green-600 bg-green-50' : 'text-slate-400 bg-slate-50 opacity-50'}`}>
+                    <CheckCircle size={14} fill={prof.permissions?.sell_packages ? "currentColor" : "none"} /> 
+                    Vende Pacotes
+                </div>
             </div>
 
+            {/* Informações Pessoais e de Contato (Referência Salão99) */}
             <div className="p-6 space-y-4 bg-white">
                 <div className="flex items-start gap-3">
-                    <Briefcase className="w-4 h-4 text-slate-400 mt-0.5" />
-                    <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase">Cargo</p>
-                        <p className="text-sm font-semibold text-slate-700">{prof.role || 'Não definido'}</p>
+                    <Mail className="w-4 h-4 text-slate-400 mt-0.5" />
+                    <div className="min-w-0">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">E-mail</p>
+                        <p className="text-sm font-semibold text-slate-700 truncate">{prof.email || 'Não informado'}</p>
                     </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -285,18 +268,18 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         <p className="text-sm font-semibold text-slate-700">{prof.phone || 'Não informado'}</p>
                     </div>
                 </div>
+                <div className="flex items-start gap-3 border-t border-slate-50 pt-4">
+                    <Calendar className="w-4 h-4 text-slate-400 mt-0.5" />
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Nascimento</p>
+                        <p className="text-sm font-semibold text-slate-700">{formatDateBR(prof.birth_date)}</p>
+                    </div>
+                </div>
                 <div className="flex items-start gap-3">
                     <IdCard className="w-4 h-4 text-slate-400 mt-0.5" />
                     <div>
                         <p className="text-[10px] font-bold text-slate-400 uppercase">CPF</p>
                         <p className="text-sm font-semibold text-slate-700">{prof.cpf || 'Não informado'}</p>
-                    </div>
-                </div>
-                <div className="flex items-start gap-3">
-                    <Calendar className="w-4 h-4 text-slate-400 mt-0.5" />
-                    <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase">Nascimento</p>
-                        <p className="text-sm font-semibold text-slate-700">{formatDateBR(prof.birth_date)}</p>
                     </div>
                 </div>
             </div>
@@ -310,7 +293,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                     <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"><ChevronLeft size={24} /></button>
                     <div>
                         <h2 className="text-xl font-bold text-slate-800">{prof.name || 'Novo Colaborador'}</h2>
-                        <p className="text-xs text-slate-500 font-medium">Configurações e permissões de acesso</p>
+                        <p className="text-xs text-slate-500 font-medium">Gestão de perfil e permissões</p>
                     </div>
                 </div>
                 <button 
@@ -327,9 +310,11 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 <div className="max-w-6xl mx-auto">
                     <Tabs />
 
+                    {/* ABA PERFIL */}
                     {activeTab === 'perfil' && (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-2">
                             <ProfileSummaryCard />
+
                             <div className="lg:col-span-2 space-y-6">
                                 <Card title="Informações de Contato">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -339,20 +324,20 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cargo/Função</label>
-                                            <input value={prof.role} onChange={e => setProf({...prof, role: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none transition-all" />
+                                            <input value={prof.role} onChange={e => setProf({...prof, role: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none transition-all" placeholder="Ex: Cabeleireiro, Manicure..." />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">WhatsApp</label>
-                                            <input value={prof.phone} onChange={e => setProf({...prof, phone: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none transition-all" />
+                                            <input value={prof.phone} onChange={e => setProf({...prof, phone: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none transition-all" placeholder="(00) 00000-0000" />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">E-mail Corporativo</label>
-                                            <input value={prof.email} onChange={e => setProf({...prof, email: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none transition-all" />
+                                            <input value={prof.email} onChange={e => setProf({...prof, email: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none transition-all" placeholder="email@exemplo.com" />
                                         </div>
                                     </div>
                                 </Card>
 
-                                <Card title="Informações Pessoais">
+                                <Card title="Dados Pessoais">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">CPF</label>
@@ -397,6 +382,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
+                    {/* ABA SERVICOS */}
                     {activeTab === 'servicos' && (
                         <div className="space-y-6 animate-in fade-in">
                             <Card>
@@ -446,6 +432,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
+                    {/* ABA COMISSÕES */}
                     {activeTab === 'comissoes' && (
                         <div className="space-y-6 animate-in slide-in-from-right-4">
                             <Card title="Regras de Comissionamento">
@@ -514,6 +501,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
+                    {/* ABA PERMISSOES */}
                     {activeTab === 'permissoes' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in zoom-in-95">
                             {Object.entries(PERMISSION_GROUPS).map(([key, group]) => (
@@ -542,6 +530,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </div>
                     )}
 
+                    {/* ABA HORARIOS */}
                     {activeTab === 'horarios' && (
                         <Card title="Grade de Disponibilidade" icon={<Clock size={20} />} className="animate-in fade-in border-slate-200">
                             <div className="space-y-4">
@@ -582,6 +571,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </Card>
                     )}
 
+                    {/* ABA NOTIFICACOES */}
                     {activeTab === 'avisos' && (
                         <div className="max-w-2xl mx-auto space-y-6 animate-in slide-in-from-top-4">
                             <Card title="Alertas e Comunicados" icon={<Bell size={20} />} className="border-slate-200">
