@@ -195,6 +195,8 @@ export interface LegacyProfessional {
   pixKey?: string;
   services?: number[]; // IDs of enabled services
   schedule?: { day: string; start: string; end: string; active: boolean }[];
+  // FIX: Added color property as it's required for calendar visualization in some views
+  color?: string;
 }
 
 export interface LegacyService {
