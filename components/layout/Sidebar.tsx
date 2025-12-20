@@ -44,33 +44,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         onNavigate(viewId as any);
     };
 
-    /**
-     * Logout Brutal: Força a limpeza de todo o rastro da sessão local
-     * para evitar erros de cache ou "loading infinito" causados por dados legados.
-     */
     const handleLogout = async () => {
-        const confirm = window.confirm("Deseja realmente sair do sistema?");
-        if (!confirm) return;
+        if (!window.confirm("Deseja realmente sair do BelaApp?")) return;
 
         try {
-            // 1. Tentar avisar o Supabase (pode falhar se a rede estiver instável)
             await supabase.auth.signOut();
-        } catch (error) {
-            console.error("Erro silencioso durante signOut:", error);
+        } catch (error: any) {
+            console.error("Erro ao deslogar do banco:", error.message);
         } finally {
-            // 2. HIGIENE TOTAL: Salvar apenas as configs do banco (VITE_) para não perder conexão
-            const savedUrl = localStorage.getItem('VITE_SUPABASE_URL');
-            const savedKey = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
-
-            // 3. Limpar TUDO (Lixo de sessão, estados antigos, cache de dados)
+            // Limpeza obrigatória de rastros locais
             localStorage.clear();
             sessionStorage.clear();
-
-            // 4. Restaurar conexão
-            if (savedUrl) localStorage.setItem('VITE_SUPABASE_URL', savedUrl);
-            if (savedKey) localStorage.setItem('VITE_SUPABASE_ANON_KEY', savedKey);
-
-            // 5. Hard Reset da aplicação
+            // Hard redirect para limpar estado da aplicação
             window.location.href = '/'; 
         }
     };
