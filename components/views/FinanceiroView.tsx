@@ -2,12 +2,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
     ArrowUpCircle, ArrowDownCircle, Wallet, TrendingUp, RefreshCw, 
-    Plus, Loader2, Calendar, Search, Filter, AlertCircle, TrendingDown
+    Plus, Loader2, Calendar, Search, AlertCircle
 } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
+import { format, isSameDay } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { supabase } from '../../services/supabaseClient';
-import Card from '../shared/Card';
 import NewTransactionModal from '../modals/NewTransactionModal';
 import Toast, { ToastType } from '../shared/Toast';
 import { FinancialTransaction, TransactionType } from '../../types';
@@ -28,30 +27,33 @@ const FinanceiroView: React.FC = () => {
 
         setIsLoading(true);
         try {
+            // FIX: Alterado de 'financial_transactions' para 'transactions'
             const { data, error } = await supabase
-                .from('financial_transactions')
+                .from('transactions')
                 .select('*')
                 .order('date', { ascending: false })
                 .abortSignal(controller.signal);
             
             if (error) throw error;
-            // Normalizando campos do banco para o tipo da interface se necessário
+
             const mapped: FinancialTransaction[] = (data || []).map((t: any) => ({
                 id: t.id,
                 description: t.description,
-                amount: t.amount,
-                type: t.type,
+                amount: Number(t.amount) || 0,
+                type: t.type, // 'receita' ou 'despesa'
                 category: t.category,
                 date: new Date(t.date),
-                paymentMethod: t.payment_method,
+                paymentMethod: t.payment_method || 'pix',
                 status: t.status
             }));
             setTransactions(mapped);
         } catch (error: any) {
             if (error.name !== 'AbortError') {
-                setToast({ message: 'Erro ao carregar finanças: ' + error.message, type: 'error' });
+                console.error("Financeiro Fetch Error:", error);
+                setToast({ message: 'Erro ao carrergar extrato bancário.', type: 'error' });
             }
         } finally {
+            // OBRIGATÓRIO: Libera a UI
             setIsLoading(false);
         }
     }, []);
@@ -63,12 +65,12 @@ const FinanceiroView: React.FC = () => {
 
     const metrics = useMemo(() => {
         const today = new Date();
-        const incomeMonth = transactions.filter(t => t.type === 'receita').reduce((acc, t) => acc + t.amount, 0);
-        const expenseMonth = transactions.filter(t => t.type === 'despesa').reduce((acc, t) => acc + t.amount, 0);
-        
+        // Cálculo somando o campo real 'amount'
+        const income = transactions.filter(t => t.type === 'receita').reduce((acc, t) => acc + t.amount, 0);
+        const expense = transactions.filter(t => t.type === 'despesa').reduce((acc, t) => acc + t.amount, 0);
         const incomeToday = transactions.filter(t => t.type === 'receita' && isSameDay(t.date, today)).reduce((acc, t) => acc + t.amount, 0);
         
-        return { incomeMonth, expenseMonth, balance: incomeMonth - expenseMonth, incomeToday };
+        return { income, expense, balance: income - expense, incomeToday };
     }, [transactions]);
 
     const filteredTransactions = useMemo(() => {
@@ -80,7 +82,7 @@ const FinanceiroView: React.FC = () => {
 
     const handleSaveTransaction = async (t: FinancialTransaction) => {
         try {
-            const { error } = await supabase.from('financial_transactions').insert([{
+            const { error } = await supabase.from('transactions').insert([{
                 description: t.description,
                 amount: t.amount,
                 type: t.type,
@@ -92,7 +94,7 @@ const FinanceiroView: React.FC = () => {
 
             if (error) throw error;
 
-            setToast({ message: 'Lançamento registrado com sucesso!', type: 'success' });
+            setToast({ message: 'Lançamento registrado!', type: 'success' });
             setShowModal(null);
             fetchTransactions();
         } catch (error: any) {
@@ -107,87 +109,65 @@ const FinanceiroView: React.FC = () => {
             <header className="bg-white border-b border-slate-200 px-6 py-5 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <Wallet className="text-orange-500" /> Fluxo de Caixa
+                        <Wallet className="text-orange-500" /> Fluxo de Caixa Real
                     </h1>
-                    <p className="text-slate-500 text-sm font-medium">Gestão financeira centralizada e tempo real.</p>
                 </div>
                 
-                <div className="flex gap-2 w-full md:w-auto">
-                    <button onClick={fetchTransactions} className="p-2.5 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all bg-white border border-slate-100"><RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} /></button>
-                    <button onClick={() => setShowModal('receita')} className="flex-1 md:flex-none bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-all active:scale-95">
-                        <Plus className="w-4 h-4"/> Receita
+                <div className="flex gap-2">
+                    <button onClick={fetchTransactions} className="p-2.5 text-slate-400 hover:text-orange-500 bg-white border border-slate-100 rounded-xl transition-all">
+                        <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
                     </button>
-                    <button onClick={() => setShowModal('despesa')} className="flex-1 md:flex-none bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-rose-100 transition-all active:scale-95">
-                        <Plus className="w-4 h-4"/> Despesa
+                    <button onClick={() => setShowModal('receita')} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg transition-all active:scale-95">
+                        <Plus size={16}/> Receita
+                    </button>
+                    <button onClick={() => setShowModal('despesa')} className="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg transition-all active:scale-95">
+                        <Plus size={16}/> Despesa
                     </button>
                 </div>
             </header>
 
             <main className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
-                {/* Dashboard Financeiro */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
-                        <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Saldo do Mês</p>
-                        <h3 className={`text-3xl font-black mt-2 tracking-tighter ${metrics.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
-                            R$ {metrics.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="bg-white p-6 rounded-[28px] border border-slate-200 shadow-sm">
+                        <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Saldo Consolidado</p>
+                        <h3 className={`text-2xl font-black mt-1 ${metrics.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            R$ {metrics.balance.toFixed(2)}
                         </h3>
-                        <div className="flex items-center gap-1 mt-3 text-[10px] font-bold text-slate-400 uppercase">
-                             <TrendingUp size={12}/> Consolidado
-                        </div>
                     </div>
-                    <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
+                    <div className="bg-white p-6 rounded-[28px] border border-slate-200 shadow-sm">
                         <p className="text-emerald-500 text-[10px] font-black uppercase tracking-widest">Entradas (Mês)</p>
-                        <h3 className="text-3xl font-black text-emerald-600 mt-2 tracking-tighter">
-                            + R$ {metrics.incomeMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </h3>
-                         <div className="flex items-center gap-1 mt-3 text-[10px] font-bold text-emerald-400 uppercase">
-                             <ArrowUpCircle size={12}/> Receitas
-                        </div>
+                        <h3 className="text-2xl font-black text-slate-800 mt-1">R$ {metrics.income.toFixed(2)}</h3>
                     </div>
-                    <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
+                    <div className="bg-white p-6 rounded-[28px] border border-slate-200 shadow-sm">
                         <p className="text-rose-500 text-[10px] font-black uppercase tracking-widest">Saídas (Mês)</p>
-                        <h3 className="text-3xl font-black text-rose-600 mt-2 tracking-tighter">
-                            - R$ {metrics.expenseMonth.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </h3>
-                        <div className="flex items-center gap-1 mt-3 text-[10px] font-bold text-rose-400 uppercase">
-                             <ArrowDownCircle size={12}/> Despesas
-                        </div>
+                        <h3 className="text-2xl font-black text-slate-800 mt-1">R$ {metrics.expense.toFixed(2)}</h3>
                     </div>
-                    <div className="bg-slate-900 p-6 rounded-[32px] shadow-xl text-white">
-                        <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Faturamento Hoje</p>
-                        <h3 className="text-3xl font-black text-orange-500 mt-2 tracking-tighter">
-                            R$ {metrics.incomeToday.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </h3>
-                        <div className="flex items-center gap-1 mt-3 text-[10px] font-bold text-slate-500 uppercase">
-                             <Calendar size={12}/> {format(new Date(), 'dd MMM', { locale: pt })}
-                        </div>
+                    <div className="bg-slate-900 p-6 rounded-[28px] shadow-xl text-white">
+                        <p className="text-orange-400 text-[10px] font-black uppercase tracking-widest">Hoje ({format(new Date(), 'dd/MM')})</p>
+                        <h3 className="text-2xl font-black text-white mt-1">R$ {metrics.incomeToday.toFixed(2)}</h3>
                     </div>
                 </div>
 
-                <div className="flex flex-col md:flex-row gap-4 items-center mb-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input 
-                            type="text" 
-                            placeholder="Buscar no extrato por descrição ou categoria..." 
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all font-medium"
-                        />
-                    </div>
+                <div className="relative max-w-md">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                        type="text" 
+                        placeholder="Buscar no extrato..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all font-medium"
+                    />
                 </div>
 
-                <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                    {isLoading && transactions.length === 0 ? (
-                        <div className="p-20 text-center text-slate-400 animate-pulse">
-                            <Loader2 className="animate-spin mx-auto mb-4" size={40} />
-                            <p className="font-bold uppercase tracking-widest text-xs">Sincronizando extrato...</p>
+                <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden min-h-[300px] flex flex-col">
+                    {isLoading ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-slate-400 animate-pulse">
+                            <Loader2 className="animate-spin mb-4" size={40} />
+                            <p className="font-bold text-xs uppercase tracking-widest">Consultando banco...</p>
                         </div>
                     ) : filteredTransactions.length === 0 ? (
-                        <div className="p-20 text-center text-slate-300 italic">
-                            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Search size={24} className="opacity-20" />
-                            </div>
+                        <div className="flex-1 flex flex-col items-center justify-center text-slate-300 italic p-10">
+                            <AlertCircle size={48} className="mb-4 opacity-20" />
                             <p>Nenhuma transação encontrada no período.</p>
                         </div>
                     ) : (
@@ -196,8 +176,7 @@ const FinanceiroView: React.FC = () => {
                                 <thead className="bg-slate-50 border-b text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                     <tr>
                                         <th className="px-6 py-5">Data</th>
-                                        <th className="px-6 py-5">Descrição do Lançamento</th>
-                                        <th className="px-6 py-5">Categoria</th>
+                                        <th className="px-6 py-5">Descrição</th>
                                         <th className="px-6 py-5">Pagamento</th>
                                         <th className="px-6 py-5 text-right">Valor</th>
                                     </tr>
@@ -205,21 +184,14 @@ const FinanceiroView: React.FC = () => {
                                 <tbody className="divide-y divide-slate-100">
                                     {filteredTransactions.map((t) => (
                                         <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group">
-                                            <td className="px-6 py-4 text-xs text-slate-500 font-bold whitespace-nowrap">
-                                                {format(t.date, 'dd/MM/yyyy')}
-                                            </td>
+                                            <td className="px-6 py-4 text-xs text-slate-500 font-bold">{format(t.date, 'dd/MM/yyyy')}</td>
                                             <td className="px-6 py-4">
-                                                <p className="text-sm font-bold text-slate-800 leading-tight group-hover:text-orange-600 transition-colors">{t.description}</p>
-                                                <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">ID #{t.id}</p>
+                                                <p className="text-sm font-bold text-slate-800">{t.description}</p>
+                                                <p className="text-[10px] text-slate-400 uppercase">{t.category}</p>
                                             </td>
-                                            <td className="px-6 py-4">
-                                                <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-tighter">{t.category}</span>
-                                            </td>
-                                            <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-tighter">
-                                                {t.paymentMethod?.replace('_', ' ')}
-                                            </td>
-                                            <td className={`px-6 py-4 text-right font-black text-base tracking-tighter ${t.type === 'receita' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                {t.type === 'receita' ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                            <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">{t.paymentMethod}</td>
+                                            <td className={`px-6 py-4 text-right font-black text-base ${t.type === 'receita' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                {t.type === 'receita' ? '+' : '-'} R$ {t.amount.toFixed(2)}
                                             </td>
                                         </tr>
                                     ))}
@@ -230,13 +202,7 @@ const FinanceiroView: React.FC = () => {
                 </div>
             </main>
 
-            {showModal && (
-                <NewTransactionModal 
-                    type={showModal} 
-                    onClose={() => setShowModal(null)} 
-                    onSave={handleSaveTransaction}
-                />
-            )}
+            {showModal && <NewTransactionModal type={showModal} onClose={() => setShowModal(null)} onSave={handleSaveTransaction} />}
         </div>
     );
 };
