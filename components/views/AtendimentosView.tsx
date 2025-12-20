@@ -3,7 +3,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { 
     ChevronLeft, ChevronRight, Plus, MessageSquare, 
     ChevronDown, RefreshCw, User as UserIcon, Calendar as CalendarIcon,
-    Scissors, ShoppingBag, Lock
+    Scissors, Lock
 } from 'lucide-react';
 import { format, addDays, addWeeks, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek } from 'date-fns';
 import { pt } from 'date-fns/locale';
@@ -104,7 +104,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
 
     const showToast = useCallback((message: string, type: ToastType = 'success') => {
-        setToast({ message, type });
+        // Garantir que a mensagem seja sempre uma string para evitar [object Object]
+        const safeMessage = typeof message === 'object' ? (message as any).message || JSON.stringify(message) : String(message);
+        setToast({ message: safeMessage, type });
     }, []);
 
     const fetchResources = async () => {
@@ -251,11 +253,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
         setModalState(null); 
         try {
             const isBlock = app.status === 'bloqueado';
+            const resourceId = Number(app.professional?.id);
+            
             const payload = {
                 client_name: isBlock ? 'BLOQUEIO DE AGENDA' : (app.client?.nome || 'Cliente'),
                 service_name: isBlock ? 'Bloqueio' : (app.service?.name || 'Serviço'),
                 professional_name: app.professional?.name || 'Profissional', 
-                resource_id: Number(app.professional?.id) || 1,            
+                resource_id: isNaN(resourceId) ? 1 : resourceId,            
                 date: app.start.toISOString(),
                 end_date: app.end.toISOString(),
                 value: isBlock ? 0 : (Number(app.service?.price) || 0),
@@ -264,20 +268,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 color: isBlock ? '#64748b' : (app.service?.color || '#3b82f6')
             };
 
-            let res;
-            if (app.id && app.id < 1000000000000) { 
-                res = await supabase.from('appointments').update(payload).eq('id', app.id);
-            } else {
-                res = await supabase.from('appointments').insert([payload]);
-            }
+            const { error } = app.id && app.id < 1000000000000 
+                ? await supabase.from('appointments').update(payload).eq('id', app.id)
+                : await supabase.from('appointments').insert([payload]);
 
-            if (res.error) throw res.error;
+            if (error) throw error;
             
             showToast('Dados salvos com sucesso!');
-            await fetchAppointments(); // RE-FETCH IMEDIATO
+            await fetchAppointments(); 
         } catch (error: any) {
             console.error("Erro ao salvar:", error);
-            showToast(`Erro ao salvar: ${error.message}`, 'error');
+            const msg = error?.message || (typeof error === 'string' ? error : 'Erro inesperado ao salvar.');
+            showToast(`Erro ao salvar: ${msg}`, 'error');
         }
     };
 
@@ -287,10 +289,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             const { error } = await supabase.from('appointments').delete().eq('id', id);
             if (error) throw error;
             showToast('Agendamento removido.');
-            await fetchAppointments(); // RE-FETCH IMEDIATO
+            await fetchAppointments();
             setActiveAppointmentDetail(null);
         } catch (error: any) {
-            showToast(`Erro ao excluir.`, 'error');
+            const msg = error?.message || 'Erro ao excluir.';
+            showToast(`Erro ao excluir: ${msg}`, 'error');
         }
     };
 
@@ -299,10 +302,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
             if (error) throw error;
             showToast(`Status atualizado.`);
-            await fetchAppointments(); // RE-FETCH IMEDIATO
+            await fetchAppointments();
             setActiveAppointmentDetail(null);
         } catch (error: any) {
-            showToast(`Erro ao atualizar status.`, 'error');
+            const msg = error?.message || 'Erro ao atualizar status.';
+            showToast(`Erro ao atualizar status: ${msg}`, 'error');
         }
     };
 

@@ -18,6 +18,11 @@ const EquipeView: React.FC = () => {
     const [selectedProf, setSelectedProf] = useState<LegacyProfessional | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
+    const showToast = useCallback((message: string, type: ToastType = 'success') => {
+        const safeMessage = typeof message === 'object' ? (message as any).message || JSON.stringify(message) : String(message);
+        setToast({ message: safeMessage, type });
+    }, []);
+
     const fetchProfessionals = useCallback(async () => {
         setIsLoading(true);
         setError(null);
@@ -60,24 +65,24 @@ const EquipeView: React.FC = () => {
             
             setProfessionals(prev => [...prev, data as any]);
             setSelectedProf(data as any);
-            setToast({ message: 'Novo rascunho criado!', type: 'success' });
+            showToast('Novo rascunho criado!');
         } catch (error: any) {
-            setToast({ message: `Erro ao criar: ${error.message}`, type: 'error' });
+            showToast(`Erro ao criar: ${error.message || 'Falha no banco.'}`, 'error');
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [showToast]);
 
     const handleToggleActive = useCallback(async (id: number, currentStatus: boolean) => {
         try {
             const { error } = await supabase.from('professionals').update({ active: !currentStatus }).eq('id', id);
             if (error) throw error;
             setProfessionals(prev => prev.map(p => p.id === id ? { ...p, active: !currentStatus } : p));
-            setToast({ message: `Status atualizado com sucesso.`, type: 'success' });
+            showToast(`Status atualizado com sucesso.`);
         } catch (error: any) {
-            setToast({ message: 'Erro ao atualizar status.', type: 'error' });
+            showToast(`Erro ao atualizar status: ${error.message || 'Falha no servidor.'}`, 'error');
         }
-    }, []);
+    }, [showToast]);
 
     // Otimização de busca com useMemo
     const filteredProfessionals = useMemo(() => {

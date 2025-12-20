@@ -1,12 +1,13 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
-    Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle
+    Loader2, Shield, Clock, DollarSign, CheckCircle
 } from 'lucide-react';
 import { LegacyProfessional, LegacyService } from '../../types';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
+import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
 
 interface ProfessionalDetailProps {
@@ -32,34 +33,44 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     const [isLoading, setIsLoading] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [activeTab, setActiveTab] = useState<'perfil' | 'servicos' | 'horarios' | 'comissoes' | 'permissoes'>('perfil');
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const showToast = useCallback((message: string, type: ToastType = 'success') => {
+        const safeMessage = typeof message === 'object' ? (message as any).message || JSON.stringify(message) : String(message);
+        setToast({ message: safeMessage, type });
+    }, []);
 
     // --- Initialization ---
     useEffect(() => {
         const init = async () => {
-            // Fetch all available services for the selection tab
-            const { data: svcs } = await supabase.from('services').select('*').order('nome');
-            if (svcs) setAllServices(svcs as any);
+            try {
+                // Fetch all available services for the selection tab
+                const { data: svcs } = await supabase.from('services').select('*').order('nome');
+                if (svcs) setAllServices(svcs as any);
 
-            // Normalize professional data (handle missing fields and JSON structures)
-            const normalized = {
-                ...initialProf,
-                cpf: (initialProf as any).cpf || '',
-                bio: (initialProf as any).bio || '',
-                email: (initialProf as any).email || '',
-                phone: (initialProf as any).phone || '',
-                birth_date: (initialProf as any).birth_date || '',
-                commission_rate: (initialProf as any).commission_rate ?? 0,
-                permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
-                services_enabled: (initialProf as any).services_enabled || [],
-                work_schedule: (initialProf as any).work_schedule || {},
-                photo_url: (initialProf as any).photo_url || initialProf.avatarUrl || null
-            };
-            setProf(normalized);
+                // Normalize professional data (handle missing fields and JSON structures)
+                const normalized = {
+                    ...initialProf,
+                    cpf: (initialProf as any).cpf || '',
+                    bio: (initialProf as any).bio || '',
+                    email: (initialProf as any).email || '',
+                    phone: (initialProf as any).phone || '',
+                    birth_date: (initialProf as any).birth_date || '',
+                    commission_rate: (initialProf as any).commission_rate ?? 0,
+                    permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
+                    services_enabled: (initialProf as any).services_enabled || [],
+                    work_schedule: (initialProf as any).work_schedule || {},
+                    photo_url: (initialProf as any).photo_url || initialProf.avatarUrl || null
+                };
+                setProf(normalized);
+            } catch (e: any) {
+                showToast("Erro ao carregar dados do profissional.", "error");
+            }
         };
         init();
-    }, [initialProf]);
+    }, [initialProf, showToast]);
 
     // --- Upload Logic ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -94,10 +105,10 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
             if (updateError) throw updateError;
 
-            alert("Foto atualizada com sucesso!");
+            showToast("Foto atualizada com sucesso!");
         } catch (error: any) {
             console.error("Upload error:", error);
-            alert(`Erro no upload: ${error.message}`);
+            showToast(`Erro no upload: ${error.message || 'Falha desconhecida'}`, "error");
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -119,11 +130,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 cpf: prof.cpf || null,
                 bio: prof.bio || null,
                 active: !!prof.active,
-                // Critical: Convert empty date strings to NULL
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
-                // Critical: Ensure numbers are not NaN
                 commission_rate: isNaN(parseFloat(prof.commission_rate)) ? 0 : parseFloat(prof.commission_rate),
-                // JSON Fields
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
                 work_schedule: prof.work_schedule,
@@ -137,11 +145,11 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
             if (error) throw error;
 
-            alert("Perfil salvo com sucesso! ✅");
+            showToast("Perfil salvo com sucesso!");
             onSave();
         } catch (error: any) {
             console.error("Save error:", error);
-            alert(`Erro ao salvar: ${error.message}`);
+            showToast(`Erro ao salvar: ${error.message || 'Tente novamente.'}`, "error");
         } finally {
             setIsLoading(false);
         }
@@ -158,7 +166,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             if (error) throw error;
             onBack();
         } catch (error: any) {
-            alert(`Erro ao excluir: ${error.message}`);
+            showToast(`Erro ao excluir: ${error.message || 'Falha no servidor.'}`, "error");
         } finally {
             setIsLoading(false);
         }
@@ -199,6 +207,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
     return (
         <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans">
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             {/* Header */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-20 shadow-sm">
                 <div className="flex items-center gap-4">

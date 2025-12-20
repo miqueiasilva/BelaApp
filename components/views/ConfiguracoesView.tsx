@@ -48,7 +48,8 @@ const ConfiguracoesView: React.FC = () => {
     const [newPMFee, setNewPMFee] = useState('0');
 
     const showToast = useCallback((message: string, type: ToastType = 'success') => {
-        setToast({ message, type });
+        const safeMessage = typeof message === 'object' ? (message as any).message || JSON.stringify(message) : String(message);
+        setToast({ message: safeMessage, type });
     }, []);
 
     // --- Specialized Fetchers (Lazy Loading) ---
@@ -69,10 +70,10 @@ const ConfiguracoesView: React.FC = () => {
                     work_schedule: data.work_schedule || {}
                 });
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error("Fetch Error:", e);
             setHasError(true);
-            showToast("Erro ao carregar dados do estúdio", "error");
+            showToast(e.message || "Erro ao carregar dados do estúdio", "error");
         } finally {
             setIsLoading(false);
         }
@@ -84,8 +85,8 @@ const ConfiguracoesView: React.FC = () => {
             const { data, error } = await supabase.from('services').select('*').order('nome');
             if (error) throw error;
             setServices(data || []);
-        } catch (e) {
-            showToast("Erro ao carregar serviços", "error");
+        } catch (e: any) {
+            showToast(e.message || "Erro ao carregar serviços", "error");
         } finally {
             setIsLoading(false);
         }
@@ -97,8 +98,8 @@ const ConfiguracoesView: React.FC = () => {
             const { data, error } = await supabase.from('payment_methods').select('*').order('id');
             if (error) throw error;
             setPaymentMethods(data || []);
-        } catch (e) {
-            showToast("Erro ao carregar métodos de pagamento", "error");
+        } catch (e: any) {
+            showToast(e.message || "Erro ao carregar métodos de pagamento", "error");
         } finally {
             setIsLoading(false);
         }
@@ -127,19 +128,14 @@ const ConfiguracoesView: React.FC = () => {
                 work_schedule: studioData.work_schedule
             };
 
-            let error;
-            if (studioData.id) {
-                const { error: err } = await supabase.from('studio_settings').update(payload).eq('id', studioData.id);
-                error = err;
-            } else {
-                const { error: err } = await supabase.from('studio_settings').insert([payload]);
-                error = err;
-            }
+            const { error } = studioData.id 
+                ? await supabase.from('studio_settings').update(payload).eq('id', studioData.id)
+                : await supabase.from('studio_settings').insert([payload]);
 
             if (error) throw error;
             showToast("Configurações salvas com sucesso!");
         } catch (e: any) {
-            showToast(e.message, "error");
+            showToast(e.message || "Erro ao salvar dados.", "error");
         } finally {
             setIsSaving(false);
         }
@@ -160,7 +156,7 @@ const ConfiguracoesView: React.FC = () => {
             setIsAddingPM(false);
             fetchPaymentMethods();
         } catch (e: any) {
-            showToast(e.message, "error");
+            showToast(e.message || "Erro ao adicionar método.", "error");
         } finally {
             setIsSaving(false);
         }
@@ -174,7 +170,7 @@ const ConfiguracoesView: React.FC = () => {
             showToast("Método removido", "info");
             fetchPaymentMethods();
         } catch (e: any) {
-            showToast("Erro ao remover método", "error");
+            showToast(e.message || "Erro ao remover método.", "error");
         }
     };
 

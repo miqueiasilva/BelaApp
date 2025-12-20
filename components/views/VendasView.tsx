@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
-    Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, 
+    Search, ShoppingCart, Plus, Trash2, CreditCard, 
     CheckCircle, Package, Scissors, UserPlus, ArrowRight, Loader2, X
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
@@ -34,6 +34,11 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
+    const showToast = useCallback((message: string, type: ToastType = 'success') => {
+        const safeMessage = typeof message === 'object' ? (message as any).message || JSON.stringify(message) : String(message);
+        setToast({ message: safeMessage, type });
+    }, []);
+
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -45,10 +50,12 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             setClients(cRes.data || []);
             setServices(sRes.data || []);
             setProducts(pRes.data || []);
+        } catch (e: any) {
+            showToast("Erro ao carregar dados do catálogo.", "error");
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [showToast]);
 
     useEffect(() => {
         fetchData();
@@ -95,16 +102,19 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             for (const item of productItems) {
                 const prod = products.find(p => p.id === item.id);
                 if (prod) {
-                    await supabase.from('products').update({ qtd: prod.qtd - item.quantity }).eq('id', prod.id);
+                    const newQtd = prod.qtd - item.quantity;
+                    const { error: stockErr } = await supabase.from('products').update({ qtd: newQtd }).eq('id', prod.id);
+                    if (stockErr) console.warn("Aviso: Falha ao atualizar estoque de", prod.nome);
                 }
             }
 
-            setToast({ message: 'Venda finalizada com sucesso!', type: 'success' });
+            showToast('Venda finalizada com sucesso!');
             setCart([]);
             setSelectedClient(null);
             fetchData();
         } catch (e: any) {
-            setToast({ message: `Erro ao finalizar: ${e.message}`, type: 'error' });
+            console.error("Checkout error:", e);
+            showToast(`Erro ao finalizar: ${e.message || 'Tente novamente.'}`, 'error');
         } finally {
             setIsSaving(false);
         }
