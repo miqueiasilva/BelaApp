@@ -41,15 +41,12 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 
     const handleNavigation = (viewId: string) => {
         onNavigate(viewId as any);
-        // O fechamento no mobile é controlado pelo MainLayout via prop, 
-        // mas chamamos a navegação aqui para garantir a troca de estado.
     };
 
     const handleLogout = async () => {
-        if (!window.confirm("Deseja realmente sair do BelaApp?")) return;
+        if (!window.confirm("Deseja realmente sair do Belaflow?")) return;
 
         try {
-            // Logout Nuclear: Força a limpeza independente da resposta do servidor
             await supabase.auth.signOut();
         } catch (error) {
             console.error("Erro ao deslogar:", error);
@@ -94,7 +91,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                     B
                 </div>
                 <div>
-                    <h1 className="font-black text-slate-800 text-base leading-tight tracking-tight">BelaApp</h1>
+                    <h1 className="font-black text-slate-800 text-base leading-tight tracking-tight">Belaflow</h1>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Produção v1.2</p>
                 </div>
             </div>

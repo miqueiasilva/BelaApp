@@ -29,7 +29,6 @@ const LoginView: React.FC = () => {
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [showPassword, setShowPassword] = useState(false);
 
-    // FIX: Limpa estados de sessão e loading ao montar o componente
     useEffect(() => {
         setIsLoading(false);
         setError(null);
@@ -68,7 +67,7 @@ const LoginView: React.FC = () => {
                 const { error } = await signUp(email, password, name);
                 if (error) throw error;
                 setSuccessMessage("Conta criada! Verifique seu e-mail.");
-                setIsLoading(false); // Libera para o usuário ver a mensagem
+                setIsLoading(false);
             } else if (mode === 'forgot') {
                 const { error } = await resetPassword(email);
                 if (error) throw error;
@@ -76,12 +75,8 @@ const LoginView: React.FC = () => {
                 setIsLoading(false);
             }
         } catch (err: any) {
-            // FIX: Garante que erros de credenciais desativem o estado de carregamento
             setError(err.message || "Erro de autenticação. Verifique seus dados.");
             setIsLoading(false);
-        } finally {
-            // Caso especial: se não houver erro no login, o AuthContext redirecionará o App.
-            // Mas se cair aqui por qualquer outro motivo, liberamos o botão.
         }
     };
 
@@ -93,11 +88,11 @@ const LoginView: React.FC = () => {
                 <div className="bg-white/[0.04] backdrop-blur-[18px] border border-white/10 rounded-[44px] p-8 md:p-14 shadow-2xl overflow-y-auto max-h-[95vh] scrollbar-hide animate-in fade-in slide-in-from-bottom-4 duration-500">
                     
                     <div className="flex flex-col items-center mb-10">
-                        <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#F43F5E] rounded-[22px] flex items-center justify-center shadow-lg mb-5">
-                            <span className="text-white font-black text-4xl">B</span>
+                        <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#F43F5E] rounded-[22px] flex items-center justify-center shadow-[0_8px_32px_rgba(255,140,66,0.3)] mb-5 transform hover:rotate-3 transition-transform cursor-default">
+                            <span className="text-white font-black text-4xl tracking-tighter">B</span>
                         </div>
-                        <h1 className="text-3xl font-bold text-white mb-2">BelaApp</h1>
-                        <p className="text-slate-200/80 text-sm text-center font-medium">Gestão Inteligente para Salões</p>
+                        <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Belaflow</h1>
+                        <p className="text-slate-200/80 text-sm text-center font-medium leading-relaxed max-w-[240px]">Gestão Inteligente para Estúdios de Beleza</p>
                     </div>
 
                     {error && (
@@ -118,7 +113,7 @@ const LoginView: React.FC = () => {
                             type="button"
                             onClick={handleGoogleLogin}
                             disabled={isLoading}
-                            className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-bold py-4 rounded-[20px] hover:bg-slate-50 transition-all active:scale-[0.97] disabled:opacity-50 mb-8 shadow-xl"
+                            className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-bold py-4 rounded-[20px] hover:bg-slate-50 transition-all active:scale-[0.97] disabled:opacity-50 mb-8 shadow-xl text-sm"
                         >
                             <GoogleIcon />
                             <span>Entrar com Google</span>
@@ -127,7 +122,7 @@ const LoginView: React.FC = () => {
 
                     <div className="relative flex items-center py-2 mb-8">
                         <div className="flex-grow border-t border-white/10"></div>
-                        <span className="flex-shrink-0 mx-6 text-[10px] font-black text-slate-200/60 uppercase tracking-[0.25em]">ACESSO RÁPIDO</span>
+                        <span className="flex-shrink-0 mx-6 text-[10px] font-black text-slate-200/60 uppercase tracking-[0.25em]">OU VIA E-MAIL</span>
                         <div className="flex-grow border-t border-white/10"></div>
                     </div>
 
@@ -148,13 +143,13 @@ const LoginView: React.FC = () => {
 
                         <div className="space-y-1.5">
                             <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-2">E-mail Corporativo</label>
-                            <div className="relative">
-                                <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={19} />
+                            <div className="relative group">
+                                <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-[#FF8C42]" size={19} />
                                 <input
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full bg-white/[0.03] border border-white/10 rounded-[18px] pl-14 pr-6 py-4 text-white outline-none focus:ring-2 focus:ring-orange-500/30 transition-all"
+                                    className="w-full bg-white/[0.03] border border-white/10 rounded-[18px] pl-14 pr-6 py-4 text-white outline-none focus:ring-2 focus:ring-orange-500/30 transition-all font-medium"
                                     placeholder="exemplo@email.com"
                                     required
                                 />
@@ -164,20 +159,21 @@ const LoginView: React.FC = () => {
                         {mode !== 'forgot' && (
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-2">Senha Segura</label>
-                                <div className="relative">
-                                    <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={19} />
+                                <div className="relative group">
+                                    <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-[#FF8C42]" size={19} />
                                     <input
                                         type={showPassword ? "text" : "password"}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full bg-white/[0.03] border border-white/10 rounded-[18px] pl-14 pr-14 py-4 text-white outline-none focus:ring-2 focus:ring-orange-500/30 transition-all"
+                                        className="w-full bg-white/[0.03] border border-white/10 rounded-[18px] pl-14 pr-14 py-4 text-white outline-none focus:ring-2 focus:ring-orange-500/30 transition-all font-medium"
                                         placeholder="••••••••"
                                         required
+                                        minLength={6}
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                        className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
                                     >
                                         {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
                                     </button>
@@ -188,14 +184,15 @@ const LoginView: React.FC = () => {
                         <button
                             type="submit"
                             disabled={isLoading}
-                            className="w-full bg-gradient-to-r from-[#FF8C42] to-[#F43F5E] text-white font-black py-4.5 rounded-[22px] shadow-lg transition-all active:scale-[0.97] disabled:opacity-70 flex items-center justify-center gap-3 mt-8"
+                            className="w-full bg-gradient-to-r from-[#FF8C42] to-[#F43F5E] text-white font-black py-4.5 rounded-[22px] shadow-[0_12px_40px_rgba(255,140,66,0.3)] transition-all active:scale-[0.97] disabled:opacity-70 flex items-center justify-center gap-3 mt-8 group relative overflow-hidden"
                         >
+                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                             {isLoading ? (
                                 <Loader2 className="animate-spin h-6 w-6" />
                             ) : (
                                 <>
-                                    <span>{mode === 'login' ? 'Entrar no Sistema' : mode === 'register' ? 'Criar Conta' : 'Recuperar'}</span>
-                                    <ArrowRight size={22} />
+                                    <span className="text-base tracking-tight">{mode === 'login' ? 'Entrar Agora' : mode === 'register' ? 'Criar Minha Conta' : 'Recuperar Acesso'}</span>
+                                    <ArrowRight size={22} className="group-hover:translate-x-1 transition-transform" />
                                 </>
                             )}
                         </button>
@@ -205,10 +202,10 @@ const LoginView: React.FC = () => {
                         {mode === 'login' ? (
                             <p className="text-sm text-slate-400 font-medium">
                                 Novo por aqui?{' '}
-                                <button type="button" onClick={() => handleModeChange('register')} className="text-white font-black hover:text-[#FF8C42] transition-colors underline underline-offset-4">Cadastre-se</button>
+                                <button type="button" onClick={() => handleModeChange('register')} className="text-white font-black hover:text-[#FF8C42] transition-colors underline underline-offset-4 decoration-[#FF8C42]/30">Cadastre-se</button>
                             </p>
                         ) : (
-                            <button type="button" onClick={() => handleModeChange('login')} className="text-sm text-slate-300 font-bold hover:text-white transition-all bg-white/5 px-6 py-2.5 rounded-full">Voltar ao Login</button>
+                            <button type="button" onClick={() => handleModeChange('login')} className="text-sm text-slate-300 font-bold hover:text-white transition-all bg-white/5 px-6 py-2.5 rounded-full border border-white/5">Voltar ao Login</button>
                         )}
                     </div>
                 </div>

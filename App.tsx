@@ -22,7 +22,7 @@ import ComandasView from './components/views/ComandasView';
 import CaixaView from './components/views/CaixaView';
 import ProdutosView from './components/views/ProdutosView';
 import ServicosView from './components/views/ServicosView';
-import EquipeView from './components/views/EquipeView'; // New
+import EquipeView from './components/views/EquipeView';
 import PublicBookingPreview from './components/views/PublicBookingPreview';
 
 import { mockTransactions } from './data/mockData';
@@ -48,7 +48,7 @@ const AppContent: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-500 font-medium">Carregando BelaApp...</p>
+          <p className="text-slate-500 font-medium">Carregando Belaflow...</p>
         </div>
       </div>
     );
@@ -83,7 +83,6 @@ const AppContent: React.FC = () => {
       case 'financeiro':
         return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
       case 'clientes':
-        // Reuse ClientesView logic for staff listing as well if route matches 'equipe'
         return <ClientesView />;
       case 'relatorios':
         return <RelatoriosView />;
@@ -105,7 +104,6 @@ const AppContent: React.FC = () => {
         window.location.hash = '/public-preview';
         return null;
       default:
-        // Check for specific sidebar logic or custom routes
         if ((currentView as string) === 'equipe') return <EquipeView />;
         return <DashboardView onNavigate={setCurrentView} />;
     }

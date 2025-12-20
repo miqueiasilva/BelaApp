@@ -53,15 +53,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             const tStart = startOfDay(today).toISOString();
             const tEnd = endOfDay(today).toISOString();
 
-            // Consultas reais em paralelo para performance máxima
             const [revRes, appRes, cliRes, upRes] = await Promise.all([
-                // 1. Faturamento Hoje
                 supabase.from('financial_transactions').select('amount').eq('type', 'receita').gte('date', tStart).lte('date', tEnd).abortSignal(controller.signal),
-                // 2. Agendamentos Hoje
                 supabase.from('appointments').select('*', { count: 'exact', head: true }).gte('date', tStart).lte('date', tEnd).neq('status', 'cancelado').abortSignal(controller.signal),
-                // 3. Total de Clientes
                 supabase.from('clients').select('*', { count: 'exact', head: true }).abortSignal(controller.signal),
-                // 4. Próximos 5 Agendamentos
                 supabase.from('appointments').select('id, client_name, service_name, date').gte('date', today.toISOString()).lte('date', tEnd).order('date', { ascending: true }).limit(5).abortSignal(controller.signal)
             ]);
 
@@ -95,7 +90,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                         <span className="capitalize">{format(new Date(), "EEEE, dd 'de' MMMM", { locale: pt })}</span>
                     </div>
                     <h1 className="text-3xl font-black text-slate-800 tracking-tight">
-                        Dashboard <span className="text-orange-500">Operacional</span>
+                        Dashboard <span className="text-orange-500">Belaflow</span>
                     </h1>
                 </div>
                 <div className="flex gap-2">
