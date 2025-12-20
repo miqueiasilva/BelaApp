@@ -3,9 +3,9 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { 
     ChevronLeft, ChevronRight, Plus, MessageSquare, 
     ChevronDown, RefreshCw, User as UserIcon, Calendar as CalendarIcon,
-    AlertCircle, WifiOff, Scissors, ShoppingBag, Lock, Trash2, Edit2
+    Scissors, ShoppingBag, Lock
 } from 'lucide-react';
-import { format, addDays, addWeeks, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, parseISO } from 'date-fns';
+import { format, addDays, addWeeks, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek } from 'date-fns';
 import { pt } from 'date-fns/locale';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
@@ -85,18 +85,17 @@ interface AtendimentosViewProps {
     onAddTransaction: (t: FinancialTransaction) => void;
 }
 
-type PeriodType = 'Dia' | 'Semana' | 'Mês' | 'Lista';
+type PeriodType = 'Dia' | 'Semana';
 
-const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction }) => {
+const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
-    const [hasError, setHasError] = useState<string | null>(null);
     const [periodType, setPeriodType] = useState<PeriodType>('Dia');
     const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false);
     
-    const [modalState, setModalState] = useState<{ type: 'appointment' | 'block' | 'quick_action'; data: any } | null>(null);
+    const [modalState, setModalState] = useState<{ type: 'appointment' | 'block'; data: any } | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, data: any } | null>(null);
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
@@ -125,25 +124,27 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     role: p.role
                 }));
                 setResources(mapped);
+                return mapped;
             }
         } catch (e: any) {
-            console.error("Error fetching professionals:", e);
+            console.error("Erro ao buscar profissionais:", e);
         }
+        return [];
     };
 
-    const fetchAppointments = async () => {
+    const fetchAppointments = useCallback(async () => {
         setIsLoadingData(true);
-        setHasError(null);
         try {
             const { data, error } = await supabase.from('appointments').select('*');
             if (error) throw error;
 
             if (data) {
+                const currentResources = await fetchResources();
                 const mappedAppointments: LegacyAppointment[] = data.map(row => {
                     const startTime = new Date(row.date); 
                     const endTime = row.end_date ? new Date(row.end_date) : new Date(startTime.getTime() + 30 * 60000);
                     
-                    let matchedProf = resources.find(p => p.id === Number(row.resource_id)) 
+                    let matchedProf = currentResources.find(p => p.id === Number(row.resource_id)) 
                                     || { id: Number(row.resource_id) || 1, name: row.professional_name || 'Equipe', avatarUrl: '' };
 
                     return {
@@ -166,24 +167,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 setAppointments(mappedAppointments);
             }
         } catch (e: any) {
-            console.error("Error fetching appointments:", e);
-            setHasError("Erro ao carregar dados da agenda.");
+            console.error("Erro ao carregar agendamentos:", e);
+            showToast("Erro ao sincronizar com o servidor.", "error");
         } finally {
             setIsLoadingData(false);
         }
-    };
-
-    const handleRefresh = useCallback(async () => {
-        await fetchResources();
-        await fetchAppointments();
-    }, [resources.length]); // Re-fetch logic
+    }, [showToast]);
 
     useEffect(() => {
-        handleRefresh();
-    }, [currentDate, handleRefresh]);
+        fetchResources();
+        fetchAppointments();
+    }, [currentDate, fetchAppointments]);
 
     const handleDateChange = (direction: number) => {
-        if (periodType === 'Dia' || periodType === 'Lista') setCurrentDate(prev => addDays(prev, direction));
+        if (periodType === 'Dia') setCurrentDate(prev => addDays(prev, direction));
         else if (periodType === 'Semana') setCurrentDate(prev => addWeeks(prev, direction));
     };
 
@@ -192,7 +189,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
             const days = eachDayOfInterval({ start, end });
-            return days.map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date', data: day }));
+            return days.map(day => ({ 
+                id: day.toISOString(), 
+                title: format(day, 'EEE', { locale: pt }), 
+                subtitle: format(day, 'dd/MM'), 
+                type: 'date', 
+                data: day 
+            }));
         }
         if (resources.length === 0) return [{ id: 1, title: 'Equipe', type: 'professional', data: { id: 1, name: 'Equipe', avatarUrl: '' } }];
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
@@ -201,7 +204,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const gridStyle = useMemo(() => ({ gridTemplateColumns: `60px repeat(${columns.length}, minmax(180px, 1fr))` }), [columns.length]);
 
     const filteredAppointments = useMemo(() => {
-        if (periodType === 'Dia' || periodType === 'Lista') return appointments.filter(a => isSameDay(a.start, currentDate));
+        if (periodType === 'Dia') return appointments.filter(a => isSameDay(a.start, currentDate));
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -221,14 +224,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
     });
 
-    // --- CRUD Handlers ---
+    // --- Action Handlers ---
 
     const handleCellClick = (time: string, col: DynamicColumn) => {
         const [hour, minute] = time.split(':').map(Number);
         let targetDate = new Date(currentDate);
         if (col.type === 'date') targetDate = new Date(col.data);
         targetDate.setHours(hour, minute, 0, 0);
-        const professional = col.type === 'professional' ? col.data : resources[0];
+
+        const professional = col.type === 'professional' ? col.data : (resources[0] || { id: 1, name: 'Equipe' });
         setModalState({ type: 'appointment', data: { start: targetDate, professional } });
     };
 
@@ -238,7 +242,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         let targetDate = new Date(currentDate);
         if (col.type === 'date') targetDate = new Date(col.data);
         targetDate.setHours(hour, minute, 0, 0);
-        const professional = col.type === 'professional' ? col.data : resources[0];
+
+        const professional = col.type === 'professional' ? col.data : (resources[0] || { id: 1, name: 'Equipe' });
         setContextMenu({ x: e.clientX, y: e.clientY, data: { start: targetDate, professional } });
     };
 
@@ -247,16 +252,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         try {
             const isBlock = app.status === 'bloqueado';
             const payload = {
-                client_name: isBlock ? 'HORÁRIO BLOQUEADO' : (app.client?.nome || 'Cliente'),
-                service_name: isBlock ? 'Bloqueio' : app.service.name,
-                professional_name: app.professional.name, 
-                resource_id: Number(app.professional.id) || 1,            
+                client_name: isBlock ? 'BLOQUEIO DE AGENDA' : (app.client?.nome || 'Cliente'),
+                service_name: isBlock ? 'Bloqueio' : (app.service?.name || 'Serviço'),
+                professional_name: app.professional?.name || 'Profissional', 
+                resource_id: Number(app.professional?.id) || 1,            
                 date: app.start.toISOString(),
                 end_date: app.end.toISOString(),
-                value: isBlock ? 0 : (Number(app.service.price) || 0),
+                value: isBlock ? 0 : (Number(app.service?.price) || 0),
                 status: app.status || 'agendado',
                 notes: app.notas || '',
-                color: isBlock ? '#64748b' : (app.service.color || '#3b82f6')
+                color: isBlock ? '#64748b' : (app.service?.color || '#3b82f6')
             };
 
             let res;
@@ -265,23 +270,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             } else {
                 res = await supabase.from('appointments').insert([payload]);
             }
+
             if (res.error) throw res.error;
             
-            showToast('Salvo com sucesso!');
-            await fetchAppointments(); // RE-FETCH CRITICAL
+            showToast('Dados salvos com sucesso!');
+            await fetchAppointments(); // RE-FETCH IMEDIATO
         } catch (error: any) {
-            console.error("Save error:", error);
+            console.error("Erro ao salvar:", error);
             showToast(`Erro ao salvar: ${error.message}`, 'error');
         }
     };
 
     const handleDeleteAppointment = async (id: number) => {
-        if (!window.confirm("Deseja realmente excluir este agendamento?")) return;
+        if (!window.confirm("Deseja realmente remover este agendamento?")) return;
         try {
             const { error } = await supabase.from('appointments').delete().eq('id', id);
             if (error) throw error;
             showToast('Agendamento removido.');
-            await fetchAppointments(); // RE-FETCH CRITICAL
+            await fetchAppointments(); // RE-FETCH IMEDIATO
             setActiveAppointmentDetail(null);
         } catch (error: any) {
             showToast(`Erro ao excluir.`, 'error');
@@ -293,7 +299,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
             if (error) throw error;
             showToast(`Status atualizado.`);
-            await fetchAppointments(); // RE-FETCH CRITICAL
+            await fetchAppointments(); // RE-FETCH IMEDIATO
             setActiveAppointmentDetail(null);
         } catch (error: any) {
             showToast(`Erro ao atualizar status.`, 'error');
@@ -307,17 +313,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             onClick: () => setModalState({ type: 'appointment', data: contextMenu?.data }) 
         },
         { 
-            label: 'Nova Venda', 
-            icon: <ShoppingBag size={16}/>, 
-            onClick: () => showToast("Funcionalidade Venda em breve", "info") 
-        },
-        { 
             label: 'Bloqueio de Horário', 
             icon: <Lock size={16} className="text-rose-500"/>, 
             onClick: () => setModalState({ type: 'block', data: contextMenu?.data }), 
             className: 'text-rose-600' 
         },
-    ], [contextMenu?.data, showToast]);
+    ], [contextMenu?.data]);
 
     return (
         <div className="flex h-full bg-white relative flex-col overflow-hidden font-sans">
@@ -329,7 +330,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         Atendimentos {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-orange-400" />}
                     </h2>
                     <div className="flex items-center gap-3">
-                        <button onClick={handleRefresh} className="p-2.5 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all"><RefreshCw size={20} className={isLoadingData ? 'animate-spin' : ''} /></button>
+                        <button onClick={fetchAppointments} className="p-2.5 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all"><RefreshCw size={20} className={isLoadingData ? 'animate-spin' : ''} /></button>
                         <div className="relative">
                             <button onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm font-bold text-slate-700">
                                 <CalendarIcon size={16} className="text-slate-400" /> {periodType} <ChevronDown size={16} />
@@ -400,7 +401,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     >
                                         <div style={{ backgroundColor: app.service.color || '#3b82f6' }} className="absolute left-0 top-0 bottom-0 w-2 rounded-l-2xl shadow-inner"></div>
                                         <div className="pl-2 overflow-hidden">
-                                            <p className="font-black text-slate-900 truncate text-xs">{app.client?.nome || 'Bloqueio'}</p>
+                                            <p className="font-black text-slate-900 truncate text-xs">{app.client?.nome || 'BLOQUEIO'}</p>
                                             <p className="text-[10px] font-bold text-slate-600 truncate mt-0.5">{app.service.name}</p>
                                             <span className="text-[9px] font-black opacity-40 uppercase">{format(app.start, 'HH:mm')}</span>
                                         </div>
