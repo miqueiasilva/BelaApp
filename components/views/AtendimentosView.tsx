@@ -103,19 +103,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
 
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
 
-    const showToast = useCallback((message: any, type: ToastType = 'success') => {
-        // Garantir extração robusta de mensagem para evitar [object Object]
-        let finalMessage = "";
-        if (typeof message === 'string') {
-            finalMessage = message;
-        } else if (message?.message && typeof message.message === 'string') {
-            finalMessage = message.message;
-        } else if (message?.error_description && typeof message.error_description === 'string') {
-            finalMessage = message.error_description;
-        } else {
-            finalMessage = JSON.stringify(message) || "Erro inesperado";
-        }
-        setToast({ message: finalMessage, type });
+    const showToast = useCallback((message: string, type: ToastType = 'success') => {
+        setToast({ message, type });
     }, []);
 
     const fetchResources = async () => {
@@ -179,7 +168,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             }
         } catch (e: any) {
             console.error("Erro ao carregar agendamentos:", e);
-            showToast("Erro ao sincronizar com o servidor.", "error");
+            const msg = e.message || JSON.stringify(e);
+            showToast("Erro ao sincronizar agenda: " + msg, "error");
         } finally {
             setIsLoadingData(false);
         }
@@ -235,7 +225,79 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
         return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
     });
 
-    // --- Action Handlers ---
+    // --- Core Action Handlers (REFORÇADOS) ---
+
+    const handleSaveAppointment = async (app: LegacyAppointment) => {
+        setModalState(null); 
+        try {
+            const isBlock = app.status === 'bloqueado';
+            const profId = Number(app.professional?.id);
+            
+            // PAYLOAD SEGURO E MAPEADO
+            const payload = {
+                client_name: isBlock ? 'BLOQUEIO DE AGENDA' : (app.client?.nome || 'Cliente'),
+                service_name: isBlock ? 'Bloqueio' : (app.service?.name || 'Serviço'),
+                professional_name: app.professional?.name || 'Profissional', 
+                resource_id: isNaN(profId) ? 1 : profId,            
+                professional_id: isNaN(profId) ? 1 : profId, // Conforme especificação
+                date: app.start.toISOString(),
+                end_date: app.end.toISOString(),
+                value: isBlock ? 0 : (Number(app.service?.price) || 0),
+                status: app.status || 'agendado',
+                notes: app.notas || '',
+                color: isBlock ? '#64748b' : (app.service?.color || '#3b82f6'),
+                origem: (app as any).origem || 'interno'
+            };
+
+            console.log("Enviando agendamento:", payload);
+
+            let res;
+            if (app.id && app.id < 1000000000000) { 
+                res = await supabase.from('appointments').update(payload).eq('id', app.id);
+            } else {
+                res = await supabase.from('appointments').insert([payload]);
+            }
+
+            if (res.error) throw res.error;
+            
+            showToast('Agendamento salvo com sucesso!');
+            await fetchAppointments(); // REFETCH IMEDIATO
+        } catch (error: any) {
+            console.error("ERRO COMPLETO AO SALVAR:", error);
+            const errorMessage = error.message || JSON.stringify(error);
+            alert('Erro detalhado ao salvar: ' + errorMessage);
+            showToast("Falha técnica ao salvar.", "error");
+        }
+    };
+
+    const handleDeleteAppointment = async (id: number) => {
+        if (!window.confirm("Deseja realmente remover este agendamento?")) return;
+        try {
+            const { error } = await supabase.from('appointments').delete().eq('id', id);
+            if (error) throw error;
+            showToast('Agendamento removido.');
+            await fetchAppointments();
+            setActiveAppointmentDetail(null);
+        } catch (error: any) {
+            console.error("ERRO COMPLETO AO EXCLUIR:", error);
+            const errorMessage = error.message || JSON.stringify(error);
+            alert('Erro detalhado ao excluir: ' + errorMessage);
+        }
+    };
+
+    const handleUpdateStatus = async (id: number, status: AppointmentStatus) => {
+        try {
+            const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
+            if (error) throw error;
+            showToast(`Status atualizado para ${status}.`);
+            await fetchAppointments();
+            setActiveAppointmentDetail(null);
+        } catch (error: any) {
+            console.error("ERRO COMPLETO AO ATUALIZAR STATUS:", error);
+            const errorMessage = error.message || JSON.stringify(error);
+            alert('Erro detalhado no status: ' + errorMessage);
+        }
+    };
 
     const handleCellClick = (time: string, col: DynamicColumn) => {
         const [hour, minute] = time.split(':').map(Number);
@@ -256,67 +318,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
 
         const professional = col.type === 'professional' ? col.data : (resources[0] || { id: 1, name: 'Equipe' });
         setContextMenu({ x: e.clientX, y: e.clientY, data: { start: targetDate, professional } });
-    };
-
-    const handleSaveAppointment = async (app: LegacyAppointment) => {
-        setModalState(null); 
-        try {
-            const isBlock = app.status === 'bloqueado';
-            const resourceId = Number(app.professional?.id);
-            
-            const payload = {
-                client_name: isBlock ? 'BLOQUEIO DE AGENDA' : (app.client?.nome || 'Cliente'),
-                service_name: isBlock ? 'Bloqueio' : (app.service?.name || 'Serviço'),
-                professional_name: app.professional?.name || 'Profissional', 
-                resource_id: isNaN(resourceId) ? 1 : resourceId,            
-                date: app.start.toISOString(),
-                end_date: app.end.toISOString(),
-                value: isBlock ? 0 : (Number(app.service?.price) || 0),
-                status: app.status || 'agendado',
-                notes: app.notas || '',
-                color: isBlock ? '#64748b' : (app.service?.color || '#3b82f6')
-            };
-
-            const { error } = app.id && app.id < 1000000000000 
-                ? await supabase.from('appointments').update(payload).eq('id', app.id)
-                : await supabase.from('appointments').insert([payload]);
-
-            if (error) throw error;
-            
-            showToast('Dados salvos com sucesso!');
-            await fetchAppointments(); 
-        } catch (error: any) {
-            console.error("Erro ao salvar:", error);
-            const msg = typeof error?.message === 'string' ? error.message : "Erro inesperado ao salvar.";
-            showToast(`Erro ao salvar: ${msg}`, 'error');
-        }
-    };
-
-    const handleDeleteAppointment = async (id: number) => {
-        if (!window.confirm("Deseja realmente remover este agendamento?")) return;
-        try {
-            const { error } = await supabase.from('appointments').delete().eq('id', id);
-            if (error) throw error;
-            showToast('Agendamento removido.');
-            await fetchAppointments();
-            setActiveAppointmentDetail(null);
-        } catch (error: any) {
-            const msg = typeof error?.message === 'string' ? error.message : "Erro ao excluir.";
-            showToast(`Erro ao excluir: ${msg}`, 'error');
-        }
-    };
-
-    const handleUpdateStatus = async (id: number, status: AppointmentStatus) => {
-        try {
-            const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
-            if (error) throw error;
-            showToast(`Status atualizado.`);
-            await fetchAppointments();
-            setActiveAppointmentDetail(null);
-        } catch (error: any) {
-            const msg = typeof error?.message === 'string' ? error.message : "Erro ao atualizar status.";
-            showToast(`Erro ao atualizar status: ${msg}`, 'error');
-        }
     };
 
     const contextMenuOptions = useMemo(() => [

@@ -87,7 +87,8 @@ const ProdutosView: React.FC = () => {
             setEditingProduct(null);
             fetchProducts();
         } catch (error: any) {
-            const errorMsg = error?.message || (typeof error === 'string' ? error : 'Erro desconhecido');
+            // Correção: Garante que o erro exibido seja uma string para evitar [object Object]
+            const errorMsg = typeof error?.message === 'string' ? error.message : (typeof error === 'string' ? error : 'Erro inesperado ao salvar');
             setToast({ message: `Erro ao salvar: ${errorMsg}`, type: 'error' });
         } finally {
             setIsLoading(false);
