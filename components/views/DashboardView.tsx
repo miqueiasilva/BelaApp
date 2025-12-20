@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
     DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, 
     ShoppingBag, ArrowRight, Loader2, AlertTriangle, RefreshCw 
@@ -17,17 +17,17 @@ interface DashboardViewProps {
 }
 
 const StatCard = ({ title, value, icon: Icon, colorClass, loading }: any) => (
-    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between hover:shadow-md transition-shadow h-full">
+    <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm flex items-start justify-between hover:shadow-xl transition-all duration-300 h-full group">
         <div>
-            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">{title}</p>
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">{title}</p>
             {loading ? (
-                <div className="h-8 w-24 bg-slate-100 animate-pulse rounded mt-1"></div>
+                <div className="h-8 w-24 bg-slate-100 animate-pulse rounded-lg mt-2"></div>
             ) : (
-                <h3 className="text-2xl font-bold text-slate-800 mt-1">{value}</h3>
+                <h3 className="text-3xl font-black text-slate-800 mt-1">{value}</h3>
             )}
         </div>
-        <div className={`p-3 rounded-xl ${colorClass}`}>
-            <Icon className="w-5 h-5 text-white" />
+        <div className={`p-4 rounded-2xl shadow-lg transition-transform group-hover:scale-110 ${colorClass}`}>
+            <Icon className="w-6 h-6 text-white" />
         </div>
     </div>
 );
@@ -37,54 +37,45 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     const [stats, setStats] = useState({
         revenueToday: 0,
         appointmentsCount: 0,
-        pendingOrders: 0
+        clientsCount: 0
     });
     const [upcomingApps, setUpcomingApps] = useState<any[]>([]);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const fetchData = useCallback(async () => {
+        if (abortControllerRef.current) abortControllerRef.current.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         setIsLoading(true);
         try {
             const today = new Date();
             const tStart = startOfDay(today).toISOString();
             const tEnd = endOfDay(today).toISOString();
 
-            // 1. Faturamento Hoje (Transações de Receita)
-            const { data: revData, error: revErr } = await supabase
-                .from('financial_transactions')
-                .select('amount')
-                .eq('type', 'receita')
-                .gte('date', tStart)
-                .lte('date', tEnd);
-            if (revErr) throw revErr;
-
-            // 2. Agendamentos Hoje (Count)
-            const { count: appCount, error: appErr } = await supabase
-                .from('appointments')
-                .select('*', { count: 'exact', head: true })
-                .gte('date', tStart)
-                .lte('date', tEnd)
-                .neq('status', 'cancelado');
-            if (appErr) throw appErr;
-
-            // 3. Próximos Clientes
-            const { data: upcoming, error: upErr } = await supabase
-                .from('appointments')
-                .select('id, client_name, service_name, date')
-                .gte('date', today.toISOString())
-                .lte('date', tEnd)
-                .order('date', { ascending: true })
-                .limit(5);
-            if (upErr) throw upErr;
+            // Consultas reais em paralelo para performance máxima
+            const [revRes, appRes, cliRes, upRes] = await Promise.all([
+                // 1. Faturamento Hoje
+                supabase.from('financial_transactions').select('amount').eq('type', 'receita').gte('date', tStart).lte('date', tEnd).abortSignal(controller.signal),
+                // 2. Agendamentos Hoje
+                supabase.from('appointments').select('*', { count: 'exact', head: true }).gte('date', tStart).lte('date', tEnd).neq('status', 'cancelado').abortSignal(controller.signal),
+                // 3. Total de Clientes
+                supabase.from('clients').select('*', { count: 'exact', head: true }).abortSignal(controller.signal),
+                // 4. Próximos 5 Agendamentos
+                supabase.from('appointments').select('id, client_name, service_name, date').gte('date', today.toISOString()).lte('date', tEnd).order('date', { ascending: true }).limit(5).abortSignal(controller.signal)
+            ]);
 
             setStats({
-                revenueToday: revData?.reduce((acc, curr) => acc + curr.amount, 0) || 0,
-                appointmentsCount: appCount || 0,
-                pendingOrders: 0 // Espaço para expansão futura
+                revenueToday: revRes.data?.reduce((acc, curr) => acc + curr.amount, 0) || 0,
+                appointmentsCount: appRes.count || 0,
+                clientsCount: cliRes.count || 0
             });
-            setUpcomingApps(upcoming || []);
+            setUpcomingApps(upRes.data || []);
 
         } catch (error: any) {
-            alert("Erro ao carregar Dashboard: " + error.message);
+            if (error.name !== 'AbortError') {
+                console.error("Dashboard Error:", error);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -92,53 +83,56 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
 
     useEffect(() => {
         fetchData();
+        return () => abortControllerRef.current?.abort();
     }, [fetchData]);
 
     return (
-        <div className="p-6 h-full overflow-y-auto bg-slate-50/50 font-sans">
-            <header className="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 gap-4">
+        <div className="p-6 h-full overflow-y-auto bg-slate-50/30 font-sans">
+            <header className="flex flex-col md:flex-row justify-between items-end md:items-center mb-10 gap-4">
                 <div>
-                    <div className="flex items-center gap-2 text-slate-500 text-sm mb-1">
+                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold mb-1">
                         <Calendar className="w-4 h-4" />
                         <span className="capitalize">{format(new Date(), "EEEE, dd 'de' MMMM", { locale: pt })}</span>
                     </div>
-                    <h1 className="text-2xl md:text-3xl font-bold text-slate-800">
-                        Painel <span className="text-orange-500">Resumo</span>
+                    <h1 className="text-3xl font-black text-slate-800 tracking-tight">
+                        Dashboard <span className="text-orange-500">Operacional</span>
                     </h1>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={fetchData} className="p-2.5 text-slate-400 hover:text-orange-500 transition-colors bg-white rounded-xl border border-slate-100 shadow-sm"><RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} /></button>
-                    <button onClick={() => onNavigate('agenda')} className="px-5 py-2.5 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-600 transition shadow-lg shadow-orange-200 flex items-center gap-2">
-                        <PlusCircle size={18} /> Novo Agendamento
+                    <button onClick={fetchData} className="p-3 text-slate-400 hover:text-orange-500 transition-all bg-white rounded-2xl border border-slate-100 shadow-sm active:scale-95">
+                        <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
+                    </button>
+                    <button onClick={() => onNavigate('agenda')} className="px-6 py-3 bg-slate-900 text-white font-black text-sm rounded-2xl hover:bg-black transition-all shadow-xl shadow-slate-200 flex items-center gap-2 active:scale-95">
+                        <PlusCircle size={20} /> Novo Agendamento
                     </button>
                 </div>
             </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <StatCard title="Faturamento Hoje" value={`R$ ${stats.revenueToday.toFixed(2)}`} icon={DollarSign} colorClass="bg-green-500" loading={isLoading} />
-                <StatCard title="Atendimentos Hoje" value={stats.appointmentsCount} icon={Users} colorClass="bg-blue-500" loading={isLoading} />
-                <StatCard title="Meta do Mês" value="85%" icon={TrendingUp} colorClass="bg-slate-800" loading={isLoading} />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                <StatCard title="Faturamento Hoje" value={`R$ ${stats.revenueToday.toFixed(2)}`} icon={DollarSign} colorClass="bg-emerald-500 shadow-emerald-100" loading={isLoading} />
+                <StatCard title="Agenda do Dia" value={stats.appointmentsCount} icon={Users} colorClass="bg-blue-500 shadow-blue-100" loading={isLoading} />
+                <StatCard title="Base de Clientes" value={stats.clientsCount} icon={TrendingUp} colorClass="bg-orange-500 shadow-orange-100" loading={isLoading} />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
-                    {/* Shortcuts */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-8">
+                    {/* Atalhos Rápidos */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <button onClick={() => onNavigate('vendas')} className="p-4 bg-white border border-slate-100 rounded-2xl hover:border-orange-200 hover:shadow-md transition-all flex flex-col items-center gap-2 group">
-                            <div className="p-3 bg-orange-50 text-orange-500 rounded-xl group-hover:bg-orange-500 group-hover:text-white transition-colors"><ShoppingBag size={24} /></div>
-                            <span className="text-xs font-bold text-slate-600">Nova Venda</span>
+                        <button onClick={() => onNavigate('vendas')} className="p-6 bg-white border border-slate-100 rounded-[32px] hover:border-orange-200 hover:shadow-xl transition-all flex flex-col items-center gap-3 group active:scale-95">
+                            <div className="p-4 bg-orange-50 text-orange-500 rounded-2xl group-hover:bg-orange-500 group-hover:text-white transition-all shadow-inner"><ShoppingBag size={24} /></div>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nova Venda</span>
                         </button>
-                        <button onClick={() => onNavigate('clientes')} className="p-4 bg-white border border-slate-100 rounded-2xl hover:border-blue-200 hover:shadow-md transition-all flex flex-col items-center gap-2 group">
-                            <div className="p-3 bg-blue-50 text-blue-500 rounded-xl group-hover:bg-blue-500 group-hover:text-white transition-colors"><UserPlus size={24} /></div>
-                            <span className="text-xs font-bold text-slate-600">Novo Cliente</span>
+                        <button onClick={() => onNavigate('clientes')} className="p-6 bg-white border border-slate-100 rounded-[32px] hover:border-blue-200 hover:shadow-xl transition-all flex flex-col items-center gap-3 group active:scale-95">
+                            <div className="p-4 bg-blue-50 text-blue-500 rounded-2xl group-hover:bg-blue-500 group-hover:text-white transition-all shadow-inner"><UserPlus size={24} /></div>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Novo Cliente</span>
                         </button>
-                        <button onClick={() => onNavigate('financeiro')} className="p-4 bg-white border border-slate-100 rounded-2xl hover:border-green-200 hover:shadow-md transition-all flex flex-col items-center gap-2 group">
-                            <div className="p-3 bg-green-50 text-green-500 rounded-xl group-hover:bg-green-500 group-hover:text-white transition-colors"><DollarSign size={24} /></div>
-                            <span className="text-xs font-bold text-slate-600">Lançar Caixa</span>
+                        <button onClick={() => onNavigate('financeiro')} className="p-6 bg-white border border-slate-100 rounded-[32px] hover:border-emerald-200 hover:shadow-xl transition-all flex flex-col items-center gap-3 group active:scale-95">
+                            <div className="p-4 bg-emerald-50 text-emerald-500 rounded-2xl group-hover:bg-emerald-500 group-hover:text-white transition-all shadow-inner"><DollarSign size={24} /></div>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Lançar Caixa</span>
                         </button>
-                        <button onClick={() => onNavigate('agenda')} className="p-4 bg-white border border-slate-100 rounded-2xl hover:border-purple-200 hover:shadow-md transition-all flex flex-col items-center gap-2 group">
-                            <div className="p-3 bg-purple-50 text-purple-500 rounded-xl group-hover:bg-purple-500 group-hover:text-white transition-colors"><Calendar size={24} /></div>
-                            <span className="text-xs font-bold text-slate-600">Ver Agenda</span>
+                        <button onClick={() => onNavigate('agenda')} className="p-6 bg-white border border-slate-100 rounded-[32px] hover:border-purple-200 hover:shadow-xl transition-all flex flex-col items-center gap-3 group active:scale-95">
+                            <div className="p-4 bg-purple-50 text-purple-500 rounded-2xl group-hover:bg-purple-500 group-hover:text-white transition-all shadow-inner"><Calendar size={24} /></div>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ver Agenda</span>
                         </button>
                     </div>
 
@@ -146,26 +140,28 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                 </div>
 
                 <div className="space-y-6">
-                    <Card title="Próximos Clientes">
+                    <Card title="Próximos Clientes" className="rounded-[32px]">
                         {upcomingApps.length === 0 ? (
-                            <div className="py-10 text-center text-slate-400 italic text-sm">Nenhum agendamento para o restante do dia.</div>
+                            <div className="py-12 text-center text-slate-300 italic text-sm">
+                                {isLoading ? 'Buscando horários...' : 'Nenhum agendamento pendente.'}
+                            </div>
                         ) : (
                             <div className="space-y-4">
                                 {upcomingApps.map((app) => (
-                                    <div key={app.id} className="flex gap-4 items-center p-3 hover:bg-slate-50 rounded-xl transition-colors">
-                                        <div className="w-12 h-12 bg-white border border-slate-100 shadow-sm rounded-lg flex flex-col items-center justify-center">
+                                    <div key={app.id} className="flex gap-4 items-center p-3 hover:bg-slate-50 rounded-2xl transition-colors border border-transparent hover:border-slate-100">
+                                        <div className="w-14 h-14 bg-white border border-slate-100 shadow-sm rounded-2xl flex flex-col items-center justify-center flex-shrink-0">
                                             <span className="text-xs font-black text-slate-800">{format(new Date(app.date), 'HH:mm')}</span>
                                         </div>
                                         <div className="min-w-0">
-                                            <p className="text-sm font-bold text-slate-800 truncate">{app.client_name}</p>
-                                            <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{app.service_name}</p>
+                                            <p className="text-sm font-bold text-slate-800 truncate leading-tight">{app.client_name}</p>
+                                            <p className="text-[10px] text-slate-400 font-bold uppercase truncate tracking-tighter mt-1">{app.service_name}</p>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         )}
-                        <button onClick={() => onNavigate('agenda')} className="w-full mt-4 py-2 text-xs font-black text-orange-500 hover:underline uppercase tracking-widest flex items-center justify-center gap-2">
-                            Ver agenda completa <ArrowRight size={14}/>
+                        <button onClick={() => onNavigate('agenda')} className="w-full mt-6 py-4 text-[10px] font-black text-orange-600 hover:text-orange-700 bg-orange-50/50 rounded-2xl uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-colors">
+                            Agenda Completa <ArrowRight size={14}/>
                         </button>
                     </Card>
                 </div>
