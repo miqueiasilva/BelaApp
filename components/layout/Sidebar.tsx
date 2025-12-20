@@ -40,6 +40,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     ];
 
     const handleNavigation = (viewId: string) => {
+        // --- COMPORTAMENTO ESPECIAL PARA AGENDA ONLINE PÚBLICA ---
+        if (viewId === 'agenda_online') {
+            window.open(window.location.origin + '/#/agendar', '_blank');
+            return;
+        }
         onNavigate(viewId as any);
     };
 

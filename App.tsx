@@ -23,7 +23,7 @@ import CaixaView from './components/views/CaixaView';
 import ProdutosView from './components/views/ProdutosView';
 import ServicosView from './components/views/ServicosView';
 import EquipeView from './components/views/EquipeView';
-import PublicBookingPreview from './components/views/PublicBookingPreview';
+import PublicBookingView from './components/views/PublicBookingView';
 
 import { mockTransactions } from './data/mockData';
 
@@ -43,6 +43,11 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // --- ROTA PÚBLICA (Deve vir antes do check de !user) ---
+  if (hash === '#/agendar') {
+    return <PublicBookingView />;
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -52,10 +57,6 @@ const AppContent: React.FC = () => {
         </div>
       </div>
     );
-  }
-
-  if (hash === '#/public-preview') {
-    return <PublicBookingPreview />;
   }
 
   if (pathname === '/reset-password' || hash === '#/reset-password') {
@@ -100,9 +101,6 @@ const AppContent: React.FC = () => {
         return <ProdutosView />;
       case 'servicos':
         return <ServicosView />;
-      case 'public_preview':
-        window.location.hash = '/public-preview';
-        return null;
       default:
         if ((currentView as string) === 'equipe') return <EquipeView />;
         return <DashboardView onNavigate={setCurrentView} />;
