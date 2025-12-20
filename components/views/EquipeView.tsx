@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
     Plus, Users, Loader2, Search, ArrowRight, User as UserIcon, 
-    Briefcase, ShieldCheck, ShieldAlert, RefreshCw 
+    Briefcase, ShieldCheck, ShieldAlert, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { LegacyProfessional } from '../../types';
@@ -17,40 +17,52 @@ const EquipeView: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedProf, setSelectedProf] = useState<LegacyProfessional | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const showToast = useCallback((message: any, type: ToastType = 'success') => {
-        let finalMessage = "";
-        if (typeof message === 'string') {
-            finalMessage = message;
-        } else if (message?.message && typeof message.message === 'string') {
-            finalMessage = message.message;
-        } else {
-            finalMessage = JSON.stringify(message) || "Erro inesperado";
-        }
-        setToast({ message: finalMessage, type });
+        const msg = typeof message === 'object' ? message?.message || JSON.stringify(message) : String(message);
+        setToast({ message: msg, type });
     }, []);
 
     const fetchProfessionals = useCallback(async () => {
+        // Cancela requisição anterior se existir (evita engarrafamento)
+        if (abortControllerRef.current) abortControllerRef.current.abort();
+        
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        
         setIsLoading(true);
         setError(null);
+
+        // Timeout de segurança: 5 segundos
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
         try {
             const { data, error: sbError } = await supabase
                 .from('professionals')
                 .select('*')
-                .order('name', { ascending: true });
+                .order('name', { ascending: true })
+                .abortSignal(controller.signal);
             
             if (sbError) throw sbError;
             setProfessionals(data || []);
         } catch (err: any) {
-            console.error("Fetch Staff Error:", err);
-            setError(typeof err?.message === 'string' ? err.message : "Erro inesperado ao carregar equipe.");
+            if (err.name === 'AbortError') {
+                setError("Tempo limite excedido ou busca cancelada. Tente novamente.");
+            } else {
+                console.error("Fetch Staff Error:", err);
+                setError(err.message || "Erro inesperado ao carregar equipe.");
+            }
         } finally {
+            clearTimeout(timeoutId);
             setIsLoading(false);
         }
     }, []);
 
     useEffect(() => {
         fetchProfessionals();
+        return () => abortControllerRef.current?.abort();
     }, [fetchProfessionals]);
 
     const handleCreateNew = useCallback(async () => {
@@ -74,8 +86,7 @@ const EquipeView: React.FC = () => {
             setSelectedProf(data as any);
             showToast('Novo rascunho criado!');
         } catch (error: any) {
-            const msg = typeof error?.message === 'string' ? error.message : "Falha no banco.";
-            showToast(`Erro ao criar: ${msg}`, 'error');
+            showToast(`Erro ao criar: ${error.message}`, 'error');
         } finally {
             setIsLoading(false);
         }
@@ -86,14 +97,12 @@ const EquipeView: React.FC = () => {
             const { error } = await supabase.from('professionals').update({ active: !currentStatus }).eq('id', id);
             if (error) throw error;
             setProfessionals(prev => prev.map(p => p.id === id ? { ...p, active: !currentStatus } : p));
-            showToast(`Status atualizado com sucesso.`);
+            showToast(`Status atualizado.`);
         } catch (error: any) {
-            const msg = typeof error?.message === 'string' ? error.message : "Falha no servidor.";
-            showToast(`Erro ao atualizar status: ${msg}`, 'error');
+            showToast(`Erro ao atualizar status: ${error.message}`, 'error');
         }
     }, [showToast]);
 
-    // Otimização de busca com useMemo
     const filteredProfessionals = useMemo(() => {
         const term = searchTerm.toLowerCase();
         return professionals.filter(p => 
@@ -121,12 +130,12 @@ const EquipeView: React.FC = () => {
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                         <Users className="text-orange-500" size={28} /> Gestão de Equipe
                     </h1>
-                    <p className="text-slate-500 text-sm font-medium">Controle de profissionais, permissões e disponibilidades.</p>
+                    <p className="text-slate-500 text-sm font-medium">Controle de profissionais e permissões.</p>
                 </div>
                 <button 
                     onClick={handleCreateNew}
                     disabled={isLoading}
-                    className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                    className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2 disabled:opacity-50"
                 >
                     <Plus size={20} /> Adicionar Colaborador
                 </button>
@@ -148,20 +157,22 @@ const EquipeView: React.FC = () => {
                     {isLoading && professionals.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                             <Loader2 className="animate-spin mb-4" size={48} />
-                            <p className="font-medium">Carregando sua equipe...</p>
+                            <p className="font-medium">Sincronizando equipe...</p>
                         </div>
                     ) : error ? (
                         <div className="bg-white rounded-3xl p-16 text-center border border-red-100 flex flex-col items-center">
-                            <RefreshCw size={64} className="text-red-200 mb-4" />
-                            <h3 className="text-lg font-bold text-slate-700">Ops! Algo deu errado.</h3>
-                            <p className="text-slate-400 mt-2 mb-6">{error}</p>
-                            <button onClick={fetchProfessionals} className="px-6 py-2 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900">Tentar Novamente</button>
+                            <AlertTriangle size={64} className="text-red-400 mb-4" />
+                            <h3 className="text-lg font-bold text-slate-700">Conexão Instável</h3>
+                            <p className="text-slate-400 mt-2 mb-6 max-w-xs mx-auto">{error}</p>
+                            <button onClick={fetchProfessionals} className="px-6 py-2 bg-slate-800 text-white rounded-xl font-bold flex items-center gap-2">
+                                <RefreshCw size={16} /> Tentar Agora
+                            </button>
                         </div>
                     ) : filteredProfessionals.length === 0 ? (
                         <div className="bg-white rounded-3xl p-16 text-center border border-slate-200 border-dashed">
                             <Users size={64} className="mx-auto text-slate-200 mb-4" />
-                            <h3 className="text-lg font-bold text-slate-600">Nenhum resultado</h3>
-                            <p className="text-slate-400 mt-2">Nenhum colaborador encontrado para os termos buscados.</p>
+                            <h3 className="text-lg font-bold text-slate-600">Ninguém encontrado</h3>
+                            <p className="text-slate-400 mt-2 italic">"{searchTerm}" não corresponde a nenhum profissional.</p>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
