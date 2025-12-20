@@ -39,23 +39,23 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
          { id: 'produtos', icon: Package, label: 'Produtos' },
     ];
 
-    const handleNavigation = (e: React.MouseEvent, viewId: string) => {
-        e.preventDefault();
+    const handleNavigation = (viewId: string) => {
         onNavigate(viewId as any);
+        // O fechamento no mobile é controlado pelo MainLayout via prop, 
+        // mas chamamos a navegação aqui para garantir a troca de estado.
     };
 
     const handleLogout = async () => {
         if (!window.confirm("Deseja realmente sair do BelaApp?")) return;
 
         try {
+            // Logout Nuclear: Força a limpeza independente da resposta do servidor
             await supabase.auth.signOut();
-        } catch (error: any) {
-            console.error("Erro ao deslogar do banco:", error.message);
+        } catch (error) {
+            console.error("Erro ao deslogar:", error);
         } finally {
-            // Limpeza obrigatória de rastros locais
             localStorage.clear();
             sessionStorage.clear();
-            // Hard redirect para limpar estado da aplicação
             window.location.href = '/'; 
         }
     };
@@ -74,7 +74,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         return (
             <li key={item.id}>
                 <button 
-                    onClick={(e) => handleNavigation(e, item.id)}
+                    onClick={() => handleNavigation(item.id)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${
                     isActive 
                     ? 'bg-orange-100 text-orange-600 shadow-sm border border-orange-200' 
@@ -95,12 +95,12 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                 </div>
                 <div>
                     <h1 className="font-black text-slate-800 text-base leading-tight tracking-tight">BelaApp</h1>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Painel Administrativo</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Produção v1.2</p>
                 </div>
             </div>
             
             <nav className="flex-1 overflow-y-auto p-4 scrollbar-hide">
-                <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3 mt-2">Principal</div>
+                <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3 mt-2">Navegação</div>
                 <ul className="space-y-1">
                     {filteredMenu.map(renderItem)}
                 </ul>

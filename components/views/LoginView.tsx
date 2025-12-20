@@ -29,15 +29,18 @@ const LoginView: React.FC = () => {
 
     // --- Higiene de Sessão Preventiva ---
     useEffect(() => {
-        // Ao carregar a tela de login, removemos qualquer token "sujo" que possa causar
-        // o travamento do AuthProvider em loading infinito.
-        const keysToRemove = Object.keys(localStorage).filter(key => 
-            key.includes('auth-token') || 
-            key.startsWith('sb-') || 
-            key === 'supabase.auth.token'
-        );
-        keysToRemove.forEach(key => localStorage.removeItem(key));
-        sessionStorage.clear();
+        const cleanupSession = () => {
+            // Remove chaves específicas do Supabase que podem travar o loading
+            const keysToRemove = Object.keys(localStorage).filter(key => 
+                key.includes('auth-token') || 
+                key.startsWith('sb-') || 
+                key === 'supabase.auth.token'
+            );
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            sessionStorage.clear();
+        };
+
+        cleanupSession();
     }, []);
 
     const handleModeChange = (newMode: AuthMode) => {
@@ -53,7 +56,8 @@ const LoginView: React.FC = () => {
             const { error } = await signInWithGoogle();
             if (error) throw error;
         } catch (err: any) {
-            setError("Falha na autenticação com Google.");
+            console.error("Google Auth Error:", err);
+            setError("Falha na comunicação com o Google. Tente novamente.");
             setIsLoading(false);
         }
     };
@@ -64,6 +68,9 @@ const LoginView: React.FC = () => {
         setSuccessMessage(null);
         setIsLoading(true);
 
+        // AbortController para cancelar requisição se o usuário sair/trocar
+        const controller = new AbortController();
+
         try {
             if (mode === 'login') {
                 const { error } = await signIn(email, password);
@@ -71,64 +78,53 @@ const LoginView: React.FC = () => {
             } else if (mode === 'register') {
                 const { error } = await signUp(email, password, name);
                 if (error) throw error;
-                setSuccessMessage("Conta criada! Verifique seu e-mail.");
+                setSuccessMessage("Conta criada com sucesso! Por favor, verifique seu e-mail.");
             } else if (mode === 'forgot') {
                 const { error } = await resetPassword(email);
                 if (error) throw error;
-                setSuccessMessage("Instruções enviadas para seu e-mail.");
+                setSuccessMessage("Se o e-mail estiver cadastrado, você receberá as instruções em instantes.");
             }
         } catch (err: any) {
-            setError(err.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : err.message);
+            // Tratamento amigável de erros do Supabase
+            const msg = err.message || JSON.stringify(err);
+            if (msg.includes("Invalid login credentials")) {
+                setError("E-mail ou senha incorretos.");
+            } else if (msg.includes("User already registered")) {
+                setError("Este e-mail já possui cadastro.");
+            } else {
+                setError("Ocorreu um erro inesperado. Verifique sua conexão.");
+            }
         } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <div className="min-h-screen bg-[#0f1219] flex items-center justify-center p-6 font-sans relative overflow-hidden">
-            {/* Background Decorative Blurs */}
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[120px]"></div>
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/20 rounded-full blur-[120px]"></div>
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-sans relative overflow-hidden">
+            {/* Background Decorativo */}
+            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-orange-500/10 rounded-full blur-[120px]"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-rose-500/10 rounded-full blur-[120px]"></div>
 
-            <div className="w-full max-w-[420px] bg-[#1a1e26]/80 backdrop-blur-xl rounded-[32px] p-8 md:p-10 shadow-2xl border border-white/5 relative z-10">
+            <div className="w-full max-w-[420px] bg-white rounded-[40px] p-8 md:p-12 shadow-2xl relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 
-                {/* Logo Section */}
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-gradient-to-tr from-orange-500 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/20 transition-transform hover:scale-105 duration-300">
+                {/* Logo e Titulo */}
+                <div className="text-center mb-10">
+                    <div className="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-orange-200">
                         <span className="text-white font-black text-3xl">B</span>
                     </div>
-                    <h1 className="text-3xl font-bold text-white tracking-tight">BelaApp</h1>
-                    <p className="text-slate-400 mt-2 text-sm font-medium">Gestão Inteligente para Estúdios de Beleza</p>
-                </div>
-
-                {/* Social Login */}
-                <div className="space-y-4">
-                    <button
-                        type="button"
-                        onClick={handleGoogleLogin}
-                        disabled={isLoading}
-                        className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-bold py-3.5 rounded-xl hover:bg-slate-100 transition-all active:scale-[0.98] disabled:opacity-50"
-                    >
-                        <GoogleIcon />
-                        <span>Entrar com Google</span>
-                    </button>
-
-                    <div className="relative flex items-center py-4">
-                        <div className="flex-grow border-t border-white/5"></div>
-                        <span className="flex-shrink-0 mx-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ou via e-mail</span>
-                        <div className="flex-grow border-t border-white/5"></div>
-                    </div>
+                    <h1 className="text-3xl font-bold text-slate-800 tracking-tight">BelaApp</h1>
+                    <p className="text-slate-400 mt-2 text-sm font-medium">Gestão Inteligente de Estúdios</p>
                 </div>
 
                 {/* Feedback Messages */}
                 {error && (
-                    <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold flex items-center gap-3 rounded-xl animate-in fade-in slide-in-from-top-2">
+                    <div className="mb-6 p-4 bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold flex items-center gap-3 rounded-2xl animate-in fade-in zoom-in-95">
                         <XCircle size={16} />
                         {error}
                     </div>
                 )}
                 {successMessage && (
-                    <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold flex items-center gap-3 rounded-xl animate-in fade-in slide-in-from-top-2">
+                    <div className="mb-6 p-4 bg-emerald-50 border border-emerald-100 text-emerald-600 text-xs font-bold flex items-center gap-3 rounded-2xl animate-in fade-in zoom-in-95">
                         <CheckCircle2 size={16} />
                         {successMessage}
                     </div>
@@ -137,96 +133,114 @@ const LoginView: React.FC = () => {
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-5">
                     {mode === 'register' && (
-                        <div>
-                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Nome Completo</label>
-                            <div className="relative group">
-                                <input
-                                    type="text"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    className="w-full bg-[#242936] border border-white/5 rounded-xl pl-4 pr-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
-                                    placeholder="Seu nome"
-                                    required={mode === 'register'}
-                                />
-                            </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome Completo</label>
+                            <input
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                                placeholder="Seu nome"
+                                required
+                            />
                         </div>
                     )}
 
-                    <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">E-mail</label>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">E-mail</label>
                         <div className="relative group">
-                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-orange-400 transition-colors" size={18} />
+                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-orange-500" size={18} />
                             <input
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="w-full bg-[#242936] border border-white/5 rounded-xl pl-12 pr-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
-                                placeholder="seu@email.com"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-3.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                                placeholder="exemplo@email.com"
                                 required
                             />
                         </div>
                     </div>
 
                     {mode !== 'forgot' && (
-                        <div>
-                            <div className="flex justify-between items-center mb-2 ml-1">
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Senha</label>
-                            </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Senha</label>
                             <div className="relative group">
-                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-orange-400 transition-colors" size={18} />
+                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-orange-500" size={18} />
                                 <input
                                     type={showPassword ? "text" : "password"}
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full bg-[#242936] border border-white/5 rounded-xl pl-12 pr-12 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-12 py-3.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
                                     placeholder="••••••••"
-                                    required={mode !== 'forgot'}
+                                    required
                                     minLength={6}
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute inset-y-0 right-4 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+                                    className="absolute inset-y-0 right-4 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
                                 >
                                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                 </button>
                             </div>
-                            {mode === 'login' && (
-                                <div className="flex justify-end mt-3">
-                                    <button 
-                                        type="button" 
-                                        onClick={() => handleModeChange('forgot')} 
-                                        className="text-xs font-bold text-orange-400 hover:text-orange-300 transition-colors"
-                                    >
-                                        Esqueceu a senha?
-                                    </button>
-                                </div>
-                            )}
+                        </div>
+                    )}
+
+                    {mode === 'login' && (
+                        <div className="flex justify-end">
+                            <button 
+                                type="button" 
+                                onClick={() => handleModeChange('forgot')} 
+                                className="text-xs font-bold text-orange-500 hover:underline"
+                            >
+                                Esqueceu a senha?
+                            </button>
                         </div>
                     )}
 
                     <button
                         type="submit"
                         disabled={isLoading}
-                        className="w-full bg-gradient-to-r from-orange-500 to-rose-500 text-white font-black py-4 rounded-xl shadow-lg shadow-orange-500/20 hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-3 mt-4"
+                        className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-orange-100 transition-all active:scale-95 disabled:opacity-70 flex items-center justify-center gap-3 mt-4"
                     >
                         {isLoading ? (
                             <Loader2 className="animate-spin h-5 w-5" />
                         ) : (
                             <>
-                                <span>{mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar Conta' : 'Redefinir Senha'}</span>
+                                <span>{mode === 'login' ? 'Entrar Agora' : mode === 'register' ? 'Criar minha Conta' : 'Enviar Link'}</span>
                                 <ArrowRight size={20} />
                             </>
                         )}
                     </button>
                 </form>
 
-                {/* Footer Links */}
-                <div className="mt-8 text-center">
+                {/* Social Login */}
+                {mode === 'login' && (
+                    <div className="mt-8">
+                        <div className="relative flex items-center py-4">
+                            <div className="flex-grow border-t border-slate-100"></div>
+                            <span className="flex-shrink-0 mx-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">ou entrar com</span>
+                            <div className="flex-grow border-t border-slate-100"></div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={handleGoogleLogin}
+                            disabled={isLoading}
+                            className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 text-slate-600 font-bold py-3.5 rounded-2xl hover:bg-slate-50 transition-all active:scale-95 disabled:opacity-50"
+                        >
+                            <GoogleIcon />
+                            <span>Google</span>
+                        </button>
+                    </div>
+                )}
+
+                {/* Footer Switcher */}
+                <div className="mt-10 text-center">
                     {mode === 'login' ? (
                         <p className="text-sm text-slate-500 font-medium">
-                            Não tem conta?{' '}
-                            <button type="button" onClick={() => handleModeChange('register')} className="text-white font-bold hover:underline">
+                            Ainda não tem conta?{' '}
+                            <button type="button" onClick={() => handleModeChange('register')} className="text-orange-500 font-bold hover:underline">
                                 Cadastre-se
                             </button>
                         </p>
@@ -234,17 +248,11 @@ const LoginView: React.FC = () => {
                         <button 
                             type="button" 
                             onClick={() => handleModeChange('login')} 
-                            className="text-sm text-white font-bold hover:underline inline-flex items-center gap-2"
+                            className="text-sm text-slate-500 font-bold hover:underline inline-flex items-center gap-2"
                         >
                             Voltar para o Login
                         </button>
                     )}
-                </div>
-
-                <div className="mt-10 text-center opacity-30">
-                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">
-                        BelaApp &copy; 2025 &bull; Todos os direitos reservados
-                    </p>
                 </div>
             </div>
         </div>
