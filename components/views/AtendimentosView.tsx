@@ -24,7 +24,7 @@ import ContextMenu from '../shared/ContextMenu';
 const START_HOUR = 8;
 const END_HOUR = 21; 
 const BASE_ROW_HEIGHT = 80; 
-const LOADING_TIMEOUT_MS = 8000;
+const LOADING_TIMEOUT_MS = 10000;
 
 const AtendimentosView: React.FC = () => {
     // --- Estados de Dados ---
@@ -60,20 +60,21 @@ const AtendimentosView: React.FC = () => {
     const abortControllerRef = useRef<AbortController | null>(null);
 
     const showToast = useCallback((message: string, type: ToastType = 'success') => {
-        setToast({ message, type });
+        setToast({ message: String(message), type });
     }, []);
 
     // --- Helper: Renderizar Avatar com Fallback ---
     const renderAvatar = (prof: LegacyProfessional, sizeClass = "w-10 h-10") => {
-        const initials = prof.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-        const photoUrl = prof.avatarUrl || (prof as any).photo_url;
+        const nameStr = prof?.name || 'Profissional';
+        const initials = nameStr.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        const photoUrl = prof?.avatarUrl || (prof as any)?.photo_url;
 
         return (
             <div className={`${sizeClass} rounded-full flex-shrink-0 border-2 border-white shadow-sm overflow-hidden bg-orange-100 flex items-center justify-center`}>
                 {photoUrl ? (
                     <img 
                         src={photoUrl} 
-                        alt={prof.name} 
+                        alt={nameStr} 
                         className="w-full h-full object-cover"
                         onError={(e) => { (e.target as any).style.display = 'none'; }}
                     />
@@ -114,7 +115,7 @@ const AtendimentosView: React.FC = () => {
             const mappedProfs: LegacyProfessional[] = (profs || []).map(p => ({
                 id: p.id,
                 name: p.name,
-                avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
+                avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=random`,
                 role: p.role,
                 color: p.color || '#F97316',
             } as any));
@@ -138,33 +139,38 @@ const AtendimentosView: React.FC = () => {
             
             if (aErr) throw aErr;
 
-            const mappedApps: LegacyAppointment[] = (apps || []).map(row => ({
-                id: row.id,
-                start: new Date(row.date),
-                end: row.end_date ? new Date(row.end_date) : new Date(new Date(row.date).getTime() + 30 * 60000),
-                status: (row.status as AppointmentStatus) || 'agendado',
-                client: { id: 0, nome: row.client_name || 'Cliente', consent: true },
-                professional: mappedProfs.find(p => p.id === Number(row.resource_id)) || mappedProfs[0],
-                service: { 
-                    id: 0, name: row.service_name || 'Serviço', 
-                    price: parseFloat(row.value) || 0, duration: 30, 
-                    color: row.color || '#3b82f6' 
-                },
-                notas: row.notes,
-                origem: row.origem
-            } as any));
+            const mappedApps: LegacyAppointment[] = (apps || []).map(row => {
+                const prof = mappedProfs.find(p => p.id === Number(row.resource_id)) || mappedProfs[0] || { id: 0, name: 'Não atribuído' };
+                return {
+                    id: row.id,
+                    start: new Date(row.date),
+                    end: row.end_date ? new Date(row.end_date) : new Date(new Date(row.date).getTime() + 30 * 60000),
+                    status: (row.status as AppointmentStatus) || 'agendado',
+                    client: { id: 0, nome: row.client_name || 'Cliente', consent: true },
+                    professional: prof,
+                    service: { 
+                        id: 0, name: row.service_name || 'Serviço', 
+                        price: parseFloat(row.value) || 0, duration: 30, 
+                        color: row.color || '#3b82f6' 
+                    },
+                    notas: row.notes,
+                    origem: row.origem
+                } as any;
+            });
 
             setAppointments(mappedApps);
         } catch (e: any) {
             if (e.name !== 'AbortError') {
                 console.error("Fetch Error:", e);
-                setFetchError(e.message || "Falha ao sincronizar com o servidor.");
+                // CORREÇÃO: Garante que o erro seja sempre uma string e não o objeto literal
+                const errorMessage = e?.message || (typeof e === 'string' ? e : "Não foi possível sincronizar com o servidor.");
+                setFetchError(String(errorMessage));
             }
         } finally {
             clearTimeout(timeoutId);
             setIsLoading(false);
         }
-    }, [currentDate]);
+    }, [currentDate, isLoading, visibleProfIds.length]);
 
     useEffect(() => {
         fetchData();
@@ -342,7 +348,7 @@ const AtendimentosView: React.FC = () => {
                                 {onlineApps.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-black border-2 border-white shadow-lg">{onlineApps.length}</span>}
                             </button>
 
-                            {/* DROPDOWN NOTIFICAÇÕES (POSIÇÃO FIXA CORRIGIDA) */}
+                            {/* DROPDOWN NOTIFICAÇÕES (POSIÇÃO FIXA) */}
                             {isNotificationOpen && (
                                 <div className="fixed top-20 right-4 w-80 bg-white rounded-[32px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 z-[9999] p-6 animate-in fade-in slide-in-from-top-4 duration-300">
                                     <div className="flex items-center justify-between mb-4">
@@ -533,7 +539,8 @@ const AtendimentosView: React.FC = () => {
                             showToast("Agendamento salvo!");
                             fetchData();
                         } catch (e: any) {
-                            alert("Erro ao salvar: " + e.message);
+                            const msg = e?.message || "Erro inesperado ao salvar.";
+                            alert("Erro ao salvar: " + msg);
                         } finally {
                             setIsLoading(false);
                         }

@@ -27,7 +27,6 @@ const FinanceiroView: React.FC = () => {
 
         setIsLoading(true);
         try {
-            // FIX: Alterado de 'financial_transactions' para 'transactions'
             const { data, error } = await supabase
                 .from('transactions')
                 .select('*')
@@ -40,7 +39,7 @@ const FinanceiroView: React.FC = () => {
                 id: t.id,
                 description: t.description,
                 amount: Number(t.amount) || 0,
-                type: t.type, // 'receita' ou 'despesa'
+                type: t.type,
                 category: t.category,
                 date: new Date(t.date),
                 paymentMethod: t.payment_method || 'pix',
@@ -50,10 +49,10 @@ const FinanceiroView: React.FC = () => {
         } catch (error: any) {
             if (error.name !== 'AbortError') {
                 console.error("Financeiro Fetch Error:", error);
-                setToast({ message: 'Erro ao carrergar extrato bancário.', type: 'error' });
+                const msg = error?.message || "Erro ao carregar extrato financeiro.";
+                setToast({ message: String(msg), type: 'error' });
             }
         } finally {
-            // OBRIGATÓRIO: Libera a UI
             setIsLoading(false);
         }
     }, []);
@@ -65,7 +64,6 @@ const FinanceiroView: React.FC = () => {
 
     const metrics = useMemo(() => {
         const today = new Date();
-        // Cálculo somando o campo real 'amount'
         const income = transactions.filter(t => t.type === 'receita').reduce((acc, t) => acc + t.amount, 0);
         const expense = transactions.filter(t => t.type === 'despesa').reduce((acc, t) => acc + t.amount, 0);
         const incomeToday = transactions.filter(t => t.type === 'receita' && isSameDay(t.date, today)).reduce((acc, t) => acc + t.amount, 0);
@@ -98,7 +96,8 @@ const FinanceiroView: React.FC = () => {
             setShowModal(null);
             fetchTransactions();
         } catch (error: any) {
-            alert("Erro ao salvar: " + error.message);
+            const msg = error?.message || "Falha ao registrar transação.";
+            alert("Erro ao salvar: " + msg);
         }
     };
 
