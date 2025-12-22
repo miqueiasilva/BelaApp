@@ -7,7 +7,7 @@ import {
     Globe, Info, Search, Loader2, Calendar as CalendarIcon,
     LayoutGrid, List, CheckCircle2, ChevronDown, Scissors,
     PanelLeftClose, PanelLeftOpen, Maximize2, MousePointer2,
-    Eye, EyeOff, Palette
+    Eye, EyeOff, Palette, AlertTriangle
 } from 'lucide-react';
 import { format, addDays, differenceInMinutes, startOfDay, endOfDay, isSameDay } from 'date-fns';
 import { pt } from 'date-fns/locale';
@@ -18,6 +18,7 @@ import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
 import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
 import ToggleSwitch from '../shared/ToggleSwitch';
+import ContextMenu from '../shared/ContextMenu';
 
 // --- Constantes de Configuração ---
 const START_HOUR = 8;
@@ -34,6 +35,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
     const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isTakingTooLong, setIsTakingTooLong] = useState(false);
 
     // --- Estados de Layout & UX ---
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -47,8 +49,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
     const [visibleProfIds, setVisibleProfIds] = useState<number[]>([]);
     const [colorMode, setColorMode] = useState<'service' | 'status' | 'professional'>('professional');
     
-    // Timeline
+    // Timeline & Menu
     const [nowPosition, setNowPosition] = useState<number | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ x: number, y: number, data: any } | null>(null);
 
     // Modais e UI
     const [modalState, setModalState] = useState<{ type: 'appointment'; data: any } | null>(null);
@@ -70,34 +73,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
         return manualColWidth;
     }, [isAutoWidth, manualColWidth]);
 
-    // --- Linha do Tempo ---
-    useEffect(() => {
-        const updateNow = () => {
-            const now = new Date();
-            if (!isSameDay(now, currentDate)) {
-                setNowPosition(null);
-                return;
-            }
-            const mins = now.getHours() * 60 + now.getMinutes();
-            const startMins = START_HOUR * 60;
-            const endMins = END_HOUR * 60;
-
-            if (mins >= startMins && mins <= endMins) {
-                const pxPerMin = BASE_ROW_HEIGHT / 60;
-                setNowPosition((mins - startMins) * pxPerMin);
-            } else {
-                setNowPosition(null);
-            }
-        };
-        updateNow();
-        const timer = setInterval(updateNow, 60000);
-        return () => clearInterval(timer);
-    }, [currentDate]);
-
-    // --- Busca de Dados ---
+    // --- Busca de Dados (FIX: Loading Infinito) ---
     const fetchData = useCallback(async () => {
         setIsLoading(true);
+        setIsTakingTooLong(false);
+        
+        // Timer de resiliência: se demorar +5s mostra botão de reload
+        const timeoutTimer = setTimeout(() => setIsTakingTooLong(true), 5000);
+
         try {
+            // 1. Profissionais
             const { data: profs, error: pErr } = await supabase
                 .from('professionals')
                 .select('*')
@@ -116,10 +101,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             
             setProfessionals(mappedProfs);
 
+            // Garantir que todos comecem visíveis se for a primeira carga
             if (visibleProfIds.length === 0 && mappedProfs.length > 0) {
                 setVisibleProfIds(mappedProfs.map(p => p.id));
             }
 
+            // 2. Agendamentos do Dia
             const tStart = startOfDay(currentDate).toISOString();
             const tEnd = endOfDay(currentDate).toISOString();
 
@@ -149,15 +136,43 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
 
             setAppointments(mappedApps);
         } catch (e: any) {
-            showToast("Erro ao sincronizar agenda", 'error');
+            console.error("Erro ao sincronizar:", e);
+            showToast("Falha na sincronização dos dados.", 'error');
         } finally {
+            // FIX CRÍTICO: Sempre desliga o loading no finally
+            clearTimeout(timeoutTimer);
             setIsLoading(false);
+            setIsTakingTooLong(false);
         }
     }, [currentDate, visibleProfIds.length, showToast]);
 
     useEffect(() => {
         fetchData();
-    }, [currentDate, fetchData]);
+    }, [currentDate]);
+
+    // --- Linha do Tempo em Tempo Real ---
+    useEffect(() => {
+        const updateNow = () => {
+            const now = new Date();
+            if (!isSameDay(now, currentDate)) {
+                setNowPosition(null);
+                return;
+            }
+            const mins = now.getHours() * 60 + now.getMinutes();
+            const startMins = START_HOUR * 60;
+            const endMins = END_HOUR * 60;
+
+            if (mins >= startMins && mins <= endMins) {
+                const pxPerMin = BASE_ROW_HEIGHT / 60;
+                setNowPosition((mins - startMins) * pxPerMin);
+            } else {
+                setNowPosition(null);
+            }
+        };
+        updateNow();
+        const timer = setInterval(updateNow, 60000);
+        return () => clearInterval(timer);
+    }, [currentDate]);
 
     // --- Helpers de Grid ---
     const timeSlots = useMemo(() => {
@@ -196,7 +211,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
 
     const onlineApps = appointments.filter(a => (a as any).origem === 'link');
 
-    // --- Sub-componente de Controles ---
+    // --- Componentes Internos ---
     const SidebarContent = () => (
         <div className="space-y-8 animate-in fade-in duration-500">
             {/* Zoom Inteligente */}
@@ -268,7 +283,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             {/* Visualização de Cores */}
             <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    {/* FIX: Palette was not imported from lucide-react */}
                     <Palette size={14} /> Colorir por
                 </label>
                 <div className="grid grid-cols-1 gap-2">
@@ -329,12 +343,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 {/* TOPBAR RESPONSIVA */}
                 <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 flex-shrink-0 z-30">
                     <div className="flex items-center gap-2 lg:gap-6">
-                        {/* Mobile Toggle Filtros */}
                         <button onClick={() => setIsFilterDrawerOpen(true)} className="lg:hidden p-3 bg-slate-100 text-slate-600 rounded-2xl active:bg-orange-50 transition-all">
                             <Settings size={22} />
                         </button>
                         
-                        {/* Seletor de Data */}
                         <div className="flex items-center bg-slate-50 p-1.5 rounded-[22px] border border-slate-100">
                             <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-2 hover:bg-white rounded-xl text-slate-400 transition-all active:scale-90"><ChevronLeft size={20} /></button>
                             <div className="flex flex-col items-center min-w-[120px] md:min-w-[160px] px-2">
@@ -362,7 +374,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
 
                             {/* Dropdown Notificações (Desktop) */}
                             {isNotificationOpen && (
-                                <div className="hidden lg:block absolute top-14 right-0 w-80 bg-white rounded-[32px] shadow-2xl border border-slate-100 z-50 p-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                                <div className="absolute top-14 right-0 w-80 bg-white rounded-[32px] shadow-2xl border border-slate-100 z-[9999] p-6 animate-in fade-in slide-in-from-top-4 duration-300">
                                     <div className="flex items-center justify-between mb-4">
                                         <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
                                             <Globe size={16} className="text-blue-500" /> Online Hoje
@@ -399,9 +411,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 <div className="flex-1 flex overflow-hidden relative touch-action-pan-x">
                     {isLoading && (
                         <div className="absolute inset-0 z-50 bg-slate-50/50 backdrop-blur-[2px] flex items-center justify-center">
-                            <div className="flex flex-col items-center gap-3 bg-white p-8 rounded-[40px] shadow-2xl border border-slate-100">
+                            <div className="flex flex-col items-center gap-3 bg-white p-8 rounded-[40px] shadow-2xl border border-slate-100 text-center max-w-sm">
                                 <Loader2 className="animate-spin text-orange-500" size={36} />
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sincronizando...</p>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sincronizando Agenda...</p>
+                                {isTakingTooLong && (
+                                    <button 
+                                        onClick={() => window.location.reload()}
+                                        className="mt-4 flex items-center gap-2 text-[10px] font-black text-orange-600 uppercase border border-orange-200 px-4 py-2 rounded-xl hover:bg-orange-50"
+                                    >
+                                        <AlertTriangle size={14}/> Forçar Recarregamento
+                                    </button>
+                                )}
                             </div>
                         </div>
                     )}
@@ -455,6 +475,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                                     {timeSlots.map((time, i) => (
                                         <div 
                                             key={i} 
+                                            onContextMenu={(e) => {
+                                                e.preventDefault();
+                                                const [h, m] = time.split(':').map(Number);
+                                                const start = new Date(currentDate);
+                                                start.setHours(h, m, 0, 0);
+                                                setContextMenu({ x: e.clientX, y: e.clientY, data: { start, professional: prof } });
+                                            }}
                                             onClick={() => {
                                                 const [h, m] = time.split(':').map(Number);
                                                 const start = new Date(currentDate);
@@ -479,9 +506,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                                                 style={getAppStyle(app)}
                                                 className={`absolute left-1/2 -translate-x-1/2 w-[95%] rounded-2xl shadow-lg p-2.5 cursor-pointer hover:scale-[1.02] hover:shadow-2xl transition-all z-10 overflow-hidden text-white flex flex-col justify-center border border-white/20 ${isBlock ? 'opacity-60 bg-slate-400' : ''}`}
                                             >
-                                                {/* Indicador Online 🌐 */}
                                                 {isOnline && !isBlock && (
-                                                    <div className="absolute top-1.5 right-1.5 flex items-center gap-1 bg-white/30 px-1.5 py-0.5 rounded-full backdrop-blur-md" title="Via Link Público">
+                                                    <div className="absolute top-1.5 right-1.5 flex items-center gap-1 bg-white/30 px-1.5 py-0.5 rounded-full backdrop-blur-md">
                                                         <Globe size={10} className="text-white" />
                                                         <span className="text-[7px] font-black uppercase">Link</span>
                                                     </div>
@@ -506,7 +532,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 </div>
             </div>
 
-            {/* DRAWER DE FILTROS MOBILE (MODAL) */}
+            {/* Menu de Contexto (Botão Direito) */}
+            {contextMenu && (
+                <ContextMenu 
+                    x={contextMenu.x} 
+                    y={contextMenu.y} 
+                    onClose={() => setContextMenu(null)}
+                    options={[
+                        { label: 'Novo Agendamento', icon: <Plus size={16}/>, onClick: () => setModalState({ type: 'appointment', data: contextMenu.data }) },
+                        { label: 'Bloquear Horário', icon: <Lock size={16}/>, onClick: () => setModalState({ type: 'appointment', data: { ...contextMenu.data, status: 'bloqueado' } }) }
+                    ]}
+                />
+            )}
+
+            {/* DRAWER DE FILTROS MOBILE */}
             {isFilterDrawerOpen && (
                 <div className="fixed inset-0 z-[100] flex items-end lg:hidden animate-in fade-in duration-200">
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsFilterDrawerOpen(false)}></div>
@@ -524,36 +563,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 </div>
             )}
 
-            {/* MODAL DE NOTIFICAÇÕES (MOBILE/TABLET) */}
-            {isNotificationOpen && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center lg:hidden p-6 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsNotificationOpen(false)}></div>
-                    <div className="relative w-full max-w-sm bg-white rounded-[40px] shadow-2xl p-8 flex flex-col">
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                                <Globe size={20} className="text-blue-500" /> Agendamentos Link
-                            </h3>
-                            <button onClick={() => setIsNotificationOpen(false)} className="p-2 text-slate-400"><X size={24} /></button>
-                        </div>
-                        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 scrollbar-hide">
-                            {onlineApps.length === 0 ? (
-                                <p className="text-center text-slate-400 italic py-10">Nenhum agendamento online.</p>
-                            ) : onlineApps.map(app => (
-                                <div key={app.id} onClick={() => { setActiveDetail(app); setIsNotificationOpen(false); }} className="p-4 bg-slate-50 rounded-3xl border border-slate-100 active:bg-orange-50 transition-colors">
-                                    <div className="flex justify-between items-start mb-1">
-                                        <span className="font-bold text-slate-800">{app.client?.nome}</span>
-                                        <span className="text-xs font-black text-orange-600 bg-orange-100 px-2 py-0.5 rounded-lg">{format(app.start, 'HH:mm')}</span>
-                                    </div>
-                                    <p className="text-xs text-slate-500 font-medium">{app.service.name}</p>
-                                </div>
-                            ))}
-                        </div>
-                        <button onClick={() => setIsNotificationOpen(false)} className="w-full mt-6 py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl">Fechar Avisos</button>
-                    </div>
-                </div>
-            )}
-
-            {/* MODAIS DE FLUXO (NOVO/DETALHE) */}
+            {/* MODAIS DE FLUXO */}
             {modalState?.type === 'appointment' && (
                 <AppointmentModal 
                     appointment={modalState.data} 
@@ -575,10 +585,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                             };
                             const { error } = await supabase.from('appointments').insert([payload]);
                             if (error) throw error;
-                            showToast("Agendamento criado!");
+                            showToast("Agendamento salvo!");
                             fetchData();
                         } catch (e: any) {
-                            alert(e.message);
+                            alert("Erro ao salvar: " + e.message);
                         } finally {
                             setIsLoading(false);
                         }
