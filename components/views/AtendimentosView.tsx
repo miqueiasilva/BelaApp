@@ -20,17 +20,13 @@ import { supabase } from '../../services/supabaseClient';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import ContextMenu from '../shared/ContextMenu';
 
-// --- Constantes de Configuração ---
+// --- Constantes ---
 const START_HOUR = 8;
 const END_HOUR = 21; 
-const BASE_ROW_HEIGHT = 80; // 1 Hora = 80px
-const LOADING_TIMEOUT_MS = 8000; // 8 Segundos
+const BASE_ROW_HEIGHT = 80; 
+const LOADING_TIMEOUT_MS = 8000;
 
-interface AtendimentosViewProps {
-    onAddTransaction: (t: any) => void;
-}
-
-const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
+const AtendimentosView: React.FC = () => {
     // --- Estados de Dados ---
     const [currentDate, setCurrentDate] = useState(new Date());
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
@@ -38,23 +34,23 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [fetchError, setFetchError] = useState<string | null>(null);
 
-    // --- Estados de Layout & UX ---
+    // --- Estados de Layout ---
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
     const [isNotificationOpen, setIsNotificationOpen] = useState(false);
     
-    // Grid Adjustments
+    // Configurações da Grade
     const [isAutoWidth, setIsAutoWidth] = useState(true);
     const [manualColWidth, setManualColWidth] = useState(240);
     const [intervalMin, setIntervalMin] = useState<15 | 30 | 60>(30);
     const [visibleProfIds, setVisibleProfIds] = useState<number[]>([]);
     const [colorMode, setColorMode] = useState<'service' | 'status' | 'professional'>('professional');
     
-    // Realtime UI
+    // UI Tempo Real
     const [nowPosition, setNowPosition] = useState<number | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, data: any } | null>(null);
 
-    // Modals & Feedback
+    // Modais e Feedback
     const [modalState, setModalState] = useState<{ type: 'appointment'; data: any } | null>(null);
     const [activeDetail, setActiveDetail] = useState<LegacyAppointment | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -67,16 +63,29 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
         setToast({ message, type });
     }, []);
 
-    const currentColWidth = useMemo(() => {
-        if (isAutoWidth) {
-            return window.innerWidth < 1024 ? 180 : 220;
-        }
-        return manualColWidth;
-    }, [isAutoWidth, manualColWidth]);
+    // --- Helper: Renderizar Avatar com Fallback ---
+    const renderAvatar = (prof: LegacyProfessional, sizeClass = "w-10 h-10") => {
+        const initials = prof.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        const photoUrl = prof.avatarUrl || (prof as any).photo_url;
 
-    // --- FUNÇÃO DE BUSCA ROBUSTA (CORREÇÃO BUG LOADING INFINITO) ---
+        return (
+            <div className={`${sizeClass} rounded-full flex-shrink-0 border-2 border-white shadow-sm overflow-hidden bg-orange-100 flex items-center justify-center`}>
+                {photoUrl ? (
+                    <img 
+                        src={photoUrl} 
+                        alt={prof.name} 
+                        className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as any).style.display = 'none'; }}
+                    />
+                ) : (
+                    <span className="text-[10px] font-black text-orange-600">{initials}</span>
+                )}
+            </div>
+        );
+    };
+
+    // --- Busca de Dados Robusta ---
     const fetchData = useCallback(async () => {
-        // Cancela requisições pendentes
         if (abortControllerRef.current) abortControllerRef.current.abort();
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -84,18 +93,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
         setIsLoading(true);
         setFetchError(null);
 
-        // Timeout de Segurança
         const timeoutId = setTimeout(() => {
             if (isLoading) {
                 controller.abort();
                 setIsLoading(false);
                 setFetchError("A conexão demorou demais. Verifique sua internet.");
-                showToast("Erro de conexão", "error");
             }
         }, LOADING_TIMEOUT_MS);
 
         try {
-            // 1. Carregar Profissionais (se ainda não carregados ou para atualizar)
             const { data: profs, error: pErr } = await supabase
                 .from('professionals')
                 .select('*')
@@ -115,12 +121,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             
             setProfessionals(mappedProfs);
 
-            // Inicializar filtros se vazio
             if (visibleProfIds.length === 0 && mappedProfs.length > 0) {
                 setVisibleProfIds(mappedProfs.map(p => p.id));
             }
 
-            // 2. Carregar Agendamentos com Data Validada
             const dateStr = format(currentDate, 'yyyy-MM-dd');
             const tStart = `${dateStr}T00:00:00Z`;
             const tEnd = `${dateStr}T23:59:59Z`;
@@ -157,11 +161,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 setFetchError(e.message || "Falha ao sincronizar com o servidor.");
             }
         } finally {
-            // CRUCIAL: Limpar timeout e desligar loading
             clearTimeout(timeoutId);
             setIsLoading(false);
         }
-    }, [currentDate, showToast]);
+    }, [currentDate]);
 
     useEffect(() => {
         fetchData();
@@ -192,7 +195,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
         return () => clearInterval(timer);
     }, [currentDate]);
 
-    // --- Helpers Grade ---
+    const currentColWidth = useMemo(() => {
+        if (isAutoWidth) return window.innerWidth < 1024 ? 180 : 220;
+        return manualColWidth;
+    }, [isAutoWidth, manualColWidth]);
+
     const timeSlots = useMemo(() => {
         const slots = [];
         for (let h = START_HOUR; h < END_HOUR; h++) {
@@ -235,7 +242,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Maximize2 size={14} className="text-slate-400" />
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Largura Auto</span>
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Auto-Largura</span>
                     </div>
                     <ToggleSwitch on={isAutoWidth} onClick={() => setIsAutoWidth(!isAutoWidth)} />
                 </div>
@@ -249,7 +256,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             </div>
 
             <div className="space-y-3">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Clock size={14} /> Intervalo</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Clock size={14} /> Precisão</label>
                 <div className="flex bg-slate-100 p-1 rounded-2xl">
                     {[15, 30, 60].map(m => (
                         <button key={m} onClick={() => setIntervalMin(m as any)} className={`flex-1 py-2 rounded-xl text-[10px] font-black transition-all ${intervalMin === m ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400'}`}>{m}m</button>
@@ -271,6 +278,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                                 onChange={() => setVisibleProfIds(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id])}
                                 className="w-5 h-5 rounded-lg border-slate-300 text-orange-500 focus:ring-orange-500"
                             />
+                            {renderAvatar(p, "w-8 h-8")}
                             <span className="text-xs font-bold text-slate-700 truncate">{p.name}</span>
                         </label>
                     ))}
@@ -291,7 +299,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
     );
 
     return (
-        <div className="flex h-screen bg-slate-50 overflow-hidden font-sans select-none">
+        <div className="flex h-screen bg-slate-50 overflow-hidden font-sans select-none relative">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
             {/* SIDEBAR DESKTOP */}
@@ -310,54 +318,63 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 )}
             </aside>
 
-            {/* MAIN CONTENT */}
+            {/* CONTEÚDO PRINCIPAL */}
             <div className="flex-1 flex flex-col min-w-0 relative">
-                {/* HEADER */}
+                {/* TOPBAR */}
                 <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 flex-shrink-0 z-30">
                     <div className="flex items-center gap-2 lg:gap-6">
-                        <button onClick={() => setIsFilterDrawerOpen(true)} className="lg:hidden p-3 bg-slate-100 text-slate-600 rounded-2xl"><Settings size={22} /></button>
+                        <button onClick={() => setIsFilterDrawerOpen(true)} className="lg:hidden p-3 bg-slate-100 text-slate-600 rounded-2xl active:bg-orange-50"><Settings size={22} /></button>
+                        
                         <div className="flex items-center bg-slate-50 p-1.5 rounded-[22px] border border-slate-100">
-                            <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-2 hover:bg-white rounded-xl text-slate-400"><ChevronLeft size={20} /></button>
+                            <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-2 hover:bg-white rounded-xl text-slate-400 active:scale-90 transition-transform"><ChevronLeft size={20} /></button>
                             <div className="flex flex-col items-center min-w-[120px] md:min-w-[160px] px-2">
                                 <span className="text-[11px] font-black text-slate-800 capitalize leading-none">{format(currentDate, "EEEE", { locale: pt })}</span>
                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{format(currentDate, "dd 'de' MMMM", { locale: pt })}</span>
                             </div>
-                            <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-2 hover:bg-white rounded-xl text-slate-400"><ChevronRight size={20} /></button>
+                            <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-2 hover:bg-white rounded-xl text-slate-400 active:scale-90 transition-transform"><ChevronRight size={20} /></button>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-2 md:gap-4">
                         <div className="relative">
-                            <button onClick={() => setIsNotificationOpen(!isNotificationOpen)} className={`p-3 rounded-2xl transition-all relative ${onlineApps.length > 0 ? 'bg-orange-50 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>
+                            <button onClick={() => setIsNotificationOpen(!isNotificationOpen)} className={`p-3 rounded-2xl transition-all relative ${onlineApps.length > 0 ? 'bg-orange-50 text-orange-600 shadow-inner' : 'bg-slate-50 text-slate-400'}`}>
                                 <Bell size={22} />
-                                {onlineApps.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-black border-2 border-white">{onlineApps.length}</span>}
+                                {onlineApps.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-black border-2 border-white shadow-lg">{onlineApps.length}</span>}
                             </button>
+
+                            {/* DROPDOWN NOTIFICAÇÕES (POSIÇÃO FIXA CORRIGIDA) */}
                             {isNotificationOpen && (
-                                <div className="absolute top-14 right-0 w-80 bg-white rounded-[32px] shadow-2xl border border-slate-100 z-[9999] p-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                                <div className="fixed top-20 right-4 w-80 bg-white rounded-[32px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 z-[9999] p-6 animate-in fade-in slide-in-from-top-4 duration-300">
                                     <div className="flex items-center justify-between mb-4">
-                                        <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Online Hoje</h3>
+                                        <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
+                                            <Globe size={16} className="text-blue-500" /> Online Hoje
+                                        </h3>
                                         <button onClick={() => setIsNotificationOpen(false)}><X size={16} className="text-slate-300" /></button>
                                     </div>
                                     <div className="space-y-3 max-h-64 overflow-y-auto scrollbar-hide">
-                                        {onlineApps.length === 0 ? <p className="text-xs text-slate-400 italic py-4">Sem agendamentos online.</p> : onlineApps.map(app => (
+                                        {onlineApps.length === 0 ? (
+                                            <p className="text-xs text-slate-400 italic py-4 text-center">Sem novos agendamentos online.</p>
+                                        ) : onlineApps.map(app => (
                                             <div key={app.id} onClick={() => { setActiveDetail(app); setIsNotificationOpen(false); }} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:border-orange-200 transition-colors cursor-pointer group">
                                                 <div className="flex justify-between items-start">
-                                                    <span className="font-bold text-slate-800 text-xs">{app.client?.nome}</span>
+                                                    <span className="font-bold text-slate-800 text-xs group-hover:text-orange-600">{app.client?.nome}</span>
                                                     <span className="text-[10px] font-black text-orange-600">{format(app.start, 'HH:mm')}</span>
                                                 </div>
+                                                <p className="text-[10px] text-slate-500 mt-0.5 truncate">{app.service.name}</p>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             )}
                         </div>
+
                         <button onClick={() => setModalState({ type: 'appointment', data: { start: new Date(currentDate.setHours(9,0,0,0)), professional: professionals[0] } })} className="bg-slate-900 hover:bg-black text-white font-black text-xs p-3 md:px-6 md:py-3.5 rounded-2xl shadow-xl flex items-center gap-2 active:scale-95 transition-all">
                             <Plus size={22} /> <span className="hidden md:inline uppercase tracking-widest">Agendar</span>
                         </button>
                     </div>
                 </header>
 
-                {/* GRID AREA */}
+                {/* GRADE DA AGENDA */}
                 <div className="flex-1 flex overflow-hidden relative">
                     {isLoading && (
                         <div className="absolute inset-0 z-50 bg-white/60 backdrop-blur-sm flex items-center justify-center">
@@ -380,20 +397,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                     ) : (
                         <div ref={scrollRef} className="flex-1 overflow-auto scrollbar-hide relative bg-slate-50 touch-action-pan-x">
                             <div className="inline-grid min-w-full" style={{ gridTemplateColumns: `60px repeat(${visibleProfIds.length}, ${currentColWidth}px)`, minHeight: '100%' }}>
-                                {/* STICKY HEADER */}
+                                {/* HEADER FIXO COLUNAS */}
                                 <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 h-20"></div>
                                 {professionals.filter(p => visibleProfIds.includes(p.id)).map((prof) => (
                                     <div key={prof.id} className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 border-r border-slate-100 flex items-center justify-center p-2">
                                         <div className="flex items-center gap-3 w-full px-3 py-2 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                                            {renderAvatar(prof, "w-10 h-10")}
                                             <div className="flex flex-col min-w-0 flex-1">
                                                 <span className="text-[10px] font-black text-slate-800 truncate leading-tight uppercase">{prof.name.split(' ')[0]}</span>
-                                                <span className="text-[8px] font-bold text-slate-400 truncate uppercase tracking-widest">Pro</span>
+                                                <span className="text-[8px] font-bold text-slate-400 truncate uppercase tracking-widest">Especialista</span>
                                             </div>
                                         </div>
                                     </div>
                                 ))}
 
-                                {/* TIME COLUMN */}
+                                {/* COLUNA DE HORÁRIOS */}
                                 <div className="relative border-r border-slate-200 bg-white/50 z-20">
                                     {timeSlots.map(time => {
                                         const isHour = time.endsWith(':00');
@@ -405,18 +423,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                                     })}
                                 </div>
 
-                                {/* COLUMNS & CARDS */}
+                                {/* CÉLULAS E CARDS */}
                                 {professionals.filter(p => visibleProfIds.includes(p.id)).map(prof => (
                                     <div key={prof.id} className="relative border-r border-slate-100 min-h-full">
-                                        {/* Realtime Line */}
+                                        {/* Linha do Tempo Vermelha */}
                                         {nowPosition !== null && visibleProfIds[0] === prof.id && (
                                             <div className="absolute left-0 z-30 pointer-events-none flex items-center" style={{ top: `${nowPosition}px`, width: `${visibleProfIds.length * currentColWidth}px` }}>
-                                                <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-lg -ml-1.5"></div>
+                                                <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)] -ml-1.5"></div>
                                                 <div className="h-0.5 bg-red-500 flex-1 opacity-40"></div>
                                             </div>
                                         )}
 
-                                        {/* Clickable Slots */}
+                                        {/* Áreas Clicáveis */}
                                         {timeSlots.map((time, i) => (
                                             <div 
                                                 key={i} 
@@ -436,7 +454,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                                             ></div>
                                         ))}
 
-                                        {/* Appointments */}
+                                        {/* Cards de Agendamento */}
                                         {appointments.filter(app => Number(app.professional.id) === prof.id).map(app => {
                                             const isOnline = (app as any).origem === 'link';
                                             const isBlock = app.status === 'bloqueado';
@@ -463,15 +481,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 </div>
             </div>
 
-            {/* MOBILE DRAWER */}
+            {/* DRAWER MOBILE */}
             {isFilterDrawerOpen && (
                 <div className="fixed inset-0 z-[100] flex items-end lg:hidden animate-in fade-in duration-200">
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsFilterDrawerOpen(false)}></div>
                     <div className="relative w-full bg-white rounded-t-[48px] p-8 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto scrollbar-hide">
                         <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-8"></div>
                         <div className="flex items-center justify-between mb-8">
-                            <h3 className="text-2xl font-black text-slate-800 tracking-tight">Filtros da Agenda</h3>
-                            <button onClick={() => setIsFilterDrawerOpen(false)} className="p-2.5 bg-slate-100 text-slate-400 rounded-full"><X size={28}/></button>
+                            <h3 className="text-2xl font-black text-slate-800 tracking-tight">Ajustes Agenda</h3>
+                            <button onClick={() => setIsFilterDrawerOpen(false)} className="p-2.5 bg-slate-100 text-slate-400 rounded-full active:scale-90 transition-transform"><X size={28}/></button>
                         </div>
                         <SidebarContent />
                     </div>
@@ -490,7 +508,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 />
             )}
 
-            {/* FLOW MODALS */}
+            {/* MODAIS */}
             {modalState?.type === 'appointment' && (
                 <AppointmentModal 
                     appointment={modalState.data} 
@@ -512,10 +530,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                             };
                             const { error } = await supabase.from('appointments').insert([payload]);
                             if (error) throw error;
-                            showToast("Salvo!");
+                            showToast("Agendamento salvo!");
                             fetchData();
                         } catch (e: any) {
-                            alert("Erro: " + e.message);
+                            alert("Erro ao salvar: " + e.message);
                         } finally {
                             setIsLoading(false);
                         }
@@ -530,7 +548,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                     onClose={() => setActiveDetail(null)} 
                     onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
                     onDelete={async (id) => { 
-                        if(window.confirm("Excluir agendamento?")){ 
+                        if(window.confirm("Excluir este agendamento?")){ 
                             const { error } = await supabase.from('appointments').delete().eq('id', id); 
                             if(!error) { fetchData(); setActiveDetail(null); }
                         }
