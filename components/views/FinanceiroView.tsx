@@ -12,8 +12,6 @@ import Toast, { ToastType } from '../shared/Toast';
 import { FinancialTransaction, TransactionType } from '../../types';
 
 const FinanceiroView: React.FC = () => {
-    // FIX: Define today variable to be used in the component's JSX
-    const today = new Date();
     const [isLoading, setIsLoading] = useState(true);
     const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
     const [showModal, setShowModal] = useState<TransactionType | null>(null);
@@ -29,9 +27,9 @@ const FinanceiroView: React.FC = () => {
 
         setIsLoading(true);
         try {
-            // FIX: Alterado de 'transactions' para 'financial_transactions'
+            // FIX: Alterado de 'financial_transactions' para 'transactions'
             const { data, error } = await supabase
-                .from('financial_transactions')
+                .from('transactions')
                 .select('*')
                 .order('date', { ascending: false })
                 .abortSignal(controller.signal);
@@ -42,7 +40,7 @@ const FinanceiroView: React.FC = () => {
                 id: t.id,
                 description: t.description,
                 amount: Number(t.amount) || 0,
-                type: t.type,
+                type: t.type, // 'receita' ou 'despesa'
                 category: t.category,
                 date: new Date(t.date),
                 paymentMethod: t.payment_method || 'pix',
@@ -50,19 +48,13 @@ const FinanceiroView: React.FC = () => {
             }));
             setTransactions(mapped);
         } catch (error: any) {
-            if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
-            
-            const errorMessage = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
-            console.error("Financeiro Fetch Error Details:", errorMessage);
-            
-            setToast({ 
-                message: `Falha ao carregar extrato: ${errorMessage}`, 
-                type: 'error' 
-            });
-        } finally {
-            if (abortControllerRef.current === controller) {
-                setIsLoading(false);
+            if (error.name !== 'AbortError') {
+                console.error("Financeiro Fetch Error:", error);
+                setToast({ message: 'Erro ao carrergar extrato bancário.', type: 'error' });
             }
+        } finally {
+            // OBRIGATÓRIO: Libera a UI
+            setIsLoading(false);
         }
     }, []);
 
@@ -72,11 +64,11 @@ const FinanceiroView: React.FC = () => {
     }, [fetchTransactions]);
 
     const metrics = useMemo(() => {
-        // FIX: Renamed local variable to avoid shadowing the outer 'today'
-        const localToday = new Date();
+        const today = new Date();
+        // Cálculo somando o campo real 'amount'
         const income = transactions.filter(t => t.type === 'receita').reduce((acc, t) => acc + t.amount, 0);
         const expense = transactions.filter(t => t.type === 'despesa').reduce((acc, t) => acc + t.amount, 0);
-        const incomeToday = transactions.filter(t => t.type === 'receita' && isSameDay(t.date, localToday)).reduce((acc, t) => acc + t.amount, 0);
+        const incomeToday = transactions.filter(t => t.type === 'receita' && isSameDay(t.date, today)).reduce((acc, t) => acc + t.amount, 0);
         
         return { income, expense, balance: income - expense, incomeToday };
     }, [transactions]);
@@ -90,8 +82,7 @@ const FinanceiroView: React.FC = () => {
 
     const handleSaveTransaction = async (t: FinancialTransaction) => {
         try {
-            // FIX: Alterado de 'transactions' para 'financial_transactions'
-            const { error } = await supabase.from('financial_transactions').insert([{
+            const { error } = await supabase.from('transactions').insert([{
                 description: t.description,
                 amount: t.amount,
                 type: t.type,
@@ -107,8 +98,7 @@ const FinanceiroView: React.FC = () => {
             setShowModal(null);
             fetchTransactions();
         } catch (error: any) {
-            const msg = error?.message || "Falha ao registrar transação.";
-            alert("Erro ao salvar: " + msg);
+            alert("Erro ao salvar: " + error.message);
         }
     };
 
@@ -153,7 +143,7 @@ const FinanceiroView: React.FC = () => {
                         <h3 className="text-2xl font-black text-slate-800 mt-1">R$ {metrics.expense.toFixed(2)}</h3>
                     </div>
                     <div className="bg-slate-900 p-6 rounded-[28px] shadow-xl text-white">
-                        <p className="text-orange-400 text-[10px] font-black uppercase tracking-widest">Hoje ({format(today, 'dd/MM')})</p>
+                        <p className="text-orange-400 text-[10px] font-black uppercase tracking-widest">Hoje ({format(new Date(), 'dd/MM')})</p>
                         <h3 className="text-2xl font-black text-white mt-1">R$ {metrics.incomeToday.toFixed(2)}</h3>
                     </div>
                 </div>

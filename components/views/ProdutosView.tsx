@@ -36,12 +36,11 @@ const ProdutosView: React.FC = () => {
             if (error) throw error;
             setProducts(data || []);
         } catch (error: any) {
-            if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
-            setToast({ message: 'Erro ao carregar estoque.', type: 'error' });
-        } finally {
-            if (abortControllerRef.current === controller) {
-                setIsLoading(false);
+            if (error.name !== 'AbortError') {
+                setToast({ message: 'Erro ao carregar estoque.', type: 'error' });
             }
+        } finally {
+            setIsLoading(false);
         }
     }, []);
 

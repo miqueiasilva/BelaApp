@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User as SupabaseUser } from '@supabase/supabase-js';
@@ -28,19 +27,20 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   // Helper to fetch extra profile data from 'public.profiles'
+  // Designed to NOT crash if the table doesn't exist yet
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
-      // Timeout interno para a consulta de perfil não travar a autenticação
       const { data, error } = await supabase
         .from('profiles')
         .select('full_name, papel, avatar_url')
         .eq('id', authUser.id)
-        .maybeSingle();
+        .maybeSingle(); // Use maybeSingle to avoid errors if 0 rows
 
       if (error || !data) {
+        // Fallback: Use metadata if profile table row is missing
         return {
             ...authUser,
-            papel: 'admin',
+            papel: 'admin', // Default role for first user/fallback
             nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
             avatar_url: authUser.user_metadata?.avatar_url
         };
@@ -53,66 +53,45 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         avatar_url: data.avatar_url || authUser.user_metadata?.avatar_url
       };
     } catch (e) {
-      return { ...authUser, papel: 'admin', nome: authUser.email?.split('@')[0] };
+      // Ultimate fallback
+      return { ...authUser, papel: 'admin', nome: 'Usuário' };
     }
   };
 
   useEffect(() => {
     let mounted = true;
 
-    // FAIL-SAFE: Se em 3 segundos o Supabase não responder, liberamos a tela
-    // Isso evita que o usuário fique preso no "Sincronizando" por erros de rede/CORS
-    const safetyTimeout = setTimeout(() => {
-      if (mounted && loading) {
-        console.warn("AuthContext: Timeout de segurança atingido. Forçando encerramento do loading.");
-        setLoading(false);
-      }
-    }, 3000);
-
+    // 1. Check active session
     const getInitialSession = async () => {
       try {
-        if (!supabase) {
-           if (mounted) setLoading(false);
-           return;
-        }
-
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) throw error;
-
+        const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && mounted) {
           const appUser = await fetchProfile(session.user);
           setUser(appUser);
         }
       } catch (error) {
         console.error("Auth init error:", error);
-        if (mounted) setUser(null);
       } finally {
-        if (mounted) {
-          setLoading(false);
-          clearTimeout(safetyTimeout);
-        }
+        if (mounted) setLoading(false);
       }
     };
 
     getInitialSession();
 
-    // Listener para mudanças de estado (login/logout)
+    // 2. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-
       if (session?.user) {
         const appUser = await fetchProfile(session.user);
-        setUser(appUser);
+        if (mounted) setUser(appUser);
       } else {
-        setUser(null);
+        if (mounted) setUser(null);
       }
-      setLoading(false);
+      
+      if (mounted) setLoading(false);
     });
 
     return () => {
       mounted = false;
-      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);
@@ -126,7 +105,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         email, 
         password,
         options: {
-            data: { full_name: name }
+            data: { full_name: name } // This metadata triggers the profile creation in SQL if configured
         }
     });
   };
@@ -136,6 +115,10 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       },
     });
   };
@@ -151,13 +134,8 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    try {
-      await supabase.auth.signOut();
-    } finally {
-      setUser(null);
-      localStorage.clear();
-      sessionStorage.clear();
-    }
+    await supabase.auth.signOut();
+    setUser(null);
   };
 
   const value = useMemo(() => ({
