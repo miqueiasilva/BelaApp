@@ -12,6 +12,8 @@ import Toast, { ToastType } from '../shared/Toast';
 import { FinancialTransaction, TransactionType } from '../../types';
 
 const FinanceiroView: React.FC = () => {
+    // FIX: Define today variable to be used in the component's JSX
+    const today = new Date();
     const [isLoading, setIsLoading] = useState(true);
     const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
     const [showModal, setShowModal] = useState<TransactionType | null>(null);
@@ -27,8 +29,9 @@ const FinanceiroView: React.FC = () => {
 
         setIsLoading(true);
         try {
+            // FIX: Alterado de 'transactions' para 'financial_transactions'
             const { data, error } = await supabase
-                .from('transactions')
+                .from('financial_transactions')
                 .select('*')
                 .order('date', { ascending: false })
                 .abortSignal(controller.signal);
@@ -69,10 +72,11 @@ const FinanceiroView: React.FC = () => {
     }, [fetchTransactions]);
 
     const metrics = useMemo(() => {
-        const today = new Date();
+        // FIX: Renamed local variable to avoid shadowing the outer 'today'
+        const localToday = new Date();
         const income = transactions.filter(t => t.type === 'receita').reduce((acc, t) => acc + t.amount, 0);
         const expense = transactions.filter(t => t.type === 'despesa').reduce((acc, t) => acc + t.amount, 0);
-        const incomeToday = transactions.filter(t => t.type === 'receita' && isSameDay(t.date, today)).reduce((acc, t) => acc + t.amount, 0);
+        const incomeToday = transactions.filter(t => t.type === 'receita' && isSameDay(t.date, localToday)).reduce((acc, t) => acc + t.amount, 0);
         
         return { income, expense, balance: income - expense, incomeToday };
     }, [transactions]);
@@ -86,7 +90,8 @@ const FinanceiroView: React.FC = () => {
 
     const handleSaveTransaction = async (t: FinancialTransaction) => {
         try {
-            const { error } = await supabase.from('transactions').insert([{
+            // FIX: Alterado de 'transactions' para 'financial_transactions'
+            const { error } = await supabase.from('financial_transactions').insert([{
                 description: t.description,
                 amount: t.amount,
                 type: t.type,
@@ -148,7 +153,7 @@ const FinanceiroView: React.FC = () => {
                         <h3 className="text-2xl font-black text-slate-800 mt-1">R$ {metrics.expense.toFixed(2)}</h3>
                     </div>
                     <div className="bg-slate-900 p-6 rounded-[28px] shadow-xl text-white">
-                        <p className="text-orange-400 text-[10px] font-black uppercase tracking-widest">Hoje ({format(new Date(), 'dd/MM')})</p>
+                        <p className="text-orange-400 text-[10px] font-black uppercase tracking-widest">Hoje ({format(today, 'dd/MM')})</p>
                         <h3 className="text-2xl font-black text-white mt-1">R$ {metrics.incomeToday.toFixed(2)}</h3>
                     </div>
                 </div>
