@@ -1,350 +1,767 @@
-
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { initialAppointments, professionals as mockProfessionals } from '../../data/mockData';
+import { LegacyAppointment, AppointmentStatus, FinancialTransaction } from '../../types';
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval } from 'date-fns';
 import { 
-    ChevronLeft, ChevronRight, Plus, RefreshCw, 
-    User as UserIcon, Settings, Bell, Filter, 
-    X, SlidersHorizontal, Lock, Clock, PanelLeftClose, PanelLeftOpen,
-    Globe, Info, Search, Loader2, Calendar as CalendarIcon,
-    DollarSign, Ban, CheckCircle2, ChevronDown, Scissors, 
-    MoreVertical, Zap
+    ChevronLeft, ChevronRight, Plus, Lock, MessageSquare, 
+    Share2, Bell, RotateCcw, ChevronDown, List, Clock, 
+    CheckCircle, DollarSign, FileText, Calendar as CalendarIcon 
 } from 'lucide-react';
-import { format, addDays, startOfDay, endOfDay, isSameDay, addMinutes } from 'date-fns';
 import { pt } from 'date-fns/locale';
 
-import { LegacyAppointment, AppointmentStatus, LegacyProfessional } from '../../types';
-import NewAppointmentModal from '../modals/NewAppointmentModal';
+import AppointmentModal from '../modals/AppointmentModal';
+import BlockTimeModal from '../modals/BlockTimeModal';
+import ContextMenu from '../shared/ContextMenu';
+import JaciBotPanel from '../JaciBotPanel';
 import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
 import Toast, { ToastType } from '../shared/Toast';
-import { supabase } from '../../services/supabaseClient';
 
 const START_HOUR = 8;
-const END_HOUR = 21; 
-const ROW_HEIGHT = 60; // 30 minutos = 60px
+const END_HOUR = 20; // Extended for visibility
+const PIXELS_PER_MINUTE = 80 / 60; // 80px for every 60 minutes
 
-const AtendimentosView: React.FC<{ onAddTransaction?: (t: any) => void }> = ({ onAddTransaction }) => {
-    // --- Estados de Visualização ---
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [columnWidth, setColumnWidth] = useState(240);
-    const [currentDate, setCurrentDate] = useState(new Date());
-    
-    // --- Estados de Dados ---
-    const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
-    const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [visibleProfIds, setVisibleProfIds] = useState<number[]>([]);
-    
-    // --- Estados de Interação ---
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [modalInitialData, setModalInitialData] = useState<any>(null);
-    const [activeDetail, setActiveDetail] = useState<LegacyAppointment | null>(null);
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    const [nowPosition, setNowPosition] = useState<number | null>(null);
-    
-    // Menu de Ação ao clicar em Slot Vazio
-    const [slotMenu, setSlotMenu] = useState<{ x: number, y: number, date: Date, professional: any } | null>(null);
+// --- Date Helper Functions ---
 
-    const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
-    const abortControllerRef = useRef<AbortController | null>(null);
+function setHours(date: Date, hours: number): Date {
+    const d = new Date(date);
+    d.setHours(hours);
+    return d;
+}
 
-    // --- Busca de Dados ---
-    const fetchData = useCallback(async () => {
-        if (abortControllerRef.current) abortControllerRef.current.abort();
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
+function setMinutes(date: Date, minutes: number): Date {
+    const d = new Date(date);
+    d.setMinutes(minutes);
+    return d;
+}
 
-        setIsLoading(true);
-        try {
-            const { data: profs, error: pErr } = await supabase
-                .from('professionals')
-                .select('*')
-                .eq('active', true)
-                .order('display_order');
+function startOfWeek(date: Date, options?: { weekStartsOn?: number }): Date {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = (day < (options?.weekStartsOn || 0) ? 7 : 0) + day - (options?.weekStartsOn || 0);
+    d.setDate(d.getDate() - diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
 
-            if (pErr) throw pErr;
+function endOfWeek(date: Date, options?: { weekStartsOn?: number }): Date {
+    const start = startOfWeek(date, options);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return end;
+}
 
-            const mappedProfs: LegacyProfessional[] = (profs || []).map(p => ({
-                id: p.id,
-                name: p.name,
-                avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
-                role: p.role,
-                color: p.color || '#F97316'
-            } as any));
+function startOfMonth(date: Date): Date {
+    const d = new Date(date);
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
 
-            setProfessionals(mappedProfs);
-            if (visibleProfIds.length === 0) setVisibleProfIds(mappedProfs.map(p => p.id));
+function endOfMonth(date: Date): Date {
+    const d = new Date(date);
+    d.setMonth(d.getMonth() + 1);
+    d.setDate(0);
+    d.setHours(23, 59, 59, 999);
+    return d;
+}
 
-            const tStart = startOfDay(currentDate).toISOString();
-            const tEnd = endOfDay(currentDate).toISOString();
+function roundToNearestMinutes(date: Date, options?: { nearestTo?: number }): Date {
+    const d = new Date(date);
+    const minutes = d.getMinutes();
+    const nearestTo = options?.nearestTo || 1;
+    const roundedMinutes = Math.round(minutes / nearestTo) * nearestTo;
+    d.setMinutes(roundedMinutes);
+    d.setSeconds(0);
+    d.setMilliseconds(0);
+    return d;
+}
 
-            const { data: apps, error: aErr } = await supabase
-                .from('appointments')
-                .select('*')
-                .gte('date', tStart)
-                .lte('date', tEnd);
-            
-            if (aErr) throw aErr;
+// --- Interfaces for Dynamic Columns ---
 
-            const mappedApps: LegacyAppointment[] = (apps || []).map(row => ({
-                id: row.id,
-                start: new Date(row.date),
-                end: row.end_date ? new Date(row.end_date) : new Date(new Date(row.date).getTime() + 30 * 60000),
-                status: row.status as AppointmentStatus,
-                client: { id: 0, nome: row.client_name, consent: true },
-                professional: mappedProfs.find(p => p.id === Number(row.resource_id)) || { id: Number(row.resource_id), name: row.professional_name },
-                service: { name: row.service_name, price: parseFloat(row.value), duration: 30, color: row.color },
-                origem: row.origem
-            } as any));
+interface DynamicColumn {
+    id: string | number;
+    title: string;
+    subtitle?: string;
+    avatarUrl?: string;
+    type: 'professional' | 'status' | 'payment' | 'date';
+    data?: any; // To hold original object (Professional, Date, etc)
+}
 
-            setAppointments(mappedApps);
-        } catch (e: any) {
-            if (e.name !== 'AbortError') console.error("Agenda Sync Error:", e);
-        } finally {
-            if (abortControllerRef.current === controller) setIsLoading(false);
-        }
-    }, [currentDate, visibleProfIds.length]);
+// --- Helper Functions ---
 
-    useEffect(() => {
-        fetchData();
-        return () => abortControllerRef.current?.abort();
-    }, [fetchData]);
+const getAppointmentStyle = (start: Date, end: Date) => {
+    const startMinutes = start.getHours() * 60 + start.getMinutes();
+    const endMinutes = end.getHours() * 60 + end.getMinutes();
+    const top = (startMinutes - START_HOUR * 60) * PIXELS_PER_MINUTE;
+    const height = (endMinutes - startMinutes) * PIXELS_PER_MINUTE;
+    return { top: `${top}px`, height: `${height - 4}px` };
+};
 
-    // --- Linha do Tempo ---
-    useEffect(() => {
-        const update = () => {
+const getStatusColor = (status: AppointmentStatus) => {
+    switch (status) {
+        case 'concluido': return 'bg-green-100 border-green-300 text-green-800 hover:ring-green-400';
+        case 'bloqueado': return 'bg-slate-200 border-slate-300 text-slate-700 hover:ring-slate-400 pattern-diagonal-lines-sm pattern-slate-400 pattern-bg-slate-200 pattern-size-4 pattern-opacity-100';
+        case 'confirmado': return 'bg-cyan-100 border-cyan-300 text-cyan-800 hover:ring-cyan-400';
+        case 'confirmado_whatsapp': return 'bg-teal-100 border-teal-300 text-teal-800 hover:ring-teal-400';
+        case 'chegou': return 'bg-purple-100 border-purple-300 text-purple-800 hover:ring-purple-400';
+        case 'em_atendimento': return 'bg-indigo-100 border-indigo-300 text-indigo-800 hover:ring-indigo-400 animate-pulse';
+        case 'faltou': return 'bg-orange-100 border-orange-300 text-orange-800 hover:ring-orange-400';
+        case 'cancelado': return 'bg-rose-100 border-rose-300 text-rose-800 hover:ring-rose-400 line-through';
+        case 'em_espera': return 'bg-stone-100 border-stone-300 text-stone-700 hover:ring-stone-400';
+        case 'agendado':
+        default: return 'bg-blue-100 border-blue-300 text-blue-800 hover:ring-blue-400';
+    }
+}
+
+const TimelineIndicator = () => {
+    const [topPosition, setTopPosition] = useState(0);
+    React.useEffect(() => {
+        const calculatePosition = () => {
             const now = new Date();
-            if (!isSameDay(now, currentDate)) { setNowPosition(null); return; }
-            const mins = now.getHours() * 60 + now.getMinutes() - (START_HOUR * 60);
-            if (mins < 0 || mins > (END_HOUR - START_HOUR) * 60) { setNowPosition(null); return; }
-            setNowPosition((mins / 30) * ROW_HEIGHT);
+            const startOfDayMinutes = START_HOUR * 60;
+            const nowMinutes = now.getHours() * 60 + now.getMinutes();
+            if (nowMinutes < startOfDayMinutes) {
+                setTopPosition(-1); return;
+            }
+            const top = (nowMinutes - startOfDayMinutes) * PIXELS_PER_MINUTE;
+            setTopPosition(top);
         };
-        update();
-        const t = setInterval(update, 60000);
-        return () => clearInterval(t);
-    }, [currentDate]);
-
-    // --- Helpers de Grid ---
-    const timeSlots = useMemo(() => {
-        const slots = [];
-        for (let h = START_HOUR; h < END_HOUR; h++) {
-            slots.push(`${String(h).padStart(2, '0')}:00`);
-            slots.push(`${String(h).padStart(2, '0')}:30`);
-        }
-        return slots;
+        calculatePosition();
+        const intervalId = setInterval(calculatePosition, 60000);
+        return () => clearInterval(intervalId);
     }, []);
-
-    const handleSlotClick = (e: React.MouseEvent, prof: LegacyProfessional, time: string) => {
-        const [h, m] = time.split(':').map(Number);
-        const date = new Date(currentDate);
-        date.setHours(h, m, 0, 0);
-        setSlotMenu({ x: e.clientX, y: e.clientY, date, professional: prof });
-    };
-
-    const handleAction = (type: 'appointment' | 'sale' | 'block') => {
-        if (!slotMenu) return;
-        const { date, professional } = slotMenu;
-        setSlotMenu(null);
-
-        if (type === 'appointment') {
-            setModalInitialData({ professional, start: date });
-            setIsModalOpen(true);
-        } else if (type === 'sale') {
-            window.location.hash = '#/vendas';
-        } else if (type === 'block') {
-            setModalInitialData({ professional, start: date, status: 'bloqueado' });
-            setIsModalOpen(true);
-        }
-    };
-
-    const filteredProfs = professionals.filter(p => visibleProfIds.includes(p.id));
+    
+    if (topPosition < 0) return null;
 
     return (
-        <div className="flex h-screen bg-white overflow-hidden font-sans select-none relative">
+        <div className="absolute w-full z-10 pointer-events-none" style={{ top: `${topPosition}px` }}>
+            <div className="h-px bg-red-500 w-full relative">
+                <div className="absolute -left-1 -top-1 w-2.5 h-2.5 bg-red-500 rounded-full shadow-sm"></div>
+            </div>
+        </div>
+    );
+};
+
+
+// --- Main View Component ---
+
+interface AtendimentosViewProps {
+    onAddTransaction: (t: FinancialTransaction) => void;
+}
+
+type ViewType = 'Profissional' | 'Andamento' | 'Pagamento';
+type PeriodType = 'Dia' | 'Semana' | 'Mês' | 'Lista' | 'Fila de Espera';
+
+const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction }) => {
+    // --- State Management ---
+    const [currentDate, setCurrentDate] = useState(new Date());
+    const [appointments, setAppointments] = useState<LegacyAppointment[]>(initialAppointments);
+    const [visibleProfIds, setVisibleProfIds] = useState<number[]>(mockProfessionals.map(p => p.id));
+    
+    // View States
+    const [viewType, setViewType] = useState<ViewType>('Profissional');
+    const [periodType, setPeriodType] = useState<PeriodType>('Dia');
+    
+    // Dropdown States
+    const [isViewDropdownOpen, setIsViewDropdownOpen] = useState(false);
+    const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false);
+
+    // Mobile State
+    const [activeMobileProfId, setActiveMobileProfId] = useState<number>(mockProfessionals[0].id);
+    const [isMobile, setIsMobile] = useState(false);
+    const [isMobileProfSidebarOpen, setIsMobileProfSidebarOpen] = useState(true);
+
+    const [modalState, setModalState] = useState<{ type: 'appointment' | 'block'; data: any } | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; options: any[] } | null>(null);
+    const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
+    const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
+    const columnRefs = useRef<Map<string | number, HTMLDivElement>>(new Map());
+    
+    const viewDropdownRef = useRef<HTMLDivElement>(null);
+    const periodDropdownRef = useRef<HTMLDivElement>(null);
+
+    // --- Effects ---
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        handleResize();
+        window.addEventListener('resize', handleResize);
+        
+        const handleClickOutside = (event: MouseEvent) => {
+            if (viewDropdownRef.current && !viewDropdownRef.current.contains(event.target as Node)) setIsViewDropdownOpen(false);
+            if (periodDropdownRef.current && !periodDropdownRef.current.contains(event.target as Node)) setIsPeriodDropdownOpen(false);
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+
+        if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+        
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
+
+    // --- Logic: Date Navigation ---
+    const handleDateChange = (direction: number) => {
+        if (periodType === 'Dia' || periodType === 'Lista' || periodType === 'Fila de Espera') {
+            setCurrentDate(prev => addDays(prev, direction));
+        } else if (periodType === 'Semana') {
+            setCurrentDate(prev => addWeeks(prev, direction));
+        } else if (periodType === 'Mês') {
+            setCurrentDate(prev => addMonths(prev, direction));
+        }
+    };
+
+    const handleResetDate = () => setCurrentDate(new Date());
+
+    // --- Logic: Dynamic Columns Generation ---
+    const columns = useMemo<DynamicColumn[]>(() => {
+        if (periodType === 'Semana') {
+            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+            const end = endOfWeek(currentDate, { weekStartsOn: 1 });
+            const days = eachDayOfInterval({ start, end });
+            return days.map(day => ({
+                id: day.toISOString(),
+                title: format(day, 'EEE', { locale: pt }),
+                subtitle: format(day, 'dd/MM'),
+                type: 'date',
+                data: day
+            }));
+        }
+
+        if (viewType === 'Profissional') {
+            // Filter only valid professionals
+            const profs = mockProfessionals.filter(p => visibleProfIds.includes(p.id));
+            return profs.map(p => ({
+                id: p.id,
+                title: p.name,
+                avatarUrl: p.avatarUrl,
+                type: 'professional',
+                data: p
+            }));
+        }
+
+        if (viewType === 'Andamento') {
+            return [
+                { id: 'agendado', title: 'Agendados', type: 'status' },
+                { id: 'confirmado', title: 'Confirmados', type: 'status' },
+                { id: 'chegou', title: 'Chegou', type: 'status' },
+                { id: 'em_atendimento', title: 'Em Atendimento', type: 'status' },
+                { id: 'concluido', title: 'Concluídos', type: 'status' }
+            ];
+        }
+
+        if (viewType === 'Pagamento') {
+             return [
+                { id: 'pendente', title: 'A Pagar / Aberto', type: 'payment' },
+                { id: 'pago', title: 'Pagos', type: 'payment' }
+            ];
+        }
+
+        return [];
+    }, [viewType, periodType, currentDate, visibleProfIds]);
+
+    // --- Grid Styling Calculation ---
+    const gridStyle = useMemo(() => {
+        const colsCount = columns.length || 1;
+        // Use minmax with a specific pixel value to enforce horizontal scrolling if needed
+        // Instead of 1fr which can collapse to 0
+        const minWidth = isMobile ? '170px' : '180px';
+        return {
+            gridTemplateColumns: `60px repeat(${colsCount}, minmax(${minWidth}, 1fr))`
+        };
+    }, [columns.length, isMobile]);
+
+    // --- Logic: Filtering Appointments ---
+    const filteredAppointments = useMemo(() => {
+        let relevantApps = appointments;
+
+        if (periodType === 'Dia') {
+            relevantApps = appointments.filter(a => isSameDay(a.start, currentDate));
+        } else if (periodType === 'Semana') {
+            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+            const end = endOfWeek(currentDate, { weekStartsOn: 1 });
+            relevantApps = appointments.filter(a => isWithinInterval(a.start, { start, end }));
+        } else if (periodType === 'Mês') {
+             const start = startOfMonth(currentDate);
+             const end = endOfMonth(currentDate);
+             relevantApps = appointments.filter(a => isWithinInterval(a.start, { start, end }));
+        } else if (periodType === 'Fila de Espera') {
+            relevantApps = appointments.filter(a => a.status === 'em_espera');
+        }
+        if (periodType === 'Lista') {
+             relevantApps = appointments.filter(a => isSameDay(a.start, currentDate));
+        }
+
+        return relevantApps;
+    }, [appointments, periodType, currentDate]);
+
+    // --- Logic: Assign Appointment to Column ---
+    const getColumnForAppointment = (app: LegacyAppointment, cols: DynamicColumn[]) => {
+        if (periodType === 'Semana') {
+            return cols.find(c => isSameDay(app.start, c.data));
+        }
+        if (viewType === 'Profissional') {
+            return cols.find(c => c.id === app.professional.id);
+        }
+        if (viewType === 'Andamento') {
+            if (app.status === 'confirmado' || app.status === 'confirmado_whatsapp') return cols.find(c => c.id === 'confirmado');
+            return cols.find(c => c.id === app.status);
+        }
+        if (viewType === 'Pagamento') {
+            const isPaid = app.status === 'concluido'; 
+            return cols.find(c => c.id === (isPaid ? 'pago' : 'pendente'));
+        }
+        return null;
+    };
+
+    const timeSlots = useMemo(() => Array.from({ length: (END_HOUR - START_HOUR) * 2 }, (_, i) => { 
+        const hour = START_HOUR + Math.floor(i / 2);
+        const minute = (i % 2) * 30;
+        return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }), []);
+
+    // --- Handlers ---
+    const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
+
+    const handleMobileSidebarClick = (profId: number) => {
+        setActiveMobileProfId(profId);
+        const el = columnRefs.current.get(profId);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }
+    };
+
+    const handleSaveAppointment = (app: LegacyAppointment) => {
+        let isNew = false;
+        setAppointments(prev => {
+            const existing = prev.find(a => a.id === app.id);
+            if (existing) return prev.map(a => a.id === app.id ? app : a);
+            isNew = true;
+            return [...prev, { ...app, id: Date.now() }];
+        });
+        setModalState(null);
+        showToast(isNew ? 'Agendamento criado com sucesso!' : 'Agendamento atualizado com sucesso!', 'success');
+    };
+    
+    const handleDeleteAppointment = (id: number) => {
+        if (window.confirm("Tem certeza que deseja excluir este agendamento?")) {
+            setAppointments(prev => prev.filter(a => a.id !== id));
+            setActiveAppointmentDetail(null);
+            showToast('Agendamento removido.', 'info');
+        }
+    };
+    
+    const handleStatusUpdate = (appointmentId: number, newStatus: AppointmentStatus) => {
+        setAppointments(prev => prev.map(app => (app.id === appointmentId ? { ...app, status: newStatus } : app)));
+        showToast(`Status alterado para ${newStatus.replace('_', ' ')}`, 'success');
+    };
+    
+    const handleEditAppointment = (app: LegacyAppointment) => setModalState({ type: 'appointment', data: app });
+
+    const handleNewAppointment = () => {
+        const prof = isMobile ? mockProfessionals.find(p => p.id === activeMobileProfId) : undefined;
+        setModalState({ type: 'appointment', data: { start: currentDate, professional: prof } });
+    };
+
+    const handleContextMenu = (e: React.MouseEvent, column: DynamicColumn) => {
+        if (column.type !== 'professional' && column.type !== 'date') return;
+        
+        e.preventDefault();
+        const gridEl = e.currentTarget as HTMLElement;
+        const rect = gridEl.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        
+        const minutesFromTop = y / PIXELS_PER_MINUTE;
+        const totalMinutes = minutesFromTop + START_HOUR * 60;
+        const hour = Math.floor(totalMinutes / 60);
+        const minute = totalMinutes % 60;
+
+        const baseDate = column.type === 'date' ? column.data : currentDate;
+        const clickedTime = setMinutes(setHours(baseDate, hour), minute);
+        const roundedTime = roundToNearestMinutes(clickedTime, { nearestTo: 15 });
+        const prof = column.type === 'professional' ? column.data : undefined;
+
+        setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            options: [
+                { label: 'Novo Agendamento', icon: <Plus size={16}/>, onClick: () => setModalState({ type: 'appointment', data: { professional: prof, start: roundedTime } }) },
+                { label: 'Bloquear Horário', icon: <Lock size={16}/>, onClick: () => setModalState({ type: 'block', data: { professional: prof, startTime: roundedTime } }) },
+            ],
+        });
+    };
+
+    const DateDisplay = () => {
+        let text = "";
+        if (periodType === 'Dia' || periodType === 'Lista' || periodType === 'Fila de Espera') {
+            text = format(currentDate, "EEE, dd 'de' MMMM", { locale: pt });
+        } else if (periodType === 'Semana') {
+            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+            const end = endOfWeek(currentDate, { weekStartsOn: 1 });
+            text = `${format(start, "dd MMM", { locale: pt })} - ${format(end, "dd MMM", { locale: pt })}`;
+        } else if (periodType === 'Mês') {
+            text = format(currentDate, "MMMM yyyy", { locale: pt });
+        }
+        return <span className="text-orange-500 font-bold text-lg capitalize px-2">{text.replace('.', '')}</span>;
+    }
+
+    return (
+        <div className="flex h-full bg-white relative flex-col">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-            {/* SIDEBAR DE AJUSTES */}
-            <aside className={`bg-white border-r border-slate-200 flex flex-col flex-shrink-0 z-40 transition-all duration-300 ${isSidebarOpen ? 'w-72' : 'w-0 overflow-hidden'}`}>
-                <div className="h-20 p-6 border-b border-slate-100 flex items-center justify-between">
-                    <h2 className="font-black text-slate-700 uppercase tracking-tighter text-sm flex items-center gap-2">
-                        <SlidersHorizontal size={18} className="text-orange-500" /> Ajustes Agenda
-                    </h2>
-                    <button onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400">
-                        <ChevronLeft size={20} />
-                    </button>
-                </div>
-                
-                <div className="p-6 space-y-8 overflow-y-auto scrollbar-hide">
-                    <div className="space-y-4">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Largura Coluna</label>
-                        <input type="range" min="150" max="400" value={columnWidth} onChange={e => setColumnWidth(Number(e.target.value))} className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-slate-800" />
-                    </div>
-
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Profissionais</h3>
-                             <button onClick={() => setVisibleProfIds(professionals.map(p => p.id))} className="text-[9px] font-bold text-blue-600 hover:underline uppercase">Marcar todos</button>
+            {/* HEADER */}
+            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4">
+                    <h2 className="text-xl font-bold text-slate-800">Atendimentos</h2>
+                    <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+                        <div className="flex items-center gap-2 text-slate-500">
+                            <button className="p-2 hover:bg-slate-100 rounded-full transition-colors" title="Compartilhar"><Share2 size={20} /></button>
+                            <button className="p-2 hover:bg-slate-100 rounded-full transition-colors relative" title="Notificações">
+                                <Bell size={20} />
+                                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                            </button>
+                            <button onClick={handleResetDate} className="p-2 hover:bg-slate-100 rounded-full transition-colors" title="Atualizar / Hoje"><RotateCcw size={20} /></button>
                         </div>
-                        <div className="space-y-1">
-                            {professionals.map(p => (
-                                <label key={p.id} className="flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all hover:bg-slate-50">
-                                    <input type="checkbox" checked={visibleProfIds.includes(p.id)} onChange={() => setVisibleProfIds(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id])} className="w-5 h-5 rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <img src={p.avatarUrl} className="w-7 h-7 rounded-full object-cover border border-slate-100" alt="" />
-                                        <span className="text-sm font-semibold text-slate-700 truncate">{p.name}</span>
-                                    </div>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </aside>
-
-            {/* CONTEÚDO PRINCIPAL */}
-            <div className="flex-1 flex flex-col min-w-0 bg-slate-50 relative">
-                {!isSidebarOpen && (
-                    <button onClick={() => setIsSidebarOpen(true)} className="absolute top-6 left-6 p-3 bg-white shadow-xl rounded-2xl text-slate-800 z-50 hover:scale-110 transition-transform border border-slate-200">
-                        <PanelLeftOpen size={24} />
-                    </button>
-                )}
-
-                <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 z-30 shadow-sm flex-shrink-0">
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                            <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-1.5 hover:bg-white rounded-lg text-slate-500 transition-all"><ChevronLeft size={20} /></button>
-                            <div className="flex flex-col items-center min-w-[160px] px-2">
-                                <span className="text-xs font-black text-slate-800 capitalize">{format(currentDate, "EEEE, dd/MM", { locale: pt })}</span>
-                            </div>
-                            <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-1.5 hover:bg-white rounded-lg text-slate-500 transition-all"><ChevronRight size={20} /></button>
-                        </div>
-                        <button onClick={() => setCurrentDate(new Date())} className="text-blue-600 text-sm font-bold hover:underline hidden sm:block">Ir para hoje</button>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        <button onClick={fetchData} className="p-2.5 text-slate-400 hover:text-slate-800 transition-all bg-white border border-slate-200 rounded-xl"><RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} /></button>
-                        <button onClick={() => { setModalInitialData({ professional: professionals[0], start: new Date() }); setIsModalOpen(true); }} className="bg-slate-900 hover:bg-black text-white font-black text-xs py-3 px-6 rounded-2xl shadow-lg flex items-center gap-2 transition-all active:scale-95 uppercase tracking-widest">
-                            <Plus size={18} /> Agendar
-                        </button>
-                    </div>
-                </header>
-
-                <div className="flex-1 overflow-auto relative">
-                    {isLoading && <div className="absolute top-0 left-0 w-full h-0.5 bg-orange-500 animate-pulse z-50"></div>}
-                    
-                    <div className="inline-grid min-w-full" style={{ gridTemplateColumns: `70px repeat(${filteredProfs.length}, ${columnWidth}px)` }}>
-                        {/* Headers dos Profissionais com Avatares */}
-                        <div className="sticky top-0 z-40 bg-white border-b border-r border-slate-200 h-20"></div>
-                        {filteredProfs.map(prof => (
-                            <div key={prof.id} className="sticky top-0 z-40 bg-white border-b border-r border-slate-200 h-20 flex items-center px-4 gap-3 shadow-sm">
-                                <div className="relative">
-                                    <img src={prof.avatarUrl} className="w-11 h-11 rounded-full border-2 border-slate-100 shadow-sm object-cover" alt="" />
-                                    <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
-                                </div>
-                                <div className="min-w-0">
-                                    <span className="text-xs font-black text-slate-800 truncate block leading-tight uppercase">{prof.name}</span>
-                                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Ativo</span>
-                                </div>
-                            </div>
-                        ))}
-
-                        {/* Coluna de Horários */}
-                        <div className="bg-white border-r border-slate-200 relative z-30">
-                            {timeSlots.map(time => (
-                                <div key={time} className="text-right pr-4 text-[10px] font-black text-slate-400 border-b border-slate-50" style={{ height: `${ROW_HEIGHT}px`, lineHeight: `${ROW_HEIGHT}px` }}>
-                                    {time.endsWith(':00') ? time : ''}
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Colunas de Atendimento */}
-                        {filteredProfs.map(prof => (
-                            <div key={prof.id} className="relative border-r border-slate-100 bg-white/40">
-                                {nowPosition !== null && filteredProfs[0].id === prof.id && (
-                                    <div className="absolute left-0 z-30 pointer-events-none w-full" style={{ top: `${nowPosition}px`, width: `${filteredProfs.length * columnWidth}px` }}>
-                                        <div className="border-t-2 border-red-500 w-full relative">
-                                            <div className="absolute -left-1 -top-1.5 w-3 h-3 bg-red-500 rounded-full shadow-lg border-2 border-white"></div>
-                                        </div>
+                        <div className="h-8 w-px bg-slate-200 mx-2 hidden md:block"></div>
+                        <div className="flex items-center gap-2">
+                            <div className="relative" ref={periodDropdownRef}>
+                                <button onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                                    {periodType} <ChevronDown size={16} />
+                                </button>
+                                {isPeriodDropdownOpen && (
+                                    <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1">
+                                        <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase">Visualização</div>
+                                        {['Dia', 'Semana', 'Mês', 'Lista', 'Fila de Espera'].map((item) => (
+                                            <button key={item} onClick={() => { setPeriodType(item as PeriodType); setIsPeriodDropdownOpen(false); }} className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-slate-50 ${periodType === item ? 'text-orange-600 font-semibold bg-orange-50' : 'text-slate-700'}`}>
+                                                {item === 'Dia' && <CalendarIcon size={16}/>}
+                                                {item === 'Semana' && <CalendarIcon size={16} className="rotate-90"/>}
+                                                {item === 'Mês' && <CalendarIcon size={16}/>}
+                                                {item === 'Lista' && <List size={16}/>}
+                                                {item === 'Fila de Espera' && <Clock size={16}/>}
+                                                {item}
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
-                                
-                                {timeSlots.map(time => (
-                                    <div key={time} onClick={(e) => handleSlotClick(e, prof, time)} className="border-b border-slate-100/40 cursor-cell hover:bg-orange-50/30 transition-colors" style={{ height: `${ROW_HEIGHT}px` }}></div>
-                                ))}
+                            </div>
+                            <button onClick={handleNewAppointment} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg shadow-sm shadow-orange-200 transition-colors">Agendar</button>
+                        </div>
+                    </div>
+                </div>
 
-                                {appointments.filter(app => Number(app.professional.id) === prof.id).map(app => {
-                                    const minsStart = app.start.getHours() * 60 + app.start.getMinutes() - (START_HOUR * 60);
-                                    const minsEnd = app.end.getHours() * 60 + app.end.getMinutes() - (START_HOUR * 60);
-                                    const top = (minsStart / 30) * ROW_HEIGHT;
-                                    const height = ((minsEnd - minsStart) / 30) * ROW_HEIGHT;
+                <div className="flex flex-col md:flex-row items-center gap-4 md:gap-8">
+                    <div className="flex items-center gap-2 w-full md:w-auto justify-between">
+                         <button onClick={handleResetDate} className="text-sm font-bold text-slate-600 hover:text-slate-900 px-2">HOJE</button>
+                        <div className="flex items-center gap-1">
+                             <button onClick={() => handleDateChange(-1)} className="p-1 hover:bg-slate-100 rounded-full text-slate-500"><ChevronLeft size={20} /></button>
+                             <button onClick={() => handleDateChange(1)} className="p-1 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight size={20} /></button>
+                        </div>
+                        <DateDisplay />
+                    </div>
+
+                    {(periodType === 'Dia' || periodType === 'Semana') && (
+                        <div className="relative" ref={viewDropdownRef}>
+                            <button onClick={() => setIsViewDropdownOpen(!isViewDropdownOpen)} className="flex items-center gap-2 text-sm font-bold text-slate-700 hover:text-slate-900 uppercase tracking-wide">
+                                {viewType === 'Profissional' ? 'Por Profissional' : viewType === 'Andamento' ? 'Por Andamento' : 'Por Pagamento'} <ChevronDown size={16} />
+                            </button>
+                            {isViewDropdownOpen && (
+                                <div className="absolute left-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-2">
+                                    <div className="px-4 py-2 text-xs font-semibold text-slate-400">Agrupar por</div>
+                                    {['Profissional', 'Andamento', 'Pagamento'].map((item) => (
+                                        <button key={item} onClick={() => { setViewType(item as ViewType); setIsViewDropdownOpen(false); }} className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between hover:bg-slate-50 ${viewType === item ? 'text-slate-900 font-bold' : 'text-slate-600'}`}>
+                                            <span>{item}</span>
+                                            {viewType === item && <div className="w-2 h-2 rounded-full bg-orange-500"></div>}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </header>
+
+            <div className="flex flex-1 overflow-hidden relative">
+                {/* Mobile Sidebar */}
+                {isMobile && periodType === 'Dia' && viewType === 'Profissional' && (
+                    <>
+                        <div className={`flex flex-col bg-slate-50 border-r border-slate-200 transition-all duration-300 ease-in-out z-20 ${isMobileProfSidebarOpen ? 'w-20' : 'w-0 overflow-hidden'}`}>
+                            <div className="flex-1 overflow-y-auto scrollbar-hide py-4 flex flex-col items-center gap-4 w-20 pb-20">
+                                {mockProfessionals.map(prof => (
+                                    <button 
+                                        key={prof.id} 
+                                        onClick={() => handleMobileSidebarClick(prof.id)} 
+                                        className={`relative group transition-all p-1 rounded-full ${activeMobileProfId === prof.id ? 'scale-110' : 'opacity-70 hover:opacity-100'}`}
+                                        title={prof.name}
+                                    >
+                                        <div className={`w-12 h-12 rounded-full p-0.5 ${activeMobileProfId === prof.id ? 'bg-gradient-to-tr from-orange-400 to-red-500 shadow-md' : 'bg-transparent border border-slate-300'}`}>
+                                            <img src={prof.avatarUrl} alt={prof.name} className="w-full h-full rounded-full object-cover border-2 border-white" />
+                                        </div>
+                                        {activeMobileProfId === prof.id && (
+                                            <div className="absolute right-0 bottom-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <button 
+                            onClick={() => setIsMobileProfSidebarOpen(!isMobileProfSidebarOpen)}
+                            className="absolute z-30 top-1/2 -translate-y-1/2 bg-white border border-slate-200 rounded-r-lg p-1.5 shadow-md text-slate-500 hover:text-orange-500 transition-all"
+                            style={{ left: isMobileProfSidebarOpen ? '5rem' : '0' }}
+                        >
+                            {isMobileProfSidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+                        </button>
+                    </>
+                )}
+
+                {/* VIEW RENDERER */}
+                <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-slate-50 md:bg-white relative">
+                    
+                    {/* 1. TIMELINE GRID (Dia / Semana) */}
+                    {(periodType === 'Dia' || periodType === 'Semana') && (
+                        <div className="relative min-h-full min-w-full">
+                            {/* Headers */}
+                            <div className="grid sticky top-0 z-40 shadow-sm border-b border-slate-200 bg-white" style={gridStyle}>
+                                <div className="border-r border-slate-200 h-16 bg-white sticky left-0 z-50"></div>
+                                {columns.map((col, index) => (
+                                    <div key={col.id} ref={(el) => { if(el) columnRefs.current.set(col.id, el) }} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-16 bg-slate-50/50">
+                                        {col.type === 'professional' && (
+                                            <div className="flex items-center gap-2">
+                                                <img src={col.avatarUrl} alt={col.title} className="w-8 h-8 rounded-full border border-slate-200" />
+                                                <span className="text-sm font-bold text-slate-800 truncate max-w-[120px]">{col.title}</span>
+                                            </div>
+                                        )}
+                                        {col.type === 'status' && (
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-3 h-3 rounded-full ${
+                                                    col.id === 'agendado' ? 'bg-blue-400' : 
+                                                    col.id === 'confirmado' ? 'bg-teal-400' : 
+                                                    col.id === 'em_atendimento' ? 'bg-indigo-400' : 
+                                                    'bg-green-400'
+                                                }`}></div>
+                                                <span className="text-sm font-bold text-slate-700">{col.title}</span>
+                                            </div>
+                                        )}
+                                        {col.type === 'payment' && (
+                                            <div className="flex items-center gap-2">
+                                                {col.id === 'pago' ? <CheckCircle className="w-5 h-5 text-green-500"/> : <DollarSign className="w-5 h-5 text-orange-500"/>}
+                                                <span className="text-sm font-bold text-slate-700">{col.title}</span>
+                                            </div>
+                                        )}
+                                        {col.type === 'date' && (
+                                            <>
+                                                <span className={`text-xs uppercase font-bold ${isSameDay(col.data, new Date()) ? 'text-orange-600' : 'text-slate-500'}`}>{col.title}</span>
+                                                <span className={`text-lg font-bold ${isSameDay(col.data, new Date()) ? 'text-orange-600' : 'text-slate-800'}`}>{col.subtitle}</span>
+                                            </>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Grid Body */}
+                            <div className="grid relative" style={gridStyle}>
+                                {/* Time Column */}
+                                <div className="border-r border-slate-200 bg-white sticky left-0 z-30">
+                                    {timeSlots.map(time => (
+                                        <div key={time} className="h-20 text-right pr-2 text-xs text-slate-400 font-medium relative pt-2">
+                                            <span className="-translate-y-1/2 block">{time}</span>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Dynamic Columns */}
+                                {columns.map((col, index) => {
+                                    const colApps = filteredAppointments.filter(app => {
+                                        const assignedCol = getColumnForAppointment(app, columns);
+                                        return assignedCol?.id === col.id;
+                                    });
 
                                     return (
-                                        <div
-                                            key={app.id}
-                                            ref={el => appointmentRefs.current.set(app.id, el)}
-                                            onClick={(e) => { e.stopPropagation(); setActiveDetail(app); }}
-                                            className={`absolute left-1/2 -translate-x-1/2 w-[94%] rounded-xl shadow-sm p-3 cursor-pointer z-10 border-l-[6px] border-blue-500 bg-blue-50 hover:shadow-xl hover:scale-[1.01] transition-all overflow-hidden ${app.status === 'bloqueado' ? 'opacity-50 grayscale' : ''}`}
-                                            style={{ top: `${top + 2}px`, height: `${height - 4}px` }}
+                                        <div 
+                                            key={col.id} 
+                                            className={`relative border-r border-slate-200 bg-white min-h-[1600px] ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}
+                                            onContextMenu={(e) => handleContextMenu(e, col)}
+                                            onClick={(e) => {
+                                                if (isMobile) {
+                                                    const rect = e.currentTarget.getBoundingClientRect();
+                                                    const y = e.clientY - rect.top;
+                                                    const minutesFromTop = y / PIXELS_PER_MINUTE;
+                                                    const totalMinutes = minutesFromTop + START_HOUR * 60;
+                                                    const hour = Math.floor(totalMinutes / 60);
+                                                    const minute = totalMinutes % 60;
+                                                    const baseDate = col.type === 'date' ? col.data : currentDate;
+                                                    const clickedTime = setMinutes(setHours(baseDate, hour), minute);
+                                                    const roundedTime = roundToNearestMinutes(clickedTime, { nearestTo: 30 });
+                                                    const prof = col.type === 'professional' ? col.data : undefined;
+                                                    setModalState({ type: 'appointment', data: { professional: prof, start: roundedTime } });
+                                                }
+                                            }}
                                         >
-                                            <p className="text-[9px] font-black text-blue-600 uppercase tracking-tighter mb-1">
-                                                {format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}
-                                            </p>
-                                            <p className="text-xs font-black text-slate-800 truncate leading-tight uppercase">{app.client?.nome || 'BLOQUEIO'}</p>
-                                            <p className="text-[10px] text-slate-500 truncate font-bold mt-0.5">{app.service.name}</p>
+                                            {/* Grid Lines */}
+                                            {timeSlots.map((_, i) => <div key={i} className="h-20 border-b border-slate-100"></div>)}
+
+                                            {/* Appointments */}
+                                            {colApps.map(app => {
+                                                const duration = (app.end.getTime() - app.start.getTime()) / (1000 * 60);
+                                                const isSmall = duration < 45;
+
+                                                return (
+                                                <div
+                                                    key={app.id}
+                                                    ref={(el) => { appointmentRefs.current.set(app.id, el); }}
+                                                    onClick={(e) => { e.stopPropagation(); if (app.status !== 'bloqueado') setActiveAppointmentDetail(app); }}
+                                                    className={`absolute w-[95%] left-1/2 -translate-x-1/2 rounded-lg shadow-sm border leading-tight overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-[1.02] hover:z-10 ${getStatusColor(app.status)} ${isSmall ? 'p-0.5' : 'p-1.5'}`}
+                                                    style={getAppointmentStyle(app.start, app.end)}
+                                                >
+                                                    <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-lg"></div>
+                                                    
+                                                    <div className={`flex flex-col h-full relative z-10 pl-2 pr-1 ${isSmall ? 'justify-center' : 'pt-0.5'}`}>
+                                                        <div className={`flex justify-between items-start ${isSmall ? 'mb-0' : 'mb-0.5'}`}>
+                                                            <span className={`font-bold bg-white/60 rounded text-slate-700 backdrop-blur-sm shadow-sm tracking-tight ${isSmall ? 'text-[9px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'}`}>
+                                                                {format(app.start, 'HH:mm')}
+                                                            </span>
+                                                            {app.notas && !isSmall && <FileText size={10} className="text-slate-500 ml-1 mt-0.5" />}
+                                                        </div>
+
+                                                        <div className={`flex-1 min-h-0 flex flex-col ${isSmall ? 'justify-center' : 'justify-center'}`}>
+                                                            <p className={`font-extrabold text-slate-900 truncate ${isSmall ? 'text-[10px] leading-3' : 'text-sm leading-tight mb-0.5'}`}>
+                                                                {app.client ? app.client.nome : 'Bloqueio'}
+                                                            </p>
+                                                            <p className={`font-medium text-slate-600 truncate flex items-center gap-1 ${isSmall ? 'text-[9px] leading-3' : 'text-[11px] leading-tight'}`}>
+                                                                {app.service.name}
+                                                            </p>
+                                                        </div>
+
+                                                        {viewType === 'Pagamento' && !isSmall && (
+                                                            <div className="mt-auto pt-1 flex items-center gap-1 text-[10px] font-bold text-green-700 opacity-90 border-t border-black/5">
+                                                                <span>R$ {app.service.price.toFixed(2)}</span>
+                                                                {app.status === 'concluido' && <span className="bg-green-200 px-1 rounded ml-auto text-[9px]">Pago</span>}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {app.status === 'confirmado_whatsapp' && <div className="absolute bottom-1 right-1 w-2 h-2 rounded-full bg-green-500 shadow-sm ring-1 ring-white" title="Confirmado via WhatsApp"></div>}
+                                                </div>
+                                            )})}
                                         </div>
                                     );
                                 })}
+                                <TimelineIndicator />
                             </div>
-                        ))}
-                    </div>
+                        </div>
+                    )}
+
+                    {/* 2. LIST & WAITLIST VIEW */}
+                    {(periodType === 'Lista' || periodType === 'Fila de Espera') && (
+                        <div className="p-6 max-w-4xl mx-auto">
+                             {filteredAppointments.length === 0 ? (
+                                <div className="text-center py-20 text-slate-400">
+                                    <List size={48} className="mx-auto mb-4 opacity-30" />
+                                    <p>Nenhum agendamento encontrado para este período.</p>
+                                </div>
+                             ) : (
+                                 <div className="space-y-4">
+                                    {filteredAppointments
+                                        .sort((a,b) => a.start.getTime() - b.start.getTime())
+                                        .map(app => (
+                                        <div key={app.id} onClick={() => setActiveAppointmentDetail(app)} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-orange-300 transition-all cursor-pointer flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-16 text-center">
+                                                    <p className="text-xl font-bold text-slate-800">{format(app.start, 'HH:mm')}</p>
+                                                    <p className="text-xs text-slate-500">{format(app.start, 'dd/MM')}</p>
+                                                </div>
+                                                <div className="w-px h-10 bg-slate-200"></div>
+                                                <div>
+                                                    <h4 className="font-bold text-slate-800">{app.client?.nome || 'Bloqueio'}</h4>
+                                                    <p className="text-sm text-slate-500">{app.service.name} • com {app.professional.name}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize ${getStatusColor(app.status)}`}>{app.status.replace('_', ' ')}</span>
+                                                <div className="font-bold text-slate-700">R$ {app.service.price.toFixed(2)}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                 </div>
+                             )}
+                        </div>
+                    )}
+
+                    {/* 3. MONTH VIEW */}
+                    {periodType === 'Mês' && (
+                        <div className="p-4 h-full flex flex-col">
+                            <div className="grid grid-cols-7 gap-1 flex-1">
+                                {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
+                                    <div key={d} className="text-center py-2 text-sm font-bold text-slate-400 uppercase">{d}</div>
+                                ))}
+                                {(() => {
+                                    const start = startOfMonth(currentDate);
+                                    const end = endOfMonth(currentDate);
+                                    const startDay = start.getDay(); 
+                                    const daysInMonth = eachDayOfInterval({ start, end });
+                                    const blanks = Array.from({ length: startDay }, (_, i) => i);
+
+                                    return [
+                                        ...blanks.map(b => <div key={`blank-${b}`} className="bg-slate-50/50 rounded-lg"></div>),
+                                        ...daysInMonth.map(day => {
+                                            const dayApps = filteredAppointments.filter(a => isSameDay(a.start, day));
+                                            const isToday = isSameDay(day, new Date());
+                                            return (
+                                                <div key={day.toISOString()} className={`bg-white border rounded-lg p-2 min-h-[100px] flex flex-col gap-1 transition-shadow hover:shadow-md ${isToday ? 'border-orange-300 ring-1 ring-orange-100' : 'border-slate-200'}`}>
+                                                    <span className={`text-sm font-bold mb-1 ${isToday ? 'text-orange-600' : 'text-slate-700'}`}>{format(day, 'dd')}</span>
+                                                    {dayApps.slice(0, 3).map(app => (
+                                                        <div key={app.id} className="text-[10px] truncate px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                                                            {format(app.start, 'HH:mm')} {app.client?.nome.split(' ')[0]}
+                                                        </div>
+                                                    ))}
+                                                    {dayApps.length > 3 && (
+                                                        <div className="text-[10px] text-slate-400 text-center font-medium">
+                                                            +{dayApps.length - 3} mais
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })
+                                    ];
+                                })()}
+                            </div>
+                        </div>
+                    )}
+
                 </div>
             </div>
 
-            {/* MENU DE AÇÃO EM SLOT VAZIO */}
-            {slotMenu && (
-                <div className="fixed inset-0 z-50 overflow-hidden" onClick={() => setSlotMenu(null)}>
-                    <div 
-                        className="absolute bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 w-56 flex flex-col gap-1 animate-in zoom-in-95 duration-200"
-                        style={{ top: Math.min(slotMenu.y, window.innerHeight - 160), left: Math.min(slotMenu.x, window.innerWidth - 240) }}
-                        onClick={e => e.stopPropagation()}
-                    >
-                        <div className="px-3 py-2 border-b border-slate-50 mb-1 text-center">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{format(slotMenu.date, 'HH:mm')} • {slotMenu.professional.name.split(' ')[0]}</p>
-                        </div>
-                        <button onClick={() => handleAction('appointment')} className="flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 hover:text-blue-700 rounded-xl text-sm font-bold text-slate-600 transition-colors">
-                            <CalendarIcon size={18} className="text-blue-500" /> Agendar
-                        </button>
-                        <button onClick={() => handleAction('sale')} className="flex items-center gap-3 px-4 py-2.5 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl text-sm font-bold text-slate-600 transition-colors">
-                            <DollarSign size={18} className="text-emerald-500" /> Nova Venda
-                        </button>
-                        <button onClick={() => handleAction('block')} className="flex items-center gap-3 px-4 py-2.5 hover:bg-rose-50 hover:text-rose-700 rounded-xl text-sm font-bold text-slate-600 transition-colors border-t border-slate-50 mt-1">
-                            <Ban size={18} className="text-rose-500" /> Bloquear
-                        </button>
-                    </div>
-                </div>
+            {/* Modals and Overlays */}
+            {modalState?.type === 'appointment' && (
+                <AppointmentModal key={modalState.data.id || 'new'} appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />
             )}
-
-            {/* MODAIS */}
-            <NewAppointmentModal 
-                isOpen={isModalOpen} 
-                onClose={() => setIsModalOpen(false)} 
-                onSuccess={fetchData} 
-                initialData={modalInitialData}
-            />
-
-            {activeDetail && (
-                <AppointmentDetailPopover 
-                    appointment={activeDetail} 
-                    targetElement={appointmentRefs.current.get(activeDetail.id) || null} 
-                    onClose={() => setActiveDetail(null)} 
-                    onEdit={(app) => { setActiveDetail(null); setModalInitialData({ ...app, professional: app.professional, start: app.start }); setIsModalOpen(true); }} 
-                    onDelete={async (id) => { 
-                        if(confirm("Confirmar cancelamento?")){
-                            await supabase.from('appointments').delete().eq('id', id); fetchData(); setActiveDetail(null); 
-                        }
-                    }} 
-                    onUpdateStatus={async (id, status) => { 
-                        await supabase.from('appointments').update({ status }).eq('id', id); fetchData(); setActiveDetail(null); 
-                    }} 
+            {modalState?.type === 'block' && (
+                <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.startTime} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />
+            )}
+            {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} options={contextMenu.options} onClose={() => setContextMenu(null)} />}
+            <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
+            
+            {activeAppointmentDetail && (
+                <AppointmentDetailPopover
+                    appointment={activeAppointmentDetail}
+                    targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null}
+                    onClose={() => setActiveAppointmentDetail(null)}
+                    onEdit={handleEditAppointment}
+                    onDelete={handleDeleteAppointment}
+                    onUpdateStatus={handleStatusUpdate}
                 />
             )}
+
+             {/* JaciBot Floating Action Button */}
+            <div className="fixed md:absolute bottom-6 right-6 z-30">
+              <button onClick={() => setIsJaciBotOpen(true)} className="w-12 h-12 md:w-14 md:h-14 bg-orange-500 rounded-full shadow-lg flex items-center justify-center text-white hover:bg-orange-600 transition ring-2 ring-white hover:scale-110 duration-200 shadow-orange-200">
+                <MessageSquare className="w-6 h-6 md:w-7 md:h-7" />
+                <span className="absolute -top-1 -right-1 w-4 h-4 md:w-5 md:h-5 bg-red-500 text-white text-[10px] md:text-xs rounded-full flex items-center justify-center border-2 border-white">3</span>
+              </button>
+            </div>
         </div>
     );
 };

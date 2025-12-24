@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { isConfigured, saveSupabaseConfig } from '../services/supabaseClient';
 import { Database, Save, AlertTriangle } from 'lucide-react';
@@ -13,7 +12,8 @@ const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
   const [key, setKey] = useState('sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x');
 
   useEffect(() => {
-    if (!isConfigured) console.log('EnvGate: Aguardando configuração do Belaflow no Supabase...');
+    // Log para depuração em produção se necessário
+    if (!isConfigured) console.log('EnvGate: Aguardando configuração do Supabase...');
   }, []);
 
   if (isConfigured) {
@@ -34,7 +34,7 @@ const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
           <div className="w-16 h-16 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mb-4">
             <Database size={32} />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">Conexão Belaflow</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Configuração Necessária</h1>
           <p className="text-slate-500 text-sm mt-2">
             As variáveis de ambiente do Supabase não foram detectadas. Por favor, confirme as configurações abaixo para continuar.
           </p>
