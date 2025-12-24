@@ -327,16 +327,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         <div className="flex h-full bg-white relative flex-col overflow-visible font-sans">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            {/* Header - z-index reduzido para z-20 para ficar abaixo do menu mobile */}
-            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-6 z-20">
+            {/* Header rebaixado para z-10 para ficar bem abaixo da Sidebar mobile */}
+            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-6 z-10">
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4">
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Atendimentos {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}</h2>
                     <div className="flex items-center gap-2">
-                        {/* Dropdown - z-index reduzido para z-30 */}
-                        <div className="relative z-30" ref={periodDropdownRef}>
+                        {/* Dropdown - z-index reduzido para z-20 */}
+                        <div className="relative z-20" ref={periodDropdownRef}>
                             <button onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50">{periodType} <ChevronDown size={16} /></button>
                             {isPeriodDropdownOpen && (
-                                <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-2xl z-[100] py-2 overflow-hidden">
+                                <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-2xl z-[30] py-2 overflow-hidden">
                                     {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (
                                         <button key={item} onClick={() => { setPeriodType(item as PeriodType); setIsPeriodDropdownOpen(false); }} className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 ${periodType === item ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-slate-700'}`}>{item}</button>
                                     ))}
@@ -360,9 +360,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 <div className="flex-1 overflow-auto bg-slate-50 md:bg-white relative">
                     {(periodType === 'Dia' || periodType === 'Semana') && (
                         <div className="relative min-h-full min-w-full">
-                            {/* Grid Header - z-index reduzido para z-10 */}
-                            <div className="grid sticky top-0 z-10 shadow-sm border-b border-slate-200 bg-white" style={gridStyle}>
-                                <div className="border-r border-slate-200 h-24 bg-white sticky left-0 z-20"></div>
+                            {/* Grid Header rebaixado para z-0 para garantir submissão à sidebar */}
+                            <div className="grid sticky top-0 z-0 shadow-sm border-b border-slate-200 bg-white" style={gridStyle}>
+                                <div className="border-r border-slate-200 h-24 bg-white sticky left-0 z-[5]"></div>
                                 {columns.map(col => (
                                     <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-24 bg-slate-50/30">
                                         <div className="flex items-center gap-3 px-4 py-2 bg-white rounded-2xl border border-slate-200 shadow-sm min-w-[140px]">
@@ -376,7 +376,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 ))}
                             </div>
                             <div className="grid relative" style={gridStyle}>
-                                <div className="border-r border-slate-200 bg-white sticky left-0 z-30">
+                                <div className="border-r border-slate-200 bg-white sticky left-0 z-[5]">
                                     {timeSlots.map(time => <div key={time} className="h-20 text-right pr-3 text-[11px] text-slate-400 font-bold pt-2 border-b border-slate-50/50 border-dashed"><span>{time}</span></div>)}
                                 </div>
                                 {columns.map((col, idx) => (
@@ -520,8 +520,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             )}
             
             <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
-            {/* JaciBot button - z-index reduzido para z-30 */}
-            <div className="fixed bottom-8 right-8 z-30"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
+            {/* JaciBot button - z-index rebaixado para z-10 */}
+            <div className="fixed bottom-8 right-8 z-10"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
         </div>
     );
 };

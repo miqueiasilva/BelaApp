@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { ViewState } from '../../types';
@@ -40,26 +41,26 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentView, onNaviga
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden relative">
       
-      {/* Mobile Backdrop - Aumentado z-index para z-[9998] */}
+      {/* Mobile Backdrop - Camada de fundo quase máxima */}
       {isMobile && isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-[9998] transition-opacity"
+          className="fixed inset-0 bg-black/60 z-[99998] backdrop-blur-sm transition-opacity"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar Container - Aumentado z-index para z-[9999] no mobile */}
+      {/* Sidebar Container - Camada máxima absoluta no mobile */}
       <div 
         className={`
           flex flex-col h-full bg-white border-r border-slate-200 transition-all duration-300 ease-in-out
-          ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl z-[9999]' : 'relative z-40'}
+          ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl z-[99999]' : 'relative z-40'}
           ${isSidebarOpen ? 'w-64 translate-x-0' : isMobile ? '-translate-x-full w-64' : 'w-0 overflow-hidden'}
         `}
       >
         <div className="flex-1 overflow-hidden w-64 relative">
             <Sidebar currentView={currentView} onNavigate={handleNavigate} className="w-full" />
             
-            {/* Desktop Collapse Arrow (Inside Sidebar) */}
+            {/* Desktop Collapse Arrow */}
             {!isMobile && (
                 <button
                     onClick={() => setIsSidebarOpen(false)}
@@ -85,9 +86,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentView, onNaviga
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full transition-all">
         
-        {/* Top Toggle Bar (Mobile or Collapsed Desktop) */}
+        {/* Top Toggle Bar (Z-index baixo para não cobrir a sidebar aberta) */}
         {(!isSidebarOpen || isMobile) && (
-            <div className="flex-shrink-0 bg-white border-b border-slate-200 px-4 h-14 flex items-center gap-3 z-20 shadow-sm md:shadow-none">
+            <div className="flex-shrink-0 bg-white border-b border-slate-200 px-4 h-14 flex items-center gap-3 z-30 shadow-sm md:shadow-none">
                 <button
                     onClick={toggleSidebar}
                     className="p-2 bg-slate-50 hover:bg-orange-50 text-slate-600 hover:text-orange-600 rounded-lg transition-colors"
