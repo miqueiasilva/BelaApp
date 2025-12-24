@@ -55,8 +55,8 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4" onClick={onClose}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <header className={`p-4 flex justify-between items-center ${type === 'receita' ? 'bg-green-500' : 'bg-red-500'} text-white`}>
                 <h3 className="text-lg font-bold flex items-center gap-2">
                     {type === 'receita' ? <DollarSign className="w-5 h-5"/> : <Tag className="w-5 h-5"/>}
@@ -133,7 +133,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
 
                 <button 
                     type="submit" 
-                    className={`w-full py-3 rounded-xl font-bold text-white shadow-lg mt-4 transition-transform active:scale-95 ${type === 'receita' ? 'bg-green-500 hover:bg-green-600 shadow-green-200' : 'bg-red-500 hover:bg-red-600 shadow-red-200'}`}
+                    className={`w-full py-3 rounded-xl font-bold text-white shadow-lg mt-4 transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${type === 'receita' ? 'bg-green-500 hover:bg-green-600 shadow-green-200' : 'bg-red-500 hover:bg-red-600 shadow-red-200'}`}
                 >
                     Confirmar Lançamento
                 </button>

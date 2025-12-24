@@ -144,7 +144,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             if (data) {
                 const mappedAppointments: LegacyAppointment[] = data.map(row => {
                     const startTime = new Date(row.date); 
-                    // Correção: Lendo de 'duration' (fallback para 'duration_min' por segurança)
                     const duration = row.duration || row.duration_min || 30;
                     const endTime = new Date(startTime.getTime() + duration * 60000);
                     let matchedProf = resources.find(p => p.id === Number(row.resource_id)) 
@@ -211,9 +210,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         return [];
     }, [viewType, periodType, currentDate, resources]);
 
+    // AJUSTE: Largura mínima aumentada para 220px para evitar sobreposição e compressão visual
     const gridStyle = useMemo(() => {
         const colsCount = columns.length || 1;
-        return { gridTemplateColumns: `60px repeat(${colsCount}, minmax(180px, 1fr))` };
+        return { gridTemplateColumns: `60px repeat(${colsCount}, minmax(220px, 1fr))` };
     }, [columns.length]);
 
     const filteredAppointments = useMemo(() => {
@@ -244,13 +244,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     });
 
     const handleSaveAppointment = async (app: LegacyAppointment) => {
-        // Previna refresh se necessário (geralmente tratado no form do modal)
-        
-        // ID temporário robusto para evitar conflitos na UI
         const tempId = app.id && app.id < 1000000000000 ? app.id : Date.now();
         const optimisticItem = { ...app, id: tempId };
 
-        // 1. Atualização Otimista Imediata (Functional update)
         setAppointments(prev => {
             const index = prev.findIndex(p => p.id === tempId);
             if (index >= 0) {
@@ -264,7 +260,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         setModalState(null); 
         
         try {
-            // Correção: 'duration_min' alterado para 'duration'
             const payload = {
                 client_name: app.client?.nome || 'Cliente',
                 service_name: app.service.name,
@@ -278,11 +273,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             };
 
             if (app.id && app.id < 1000000000000) {
-                // UPDATE
                 const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
                 if (error) throw error;
             } else {
-                // INSERT - Capturamos o retorno para pegar o ID real do banco
                 const { data, error } = await supabase.from('appointments').insert([payload]).select();
                 if (error) throw error;
                 if (data && data[0]) {
@@ -291,15 +284,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             }
             
             setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
-            
-            // Recarrega em background após um breve delay para sincronia final
             setTimeout(() => fetchAppointments(), 1000); 
 
         } catch (error: any) {
             console.error("Erro ao salvar agendamento:", error);
             setToast({ message: `Erro ao salvar no banco: ${error.message}`, type: 'error' });
-            // Não removemos o item da tela para o usuário tentar novamente ou reportar, 
-            // mas um fetch real pode ser necessário para limpar o estado se houver inconsistência.
             fetchAppointments(); 
         }
     };
@@ -367,7 +356,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                         <div className="flex items-center gap-3 px-4 py-2 bg-white rounded-2xl border border-slate-200 shadow-sm min-w-[140px]">
                                             {col.photo && <img src={col.photo} alt={col.title} className="w-10 h-10 rounded-full object-cover border-2 border-orange-100" />}
                                             <div className="flex flex-col overflow-hidden">
-                                                <span className="text-xs font-bold text-slate-800 truncate">{col.title}</span>
+                                                <span className="text-xs font-bold text-slate-800 leading-tight break-words">{col.title}</span>
                                                 {col.subtitle && <span className="text-[10px] text-slate-400 font-semibold">{col.subtitle}</span>}
                                             </div>
                                         </div>
@@ -399,13 +388,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                     e.stopPropagation();
                                                     setActiveAppointmentDetail(app);
                                                 }}
-                                                className={`absolute w-[94%] left-1/2 -translate-x-1/2 rounded-2xl shadow-sm border p-2 cursor-pointer hover:scale-[1.01] transition-all z-10 ${getStatusColor(app.status)}`}
+                                                className={`absolute w-[94%] left-1/2 -translate-x-1/2 rounded-2xl shadow-sm border p-2 cursor-pointer hover:scale-[1.01] transition-all z-10 overflow-hidden ${getStatusColor(app.status)}`}
                                                 style={getAppointmentStyle(app.start, app.end)}
                                             >
                                                 <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-2 rounded-l-2xl"></div>
                                                 <div className="pl-2">
-                                                    <p className="font-black text-slate-900 truncate text-sm">{app.client?.nome || (app.status === 'bloqueado' ? 'Bloqueado' : 'Cliente')}</p>
-                                                    <p className="text-[11px] font-bold text-slate-600 truncate">{app.service.name}</p>
+                                                    <p className="font-black text-slate-900 text-sm whitespace-normal break-words leading-tight">
+                                                        {app.client?.nome || (app.status === 'bloqueado' ? 'Bloqueado' : 'Cliente')}
+                                                    </p>
+                                                    <p className="text-[11px] font-bold text-slate-600 whitespace-normal break-words leading-tight">
+                                                        {app.service.name}
+                                                    </p>
                                                 </div>
                                             </div>
                                         ))}

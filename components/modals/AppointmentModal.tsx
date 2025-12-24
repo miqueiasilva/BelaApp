@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { LegacyAppointment, Client, LegacyProfessional, LegacyService } from '../../types';
 import { clients as initialClients, services as serviceMap, professionals } from '../../data/mockData';
@@ -261,7 +260,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
   
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col relative overflow-hidden animate-in fade-in zoom-in-95 duration-200" style={{height: '95vh'}} onClick={(e) => e.stopPropagation()}>
         
         <header className="p-4 border-b flex items-center gap-4 flex-shrink-0 bg-slate-50">
@@ -401,6 +400,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           {/* Stats: Price and Duration (Editable) */}
           <div className="flex items-center gap-4">
               <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 focus-within:border-orange-300 focus-within:ring-2 focus-within:ring-orange-100 transition-all shadow-sm">
+                  {/* FIX: Removed misplaced Send button icon that was causing a "Cannot find name 'Send'" error and was UI-incorrect in the modal form. */}
                   <div className="p-1.5 bg-green-50 rounded text-green-600">
                     <DollarSign className="w-4 h-4" />
                   </div>
