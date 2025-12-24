@@ -144,7 +144,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             if (data) {
                 const mappedAppointments: LegacyAppointment[] = data.map(row => {
                     const startTime = new Date(row.date); 
-                    const duration = row.duration_min || 30;
+                    // Correção: Lendo de 'duration' (fallback para 'duration_min' por segurança)
+                    const duration = row.duration || row.duration_min || 30;
                     const endTime = new Date(startTime.getTime() + duration * 60000);
                     let matchedProf = resources.find(p => p.id === Number(row.resource_id)) 
                                     || resources.find(p => p.name === row.professional_name)
@@ -243,43 +244,63 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     });
 
     const handleSaveAppointment = async (app: LegacyAppointment) => {
-        // Optimistic UI: Adiciona ao estado local imediatamente
+        // Previna refresh se necessário (geralmente tratado no form do modal)
+        
+        // ID temporário robusto para evitar conflitos na UI
+        const tempId = app.id && app.id < 1000000000000 ? app.id : Date.now();
+        const optimisticItem = { ...app, id: tempId };
+
+        // 1. Atualização Otimista Imediata (Functional update)
         setAppointments(prev => {
-            const index = prev.findIndex(p => p.id === app.id);
+            const index = prev.findIndex(p => p.id === tempId);
             if (index >= 0) {
                 const newApps = [...prev];
-                newApps[index] = app;
+                newApps[index] = optimisticItem;
                 return newApps;
             }
-            return [...prev, { ...app, id: app.id || Date.now() }];
+            return [...prev, optimisticItem];
         });
         
         setModalState(null); 
         
         try {
+            // Correção: 'duration_min' alterado para 'duration'
             const payload = {
                 client_name: app.client?.nome || 'Cliente',
                 service_name: app.service.name,
                 professional_name: app.professional.name, 
-                resource_id: app.professional.id,            
+                resource_id: Number(app.professional.id),            
                 date: app.start.toISOString(),
                 value: typeof app.service.price === 'number' ? app.service.price : parseFloat(app.service.price || '0'),
                 status: app.status || 'agendado',
                 notes: app.notas || '',
-                duration_min: app.service.duration || 30
+                duration: app.service.duration || 30 
             };
 
             if (app.id && app.id < 1000000000000) {
-                await supabase.from('appointments').update(payload).eq('id', app.id);
+                // UPDATE
+                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
+                if (error) throw error;
             } else {
-                await supabase.from('appointments').insert([payload]);
+                // INSERT - Capturamos o retorno para pegar o ID real do banco
+                const { data, error } = await supabase.from('appointments').insert([payload]).select();
+                if (error) throw error;
+                if (data && data[0]) {
+                    setAppointments(prev => prev.map(p => p.id === tempId ? { ...optimisticItem, id: data[0].id } : p));
+                }
             }
             
-            await fetchAppointments(); 
             setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
+            
+            // Recarrega em background após um breve delay para sincronia final
+            setTimeout(() => fetchAppointments(), 1000); 
+
         } catch (error: any) {
-            setToast({ message: `Erro ao salvar: ${error.message}`, type: 'error' });
-            fetchAppointments(); // Reverte para o estado do servidor em caso de erro
+            console.error("Erro ao salvar agendamento:", error);
+            setToast({ message: `Erro ao salvar no banco: ${error.message}`, type: 'error' });
+            // Não removemos o item da tela para o usuário tentar novamente ou reportar, 
+            // mas um fetch real pode ser necessário para limpar o estado se houver inconsistência.
+            fetchAppointments(); 
         }
     };
 
@@ -437,7 +458,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             }}
                             className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                         >
-                            <div className="p-1.5 bg-rose-100 rounded-lg text-rose-600"><Ban size={16} /></div>
+                            <div className="p-1.5 bg-rose-100 rounded-lg text-orange-600"><Ban size={16} /></div>
                             Bloqueio de Horário
                         </button>
                     </div>
