@@ -1,40 +1,36 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { UserPlus, Search, Filter, Phone, Mail, Tag, Edit, Trash2, User, FileUp } from 'lucide-react';
+import { 
+  UserPlus, Search, Filter, Phone, Mail, Tag, Edit, 
+  Trash2, User, FileUp, MoreVertical, Cake, History, Users
+} from 'lucide-react';
 import { clients as initialClients, initialAppointments } from '../../data/mockData';
 import { Client } from '../../types';
 import ClientModal from '../modals/ClientModal';
 import Toast, { ToastType } from '../shared/Toast';
-import { format, differenceInDays } from 'date-fns';
+import { format, differenceInDays, isSameMonth, isSameDay } from 'date-fns';
 
 const ClientesView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>(initialClients);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'todos' | 'aniversariantes'>('todos');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
 
-  // CSV Import Ref
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Logic for Derived Stats ---
-  
   const enrichedClients = useMemo(() => {
     return clients.map(client => {
       const clientApps = initialAppointments.filter(app => app.client?.id === client.id && app.status === 'concluido');
-      
-      // Calculate Stats
       const totalSpent = clientApps.reduce((acc, app) => acc + app.service.price, 0);
       const visits = clientApps.length;
-      
-      // Get Last Visit
       const lastVisitDate = clientApps.length > 0 
         ? new Date(Math.max(...clientApps.map(a => new Date(a.start).getTime())))
         : null;
         
-      const daysSinceLastVisit = lastVisitDate 
-        ? differenceInDays(new Date(), lastVisitDate) 
-        : null;
+      const daysSinceLastVisit = lastVisitDate ? differenceInDays(new Date(), lastVisitDate) : null;
 
       let status: 'Novo' | 'Ativo' | 'Inativo' | 'Recuperar' = 'Novo';
       if (visits > 0) {
@@ -43,36 +39,34 @@ const ClientesView: React.FC = () => {
         else status = 'Recuperar';
       }
 
-      return {
-        ...client,
-        stats: {
-          totalSpent,
-          visits,
-          lastVisitDate,
-          status
-        }
-      };
+      return { ...client, stats: { totalSpent, visits, lastVisitDate, status } };
     });
   }, [clients]);
 
   const filteredClients = useMemo(() => {
-    return enrichedClients.filter(client => 
+    let list = enrichedClients.filter(client => 
       client.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      client.whatsapp?.includes(searchTerm) ||
-      client.tags?.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+      client.whatsapp?.includes(searchTerm)
     );
-  }, [enrichedClients, searchTerm]);
 
-  // --- Handlers ---
+    if (activeTab === 'aniversariantes') {
+      const today = new Date();
+      list = list.filter(c => {
+        if (!c.nascimento) return false;
+        const bday = new Date(c.nascimento);
+        return isSameMonth(bday, today);
+      });
+    }
+
+    return list;
+  }, [enrichedClients, searchTerm, activeTab]);
 
   const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
   const handleSaveClient = (client: Client) => {
     setClients(prev => {
       const exists = prev.find(c => c.id === client.id);
-      if (exists) {
-        return prev.map(c => c.id === client.id ? client : c);
-      }
+      if (exists) return prev.map(c => c.id === client.id ? client : c);
       return [...prev, client];
     });
     setIsModalOpen(false);
@@ -83,277 +77,154 @@ const ClientesView: React.FC = () => {
   const handleEdit = (client: Client) => {
     setSelectedClient(client);
     setIsModalOpen(true);
+    setOpenMenuId(null);
   };
 
   const handleDelete = (id: number) => {
     if (window.confirm('Tem certeza que deseja remover este cliente?')) {
       setClients(prev => prev.filter(c => c.id !== id));
       showToast('Cliente removido.', 'info');
+      setOpenMenuId(null);
     }
-  };
-
-  const handleNewClient = () => {
-    setSelectedClient(null);
-    setIsModalOpen(true);
-  };
-
-  // --- CSV Import Logic ---
-
-  const handleImportClick = () => {
-    if (fileInputRef.current) {
-        fileInputRef.current.click();
-    }
-  };
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const text = e.target?.result as string;
-        if (!text) return;
-
-        try {
-            const lines = text.split('\n');
-            const newClients: Client[] = [];
-            let successCount = 0;
-
-            // Determine if first row is header based on common keywords
-            const firstLine = lines[0].toLowerCase();
-            const startIndex = (firstLine.includes('nome') || firstLine.includes('name') || firstLine.includes('cliente')) ? 1 : 0;
-
-            for (let i = startIndex; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line) continue;
-
-                // Simple split by comma
-                const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-                
-                // Expected Format: Name, WhatsApp, Email, Tags
-                // Minimum required: Name
-                if (cols.length >= 1 && cols[0]) {
-                    const nome = cols[0];
-                    const whatsapp = cols[1] || '';
-                    const email = cols[2] || '';
-                    const tagsStr = cols[3] || '';
-                    
-                    const tags = tagsStr ? tagsStr.split(';').map(t => t.trim()) : [];
-
-                    newClients.push({
-                        id: Date.now() + i + Math.random(), // Unique ID generation
-                        nome,
-                        whatsapp,
-                        email,
-                        tags,
-                        consent: true
-                    });
-                    successCount++;
-                }
-            }
-
-            if (successCount > 0) {
-                setClients(prev => [...prev, ...newClients]);
-                showToast(`${successCount} clientes importados com sucesso!`, 'success');
-            } else {
-                showToast('Nenhum dado válido encontrado. Verifique o formato (Nome, WhatsApp, Email).', 'error');
-            }
-
-        } catch (err) {
-            console.error("CSV Import Error", err);
-            showToast('Erro ao processar o arquivo. Verifique o formato.', 'error');
-        }
-
-        // Reset input
-        if (fileInputRef.current) fileInputRef.current.value = '';
-    };
-    reader.readAsText(file);
   };
 
   return (
-    <div className="h-full flex flex-col bg-slate-50 relative">
+    <div className="h-full flex flex-col bg-slate-50 relative font-sans overflow-hidden">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      <input type="file" accept=".csv" ref={fileInputRef} className="hidden" />
 
-      {/* Hidden Input for CSV */}
-      <input 
-          type="file" 
-          accept=".csv" 
-          ref={fileInputRef} 
-          className="hidden" 
-          onChange={handleFileUpload}
-      />
-
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-5 flex flex-col md:flex-row justify-between items-center gap-4">
+      {/* Header - Compacto para Mobile */}
+      <header className="bg-white border-b border-slate-200 px-4 py-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <User className="text-orange-500" />
-            Gestão de Clientes
+          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <Users className="text-orange-500" size={24} />
+            Clientes
           </h1>
-          <p className="text-slate-500 text-sm mt-1">Gerencie sua base de clientes, histórico e preferências.</p>
         </div>
         
-        <div className="flex gap-3 w-full md:w-auto">
-            <button 
-                onClick={handleImportClick}
-                className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 w-full md:w-auto"
-                title="Importar CSV (Nome, WhatsApp, Email)"
-            >
-                <FileUp size={20} className="text-slate-500" />
-                <span className="hidden sm:inline">Importar CSV</span>
+        <div className="flex gap-2 w-full md:w-auto">
+            <button className="flex-1 md:flex-none bg-slate-100 text-slate-700 px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all">
+                <FileUp size={18} /> <span className="text-sm">Importar</span>
             </button>
-
             <button 
-              onClick={handleNewClient}
-              className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-200 flex items-center justify-center gap-2 transition-all active:scale-95 w-full md:w-auto"
+              onClick={() => { setSelectedClient(null); setIsModalOpen(true); }}
+              className="flex-[2] md:flex-none bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-100 flex items-center justify-center gap-2 transition-all active:scale-95"
             >
-              <UserPlus className="w-5 h-5" />
-              Novo Cliente
+              <UserPlus size={18} /> <span className="text-sm">Novo Cliente</span>
             </button>
         </div>
       </header>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 pb-2">
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+      {/* KPI Cards - Rolagem Horizontal no Mobile */}
+      <div className="flex md:grid md:grid-cols-3 gap-4 p-4 overflow-x-auto scrollbar-hide flex-shrink-0">
+        <div className="min-w-[200px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+           <div className="bg-blue-50 p-2.5 rounded-lg text-blue-500"><Users size={20}/></div>
            <div>
-             <p className="text-xs font-bold text-slate-400 uppercase">Total de Clientes</p>
-             <p className="text-2xl font-bold text-slate-800">{clients.length}</p>
+             <p className="text-[10px] font-bold text-slate-400 uppercase">Total</p>
+             <p className="text-lg font-bold text-slate-800">{clients.length}</p>
            </div>
-           <div className="bg-blue-100 p-3 rounded-lg text-blue-600"><User className="w-6 h-6"/></div>
         </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="min-w-[200px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+           <div className="bg-green-50 p-2.5 rounded-lg text-green-500"><UserPlus size={20}/></div>
            <div>
-             <p className="text-xs font-bold text-slate-400 uppercase">Novos este Mês</p>
-             <p className="text-2xl font-bold text-green-600">3</p>
+             <p className="text-[10px] font-bold text-slate-400 uppercase">Novos (Mês)</p>
+             <p className="text-lg font-bold text-slate-800">3</p>
            </div>
-           <div className="bg-green-100 p-3 rounded-lg text-green-600"><UserPlus className="w-6 h-6"/></div>
         </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="min-w-[200px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+           <div className="bg-orange-50 p-2.5 rounded-lg text-orange-500"><Tag size={20}/></div>
            <div>
-             <p className="text-xs font-bold text-slate-400 uppercase">Ticket Médio (Geral)</p>
-             <p className="text-2xl font-bold text-purple-600">R$ 145,00</p>
+             <p className="text-[10px] font-bold text-slate-400 uppercase">Ticket Médio</p>
+             <p className="text-lg font-bold text-slate-800">R$ 145</p>
            </div>
-           <div className="bg-purple-100 p-3 rounded-lg text-purple-600"><Tag className="w-6 h-6"/></div>
         </div>
       </div>
 
-      {/* Main List */}
-      <div className="flex-1 p-6 overflow-hidden flex flex-col">
-        {/* Search Bar */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4 flex items-center gap-4 shadow-sm">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Buscar por nome, telefone ou tag..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 transition-all"
-            />
-          </div>
-          <button className="p-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
-            <Filter className="w-5 h-5" />
-          </button>
+      {/* List Container - flex-1 garante que ocupe o resto da tela e seja scrollável */}
+      <div className="flex-1 flex flex-col min-h-0 bg-white md:mx-4 md:mb-4 md:rounded-2xl border-t md:border border-slate-200 shadow-sm overflow-hidden">
+        
+        {/* Abas e Busca */}
+        <div className="p-4 border-b border-slate-100 flex flex-col gap-4">
+            <div className="flex p-1 bg-slate-100 rounded-xl self-start">
+                <button 
+                    onClick={() => setActiveTab('todos')}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'todos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                    Todos os Clientes
+                </button>
+                <button 
+                    onClick={() => setActiveTab('aniversariantes')}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === 'aniversariantes' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}
+                >
+                    <Cake size={14} /> Aniversariantes
+                </button>
+            </div>
+            
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <input 
+                    type="text" 
+                    placeholder="Buscar por nome ou telefone..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-100 text-sm transition-all"
+                />
+            </div>
         </div>
 
-        {/* Table/List */}
-        <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          <div className="overflow-y-auto flex-1">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-50 sticky top-0 z-10 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                <tr>
-                  <th className="p-4 border-b border-slate-200">Cliente</th>
-                  <th className="p-4 border-b border-slate-200 hidden md:table-cell">Contatos</th>
-                  <th className="p-4 border-b border-slate-200 hidden lg:table-cell">Tags</th>
-                  <th className="p-4 border-b border-slate-200 hidden sm:table-cell">Histórico</th>
-                  <th className="p-4 border-b border-slate-200 text-center">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredClients.map(client => (
-                  <tr key={client.id} className="hover:bg-slate-50 transition-colors group">
-                    <td className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold">
-                          {client.nome.charAt(0).toUpperCase()}
+        {/* Lista de Itens */}
+        <div className="flex-1 overflow-y-auto">
+            {filteredClients.length === 0 ? (
+                <div className="p-12 text-center text-slate-400">
+                    <Users size={48} className="mx-auto mb-3 opacity-20" />
+                    <p className="text-sm">Nenhum cliente encontrado.</p>
+                </div>
+            ) : (
+                <div className="divide-y divide-slate-100">
+                    {filteredClients.map(client => (
+                        <div key={client.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
+                            <div className="flex items-center gap-4 min-w-0">
+                                <div className="w-12 h-12 rounded-full bg-slate-100 flex-shrink-0 flex items-center justify-center text-slate-400 font-bold border border-slate-200 overflow-hidden">
+                                    {client.nome.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                    <h4 className="font-bold text-slate-800 text-sm truncate">{client.nome}</h4>
+                                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                                        <Phone size={10} className="text-slate-300" /> {client.whatsapp || 'Sem telefone'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="relative">
+                                <button 
+                                    onClick={() => setOpenMenuId(openMenuId === client.id ? null : client.id)}
+                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-all"
+                                >
+                                    <MoreVertical size={20} />
+                                </button>
+
+                                {openMenuId === client.id && (
+                                    <>
+                                        <div className="fixed inset-0 z-20" onClick={() => setOpenMenuId(null)}></div>
+                                        <div className="absolute right-0 top-10 w-48 bg-white rounded-xl shadow-xl border border-slate-100 z-30 py-2 animate-in fade-in zoom-in-95 duration-100">
+                                            <button onClick={() => handleEdit(client)} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                                                <Edit size={16} className="text-slate-400" /> Editar Dados
+                                            </button>
+                                            <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                                                <History size={16} className="text-slate-400" /> Ver Histórico
+                                            </button>
+                                            <div className="border-t border-slate-50 my-1"></div>
+                                            <button onClick={() => handleDelete(client.id)} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 font-medium">
+                                                <Trash2 size={16} /> Excluir Cliente
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-slate-800">{client.nome}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                               client.stats.status === 'Ativo' ? 'bg-green-100 text-green-700' : 
-                               client.stats.status === 'Novo' ? 'bg-blue-100 text-blue-700' :
-                               'bg-slate-100 text-slate-500'
-                             }`}>
-                               {client.stats.status}
-                             </span>
-                             {client.stats.lastVisitDate && (
-                               <span className="text-xs text-slate-400 hidden sm:inline">
-                                 Última vez: {format(client.stats.lastVisitDate, 'dd/MM/yy')}
-                               </span>
-                             )}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="p-4 hidden md:table-cell">
-                      <div className="space-y-1">
-                        {client.whatsapp && (
-                          <div className="flex items-center gap-2 text-sm text-slate-600">
-                            <Phone className="w-3.5 h-3.5 text-green-500" />
-                            {client.whatsapp}
-                          </div>
-                        )}
-                        {client.email && (
-                          <div className="flex items-center gap-2 text-sm text-slate-600">
-                            <Mail className="w-3.5 h-3.5 text-blue-500" />
-                            <span className="truncate max-w-[150px]">{client.email}</span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-4 hidden lg:table-cell">
-                      <div className="flex flex-wrap gap-1">
-                        {client.tags?.map((tag, i) => (
-                          <span key={i} className="text-xs bg-orange-50 text-orange-700 px-2 py-1 rounded border border-orange-100">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="p-4 hidden sm:table-cell">
-                      <div className="text-sm">
-                        <p className="text-slate-800 font-medium">
-                          {client.stats.visits} visitas
-                        </p>
-                        <p className="text-slate-500 text-xs">
-                          Total: R$ {client.stats.totalSpent.toFixed(2)}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handleEdit(client)} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition">
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => handleDelete(client.id)} className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filteredClients.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-400">
-                      Nenhum cliente encontrado.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                    ))}
+                </div>
+            )}
         </div>
       </div>
 

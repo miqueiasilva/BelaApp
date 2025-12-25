@@ -133,7 +133,8 @@ const LoginView: React.FC = () => {
                                     onChange={(e) => setName(e.target.value)}
                                     className="w-full bg-[#242936] border border-white/5 rounded-xl pl-4 pr-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
                                     placeholder="Seu nome"
-                                    required={mode === 'register'}
+                                    // FIX: Inside 'mode === register' block, mode is narrowed to 'register', so explicitly checking for 'register' is redundant.
+                                    required
                                 />
                             </div>
                         </div>
@@ -167,7 +168,8 @@ const LoginView: React.FC = () => {
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="w-full bg-[#242936] border border-white/5 rounded-xl pl-12 pr-12 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
                                     placeholder="••••••••"
-                                    required={mode !== 'forgot'}
+                                    // FIX: Inside 'mode !== forgot' block, mode is narrowed to 'login' | 'register', so checking 'mode !== forgot' again is redundant and triggers a TS error (types have no overlap).
+                                    required
                                     minLength={6}
                                 />
                                 <button
