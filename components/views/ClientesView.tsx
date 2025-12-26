@@ -110,12 +110,12 @@ const ClientesView: React.FC = () => {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <input type="file" accept=".csv" ref={fileInputRef} className="hidden" aria-hidden="true" />
 
-      {/* Header com marcador de versão para debug de deploy */}
+      {/* Header com Marcador Visual v2.0 para confirmação de deploy */}
       <header className="bg-white border-b border-slate-200 px-4 py-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
         <div>
-          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <Users className="text-orange-500" size={24} />
-            Gestão de Clientes <span className="text-[10px] bg-orange-500 text-white px-2 py-0.5 rounded-full font-black tracking-tighter">v2.0</span>
+          <h1 className="text-xl font-bold text-slate-800 flex items-center">
+            <Users className="text-orange-500 mr-2" size={24} />
+            Gestão de Clientes <span className="ml-3 text-xs bg-orange-500 text-white px-2 py-1 rounded-full font-bold shadow-sm">v2.0</span>
           </h1>
         </div>
         
@@ -132,18 +132,20 @@ const ClientesView: React.FC = () => {
         </div>
       </header>
 
-      {/* KPI Cards com Sparklines Protegidos por Altura Fixa */}
+      {/* KPI Cards: Blindagem com containers de 100px para evitar width(-1) */}
       <div className="flex md:grid md:grid-cols-3 gap-4 p-4 overflow-x-auto scrollbar-hide flex-shrink-0">
-        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 h-24">
-           <div className="flex items-center gap-3">
-               <div className="bg-blue-50 p-2.5 rounded-lg text-blue-500"><Users size={20}/></div>
-               <div>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase">Total</p>
-                 <p className="text-lg font-bold text-slate-800">{clients.length}</p>
+        <div className="min-w-[240px] bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+           <div className="flex items-center justify-between mb-2">
+               <div className="flex items-center gap-3">
+                   <div className="bg-blue-50 p-2.5 rounded-xl text-blue-500"><Users size={20}/></div>
+                   <div>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total de Clientes</p>
+                     <p className="text-2xl font-black text-slate-800 leading-tight">{clients.length}</p>
+                   </div>
                </div>
            </div>
-           {/* Fix: div com altura fixa h-12 para evitar dimension error no Recharts */}
-           <div className="h-12 w-24 flex-shrink-0">
+           {/* Blindagem Recharts: Altura fixa de 100px */}
+           <div className="h-[100px] w-full mt-2">
                <ResponsiveContainer width="100%" height="100%">
                    <AreaChart data={sparkData}>
                        <Area type="monotone" dataKey="v" stroke="#3b82f6" fill="#dbeafe" strokeWidth={2} isAnimationActive={false} />
@@ -152,15 +154,17 @@ const ClientesView: React.FC = () => {
            </div>
         </div>
 
-        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 h-24">
-           <div className="flex items-center gap-3">
-               <div className="bg-green-50 p-2.5 rounded-lg text-green-500"><UserPlus size={20}/></div>
-               <div>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase">Novos (Mês)</p>
-                 <p className="text-lg font-bold text-slate-800">3</p>
+        <div className="min-w-[240px] bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+           <div className="flex items-center justify-between mb-2">
+               <div className="flex items-center gap-3">
+                   <div className="bg-green-50 p-2.5 rounded-xl text-green-500"><UserPlus size={20}/></div>
+                   <div>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Novos este Mês</p>
+                     <p className="text-2xl font-black text-slate-800 leading-tight">3</p>
+                   </div>
                </div>
            </div>
-           <div className="h-12 w-24 flex-shrink-0">
+           <div className="h-[100px] w-full mt-2">
                <ResponsiveContainer width="100%" height="100%">
                    <AreaChart data={sparkData}>
                        <Area type="monotone" dataKey="v" stroke="#10b981" fill="#dcfce7" strokeWidth={2} isAnimationActive={false} />
@@ -169,15 +173,17 @@ const ClientesView: React.FC = () => {
            </div>
         </div>
 
-        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 h-24">
-           <div className="flex items-center gap-3">
-               <div className="bg-orange-50 p-2.5 rounded-lg text-orange-500"><Users size={20}/></div>
-               <div>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase">Ticket Médio</p>
-                 <p className="text-lg font-bold text-slate-800">R$ 145</p>
+        <div className="min-w-[240px] bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+           <div className="flex items-center justify-between mb-2">
+               <div className="flex items-center gap-3">
+                   <div className="bg-orange-50 p-2.5 rounded-xl text-orange-500"><Users size={20}/></div>
+                   <div>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ticket Médio</p>
+                     <p className="text-2xl font-black text-slate-800 leading-tight">R$ 145</p>
+                   </div>
                </div>
            </div>
-           <div className="h-12 w-24 flex-shrink-0">
+           <div className="h-[100px] w-full mt-2">
                <ResponsiveContainer width="100%" height="100%">
                    <AreaChart data={sparkData}>
                        <Area type="monotone" dataKey="v" stroke="#f97316" fill="#ffedd5" strokeWidth={2} isAnimationActive={false} />
@@ -192,7 +198,7 @@ const ClientesView: React.FC = () => {
             <div className="flex p-1 bg-slate-100 rounded-xl self-start">
                 <button 
                     onClick={() => setActiveTab('todos')}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'todos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-50'}`}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'todos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}
                     style={{ color: activeTab === 'todos' ? '' : '#64748b' }}
                 >
                     Todos os Clientes
