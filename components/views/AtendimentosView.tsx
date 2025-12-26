@@ -6,7 +6,8 @@ import {
     ShoppingBag, Ban
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInMinutes } from 'date-fns';
-import { ptBR as pt } from 'date-fns/locale';
+// FIX: Corrected locale import path to 'date-fns/locale/pt-BR' to resolve "no exported member 'ptBR'" error.
+import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
 import AppointmentModal from '../modals/AppointmentModal';
@@ -72,11 +73,11 @@ const TimelineIndicator = () => {
         };
         
         calculatePosition();
-        const intervalId = setInterval(calculatePosition, 30000); // Check every 30s
+        const intervalId = setInterval(calculatePosition, 60000); 
         
         return () => {
             isMounted = false;
-            clearInterval(intervalId); // CRITICAL: Kill timer to prevent deadlock
+            clearInterval(intervalId); // Higiene de thread
         };
     }, []);
     
@@ -125,9 +126,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     useEffect(() => {
         isMounted.current = true;
         fetchResources();
+
+        // Inicia canal Realtime se necessário
+        const channel = supabase.channel('agenda-updates')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
+                if (isMounted.current) fetchAppointments();
+            })
+            .subscribe();
+
         return () => {
-            isMounted.current = false; // Kill state updates
-            // Force reset any UI block if needed
+            isMounted.current = false;
+            // CRITICAL: Destrói assinaturas ao sair para evitar Deadlock
+            supabase.removeChannel(channel);
         };
     }, []);
 
@@ -157,12 +167,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         if (!isMounted.current) return;
         setIsLoadingData(true);
         
-        // Safety timeout for loading
+        // Timeout de segurança local
         const safetyTimeout = setTimeout(() => {
-            if (isLoadingData && isMounted.current) {
-                setIsLoadingData(false);
-                setToast({ message: "O carregamento está demorando. Verifique sua conexão.", type: "info" });
-            }
+            if (isMounted.current) setIsLoadingData(false);
         }, 10000);
 
         try {
@@ -551,5 +558,3 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 };
 
 export default AtendimentosView;
-
-// Fix Chart Rendering

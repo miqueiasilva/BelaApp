@@ -22,11 +22,11 @@ const EquipeView: React.FC = () => {
         if (!isMounted.current) return;
         setLoading(true);
         
-        // Watchdog Timer: Se o Supabase não responder em 8s, libera a UI
+        // Watchdog Timer: Destrava a UI se demorar mais de 8s
         const watchdog = setTimeout(() => {
-            if (loading && isMounted.current) {
+            if (isMounted.current && loading) {
                 setLoading(false);
-                setToast({ message: "O carregamento está demorando mais que o esperado. Verifique sua conexão.", type: "info" });
+                setToast({ message: "A conexão está lenta, mas a interface foi liberada.", type: "info" });
             }
         }, 8000);
 

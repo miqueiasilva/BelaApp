@@ -8,8 +8,8 @@ import {
 import { mockConversations } from '../../data/mockData';
 import { ChatConversation, ChatMessage } from '../../types';
 import { format } from 'date-fns';
-// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
-import { ptBR as pt } from 'date-fns/locale';
+// FIX: Corrected locale import path to 'date-fns/locale/pt-BR' to resolve "no exported member 'ptBR'" error.
+import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
 
@@ -217,7 +217,7 @@ const WhatsAppView: React.FC = () => {
                             </div>
                             <p className="text-xs text-slate-500">
                                 {connectionStatus === 'connected' 
-                                    ? 'O sistema está sincronizado com seu WhatsApp.' 
+                                    ? 'O sistema está sincronizado with seu WhatsApp.' 
                                     : 'Conecte seu aparelho para enviar mensagens automáticas.'}
                             </p>
                         </div>
@@ -375,7 +375,7 @@ const WhatsAppView: React.FC = () => {
                                     <div className="p-6 flex items-center justify-between">
                                         <div>
                                             <p className="font-semibold text-slate-800">Feliz Aniversário</p>
-                                            <p className="text-sm text-slate-500 max-w-md">Envia uma mensagem de parabéns com um cupom de desconto.</p>
+                                            <p className="text-sm text-slate-500 max-w-md">Envia uma mensagem de parabéns with um cupom de desconto.</p>
                                         </div>
                                         <ToggleSwitch on={automations.birthday} onClick={() => toggleAutomation('birthday')} />
                                     </div>
@@ -410,7 +410,7 @@ const WhatsAppView: React.FC = () => {
                                 </div>
                                 <h2 className="text-2xl font-bold text-slate-800 mb-2">Conectar WhatsApp</h2>
                                 <p className="text-slate-500 mb-8 leading-relaxed">
-                                    Para ativar o JaciBot e enviar mensagens automáticas, você precisa escanear o QR Code com seu celular.
+                                    Para ativar o JaciBot e enviar mensagens automáticas, você precisa escanear o QR Code with seu celular.
                                 </p>
                                 <button 
                                     onClick={startConnection}

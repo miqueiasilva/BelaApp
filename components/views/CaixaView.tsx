@@ -7,8 +7,8 @@ import {
 } from 'lucide-react';
 import Card from '../shared/Card';
 import { format } from 'date-fns';
-// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
-import { ptBR as pt } from 'date-fns/locale';
+// FIX: Corrected locale import path to 'date-fns/locale/pt-BR' to resolve "no exported member 'ptBR'" error.
+import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Toast, { ToastType } from '../shared/Toast';
 
 // --- Types ---
@@ -171,7 +171,7 @@ const CaixaView: React.FC = () => {
                 openingBalance: amount,
                 movements: [{ id: Date.now(), type: 'abertura', amount, description: 'Fundo de Troco', time: new Date(), user: 'Jaciene' }]
             }));
-            showToast('Caixa aberto com sucesso!');
+            showToast('Caixa aberto with sucesso!');
         } else if (modalType === 'fechar') {
             const diff = amount - stats.currentBalance;
             setSession(prev => ({
@@ -361,7 +361,7 @@ const CaixaView: React.FC = () => {
                                     </div>
                                     {session.difference !== 0 && (
                                         <p className="text-xs text-red-500 mt-2 flex items-center gap-1">
-                                            <AlertTriangle size={12}/> Valor em gaveta não bateu com sistema.
+                                            <AlertTriangle size={12}/> Valor em gaveta não bateu with sistema.
                                         </p>
                                     )}
                                 </div>

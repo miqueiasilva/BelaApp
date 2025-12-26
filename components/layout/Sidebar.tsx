@@ -49,19 +49,19 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         if (!confirmLogout) return;
 
         try {
-            // Tenta avisar o servidor, mas com timeout agressivo de 2s para não travar a UI
+            // Tenta o signOut mas com corrida contra um timeout para não travar a UI
             await Promise.race([
                 supabase.auth.signOut(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Logout Timeout')), 2000))
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
             ]);
-        } catch (e) {
-            console.warn("Logout suave falhou ou expirou. Executando Hard Logout.", e);
+        } catch (error) {
+            console.error("Erro ou timeout no logout do Supabase:", error);
         } finally {
-            // HARD LOGOUT: Limpeza total e forçada
+            // LIMPEZA FORÇADA (Executa sempre)
             localStorage.clear();
             sessionStorage.clear();
             
-            // Força o navegador a descartar o estado da aplicação e limpar a memória RAM
+            // Força recarregamento total para limpar Main Thread e Memória RAM
             window.location.href = '/'; 
         }
     };

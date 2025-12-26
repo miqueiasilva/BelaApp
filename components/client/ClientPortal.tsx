@@ -3,8 +3,8 @@ import React, { useState } from 'react';
 import Card from '../shared/Card';
 import { Calendar, Clock, Scissors, User, Sparkles, CheckCircle, ArrowRight, Star } from 'lucide-react';
 import { format } from 'date-fns';
-// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
-import { ptBR as pt } from 'date-fns/locale';
+// FIX: Corrected locale import path to 'date-fns/locale/pt-BR' to resolve "no exported member 'ptBR'" error.
+import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 const clientData = {
   name: "Juliana Paes",

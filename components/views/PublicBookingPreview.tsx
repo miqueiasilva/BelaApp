@@ -7,8 +7,8 @@ import {
     Loader2, MapPin, Phone, User, Mail, Heart
 } from 'lucide-react';
 import { format, addDays, isSameDay } from 'date-fns';
-// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
-import { ptBR as pt } from 'date-fns/locale';
+// FIX: Corrected locale import path to 'date-fns/locale/pt-BR' to resolve "no exported member 'ptBR'" error.
+import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import { LegacyService } from '../../types';
 
@@ -145,7 +145,6 @@ const PublicBookingPreview: React.FC = () => {
             console.error('Erro ao agendar:', error);
             alert(`Erro ao realizar agendamento: ${error.message || 'Tente novamente.'}`);
         } finally {
-            } finally {
             setIsSaving(false);
         }
     };
@@ -274,7 +273,7 @@ const PublicBookingPreview: React.FC = () => {
                         ) : (
                             <>
                                 <button onClick={() => { setSelectedProfessionalId(null); setStep('datetime'); }} className="w-full bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:border-orange-300 transition-all group">
-                                    <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-xl group-hover:bg-orange-500 group-hover:text-white transition-colors">?</div>
+                                    <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-xl group-hover:bg-orange-50 group-hover:text-white transition-colors">?</div>
                                     <div className="text-left"><h3 className="font-bold text-slate-800">Qualquer Profissional</h3><p className="text-xs text-slate-500">Máxima disponibilidade</p></div>
                                     <ChevronDown className="-rotate-90 ml-auto text-slate-300" />
                                 </button>
