@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Loader2, Eye, EyeOff, Mail, Lock, ArrowRight, XCircle, CheckCircle2 } from 'lucide-react';
@@ -84,7 +83,7 @@ const LoginView: React.FC = () => {
                     <div className="w-16 h-16 bg-gradient-to-tr from-orange-500 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/20 transition-transform hover:scale-105 duration-300">
                         <span className="text-white font-black text-3xl">B</span>
                     </div>
-                    <h1 className="text-3xl font-bold text-white tracking-tight">BelaApp</h1>
+                    <h1 className="text-3xl font-bold text-white tracking-tight">BelaFlow</h1>
                     <p className="text-slate-400 mt-2 text-sm font-medium">Gestão Inteligente para Estúdios de Beleza</p>
                 </div>
 
@@ -133,7 +132,6 @@ const LoginView: React.FC = () => {
                                     onChange={(e) => setName(e.target.value)}
                                     className="w-full bg-[#242936] border border-white/5 rounded-xl pl-4 pr-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
                                     placeholder="Seu nome"
-                                    // FIX: Inside 'mode === register' block, mode is narrowed to 'register', so explicitly checking for 'register' is redundant.
                                     required
                                 />
                             </div>
@@ -168,7 +166,6 @@ const LoginView: React.FC = () => {
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="w-full bg-[#242936] border border-white/5 rounded-xl pl-12 pr-12 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
                                     placeholder="••••••••"
-                                    // FIX: Inside 'mode !== forgot' block, mode is narrowed to 'login' | 'register', so checking 'mode !== forgot' again is redundant and triggers a TS error (types have no overlap).
                                     required
                                     minLength={6}
                                 />
@@ -232,7 +229,7 @@ const LoginView: React.FC = () => {
 
                 <div className="mt-10 text-center opacity-30">
                     <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">
-                        BelaApp &copy; 2025 &bull; Todos os direitos reservados
+                        BelaFlow &copy; 2025 &bull; Todos os direitos reservados
                     </p>
                 </div>
             </div>

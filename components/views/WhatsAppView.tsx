@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
     Search, MoreVertical, Paperclip, Send, Smile, Check, CheckCheck, 
@@ -94,7 +93,7 @@ const WhatsAppView: React.FC = () => {
     };
 
     const handleDisconnect = () => {
-        if(window.confirm("Deseja desconectar o WhatsApp do BelaApp? As automações pararão de funcionar.")){
+        if(window.confirm("Deseja desconectar o WhatsApp do BelaFlow? As automações pararão de funcionar.")){
             setConnectionStatus('disconnected');
             showToast('Dispositivo desconectado.', 'info');
         }
@@ -217,7 +216,7 @@ const WhatsAppView: React.FC = () => {
                             </div>
                             <p className="text-xs text-slate-500">
                                 {connectionStatus === 'connected' 
-                                    ? 'O sistema está sincronizado with seu WhatsApp.' 
+                                    ? 'O sistema está sincronizado com seu WhatsApp.' 
                                     : 'Conecte seu aparelho para enviar mensagens automáticas.'}
                             </p>
                         </div>
@@ -375,7 +374,7 @@ const WhatsAppView: React.FC = () => {
                                     <div className="p-6 flex items-center justify-between">
                                         <div>
                                             <p className="font-semibold text-slate-800">Feliz Aniversário</p>
-                                            <p className="text-sm text-slate-500 max-w-md">Envia uma mensagem de parabéns with um cupom de desconto.</p>
+                                            <p className="text-sm text-slate-500 max-w-md">Envia uma mensagem de parabéns com um cupom de desconto.</p>
                                         </div>
                                         <ToggleSwitch on={automations.birthday} onClick={() => toggleAutomation('birthday')} />
                                     </div>
@@ -410,7 +409,7 @@ const WhatsAppView: React.FC = () => {
                                 </div>
                                 <h2 className="text-2xl font-bold text-slate-800 mb-2">Conectar WhatsApp</h2>
                                 <p className="text-slate-500 mb-8 leading-relaxed">
-                                    Para ativar o JaciBot e enviar mensagens automáticas, você precisa escanear o QR Code with seu celular.
+                                    Para ativar o JaciBot e enviar mensagens automáticas, você precisa escanear o QR Code com seu celular.
                                 </p>
                                 <button 
                                     onClick={startConnection}
@@ -435,7 +434,7 @@ const WhatsAppView: React.FC = () => {
                                         <div className="relative">
                                             {/* Mock QR Code Image */}
                                             <img 
-                                                src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=BelaApp-Auth-Token-12345" 
+                                                src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=BelaFlow-Auth-Token-12345" 
                                                 alt="Scan me" 
                                                 className="w-64 h-64 rounded-lg mix-blend-screen"
                                             />
@@ -473,7 +472,7 @@ const WhatsAppView: React.FC = () => {
                                 <div className="space-y-4 mb-8">
                                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
                                         <span className="text-slate-500 text-sm">Sessão</span>
-                                        <span className="font-mono text-slate-800 text-sm">BelaApp Web</span>
+                                        <span className="font-mono text-slate-800 text-sm">BelaFlow Web</span>
                                     </div>
                                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
                                         <span className="text-slate-500 text-sm flex items-center gap-2">
