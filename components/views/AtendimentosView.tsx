@@ -158,27 +158,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             const { data, error } = await supabase.from('professionals').select('id, name, photo_url, role').order('name');
             if (error) throw error;
             if (data && isMounted.current) {
-                setResources(data.map((p: any) => ({
+                const mapped = data.map((p: any) => ({
                     id: p.id,
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role
-                })));
+                }));
+                setResources(mapped);
+                setOrderedProfessionals(mapped);
             }
         } catch (e) { console.error("Error resources:", e); }
-    };
-
-    // FUNÇÃO DE REORDENAÇÃO
-    const moveProfessional = (index: number, direction: 'left' | 'right') => {
-        const newOrder = [...orderedProfessionals];
-        const targetIndex = direction === 'left' ? index - 1 : index + 1;
-
-        if (targetIndex >= 0 && targetIndex < newOrder.length) {
-            const temp = newOrder[index];
-            newOrder[index] = newOrder[targetIndex];
-            newOrder[targetIndex] = temp;
-            setOrderedProfessionals(newOrder);
-        }
     };
 
     const fetchAppointments = async () => {
@@ -209,6 +198,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } catch (e: any) {
             if (e.name !== 'AbortError') console.error("Fetch error:", e);
         } finally { if (isMounted.current) setIsLoadingData(false); }
+    };
+
+    const moverEsq = (index: number) => {
+        if (index === 0) return;
+        const newOrder = [...orderedProfessionals];
+        [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+        setOrderedProfessionals(newOrder);
+    };
+
+    const moverDir = (index: number) => {
+        if (index === orderedProfessionals.length - 1) return;
+        const newOrder = [...orderedProfessionals];
+        [newOrder[index + 1], newOrder[index]] = [newOrder[index], newOrder[index + 1]];
+        setOrderedProfessionals(newOrder);
     };
 
     const handleSaveAppointment = async (app: LegacyAppointment) => {
@@ -362,16 +365,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             </header>
 
             <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
-                <div className="min-w-full">
-                    {/* Header Grid: Sticky Top + Sticky Left corner */}
+                <div className="min-w-fit">
+                    {/* Header Grid */}
                     <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        {/* CANTO SUPERIOR ESQUERDO FIXO (z-60 para ser o mais alto) */}
-                        <div className="sticky left-0 top-0 z-[60] bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-sm">
+                        <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                             <Maximize2 size={16} className="text-slate-300" />
                         </div>
-                        
                         {columns.map((col, idx) => (
-                            <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-24 bg-slate-50/10 group relative">
+                            <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-24 bg-slate-50/10 relative group transition-colors hover:bg-slate-50">
                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-full max-w-[200px] overflow-hidden">
                                     {col.photo && <img src={col.photo} alt={col.title} className="w-8 h-8 rounded-full object-cover border border-orange-100 flex-shrink-0" />}
                                     <div className="flex flex-col overflow-hidden">
@@ -380,25 +381,23 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     </div>
                                 </div>
                                 
-                                {/* CONTROLES DE REORDENAÇÃO */}
+                                {/* REORDER CONTROLS */}
                                 {periodType === 'Dia' && col.type === 'professional' && (
-                                    <div className="absolute inset-x-0 bottom-1 flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {idx > 0 && (
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); moveProfessional(idx, 'left'); }}
-                                                className="p-1 bg-white text-slate-400 hover:text-orange-500 rounded border border-slate-200 shadow-sm transition-colors active:scale-95"
-                                            >
-                                                <ChevronLeft size={14} />
-                                            </button>
-                                        )}
-                                        {idx < columns.length - 1 && (
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); moveProfessional(idx, 'right'); }}
-                                                className="p-1 bg-white text-slate-400 hover:text-orange-500 rounded border border-slate-200 shadow-sm transition-colors active:scale-95"
-                                            >
-                                                <ChevronRight size={14} />
-                                            </button>
-                                        )}
+                                    <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); moverEsq(idx); }}
+                                            disabled={idx === 0}
+                                            className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 disabled:opacity-30"
+                                        >
+                                            <ChevronLeft size={14} />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); moverDir(idx); }}
+                                            disabled={idx === orderedProfessionals.length - 1}
+                                            className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 disabled:opacity-30"
+                                        >
+                                            <ChevronRight size={14} />
+                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -407,9 +406,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
                     {/* Main Grid Body */}
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        
-                        {/* COLUNA DE HORÁRIOS FIXA (Sticky Left) */}
-                        <div className="sticky left-0 z-[40] bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.05)]">
+                        {/* Time Column Sticky */}
+                        <div className="sticky left-0 z-20 bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
                                 <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed bg-white">
                                     <span>{time}</span>
@@ -420,7 +418,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         {columns.map((col, idx) => (
                             <div 
                                 key={col.id} 
-                                className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair z-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`}
+                                className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`}
                                 onClick={(e) => {
                                     if (e.target === e.currentTarget) {
                                         const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0];
