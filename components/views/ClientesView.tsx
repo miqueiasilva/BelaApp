@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { 
   UserPlus, Search, Phone, Edit, 
-  Trash2, FileUp, MoreVertical, Cake, Users
+  Trash2, FileUp, MoreVertical, Cake, Users, History
 } from 'lucide-react';
 import { clients as initialClients, initialAppointments } from '../../data/mockData';
 import { Client } from '../../types';
