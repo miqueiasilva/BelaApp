@@ -4,12 +4,13 @@ import {
     ChevronLeft, Check, Star, Search, Image as ImageIcon, 
     ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
     User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
-    CheckCircle2, ArrowRight, UserCircle2
+    CheckCircle2, ArrowRight, UserCircle2, X
 } from 'lucide-react';
 import { format, addDays, isSameDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import ToggleSwitch from '../shared/ToggleSwitch';
+import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
 
 // --- Assets & Fallbacks ---
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1350&q=80";
@@ -97,6 +98,7 @@ const PublicBookingPreview: React.FC = () => {
     // UI State
     const [selectedServices, setSelectedServices] = useState<any[]>([]);
     const [isBookingOpen, setIsBookingOpen] = useState(false);
+    const [isClientAppsOpen, setIsClientAppsOpen] = useState(false);
     const [bookingStep, setBookingStep] = useState(1); // 1: Profissional, 2: Data/Hora, 3: Identificação
 
     // --- Data Fetching ---
@@ -167,7 +169,10 @@ const PublicBookingPreview: React.FC = () => {
                     alt="Banner"
                 />
                 {/* Botão Meus Agendamentos */}
-                <button className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl">
+                <button 
+                    onClick={() => setIsClientAppsOpen(true)}
+                    className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl"
+                >
                     <UserCircle2 size={20} />
                     <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Meus Agendamentos</span>
                 </button>
@@ -252,7 +257,7 @@ const PublicBookingPreview: React.FC = () => {
                                     <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Passo {bookingStep} de 3</p>
                                 </div>
                             </div>
-                            <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={24}/></button>
+                            <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400"><X size={24}/></button>
                         </header>
 
                         <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
@@ -341,14 +346,13 @@ const PublicBookingPreview: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* MODAL DE CONSULTA DE AGENDAMENTOS */}
+            {isClientAppsOpen && (
+                <ClientAppointmentsModal onClose={() => setIsClientAppsOpen(false)} />
+            )}
         </div>
     );
 };
-
-const X = ({ size }: { size: number }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-    </svg>
-);
 
 export default PublicBookingPreview;
