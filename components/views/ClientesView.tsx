@@ -22,7 +22,6 @@ interface EnrichedClient extends Client {
   stats: ClientStats;
 }
 
-// Mock sparkline data for UI aesthetics
 const sparkData = [
     { v: 40 }, { v: 30 }, { v: 60 }, { v: 80 }, { v: 50 }, { v: 90 }, { v: 100 }
 ];
@@ -110,7 +109,6 @@ const ClientesView: React.FC = () => {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <input type="file" accept=".csv" ref={fileInputRef} className="hidden" aria-hidden="true" />
 
-      {/* Header */}
       <header className="bg-white border-b border-slate-200 px-4 py-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
         <div>
           <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -132,9 +130,9 @@ const ClientesView: React.FC = () => {
         </div>
       </header>
 
-      {/* KPI Cards com Sparklines Corrigidos */}
+      {/* KPI Cards: Altura fixa obrigatória nas divs dos Sparklines */}
       <div className="flex md:grid md:grid-cols-3 gap-4 p-4 overflow-x-auto scrollbar-hide flex-shrink-0">
-        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 h-24">
            <div className="flex items-center gap-3">
                <div className="bg-blue-50 p-2.5 rounded-lg text-blue-500"><Users size={20}/></div>
                <div>
@@ -142,8 +140,8 @@ const ClientesView: React.FC = () => {
                  <p className="text-lg font-bold text-slate-800">{clients.length}</p>
                </div>
            </div>
-           {/* Fix: Explicit height container for Recharts */}
-           <div className="h-10 w-20">
+           {/* Fix: div com altura e largura explícitas para o Recharts */}
+           <div className="h-10 w-24">
                <ResponsiveContainer width="100%" height="100%">
                    <AreaChart data={sparkData}>
                        <Area type="monotone" dataKey="v" stroke="#3b82f6" fill="#dbeafe" strokeWidth={2} isAnimationActive={false} />
@@ -152,7 +150,7 @@ const ClientesView: React.FC = () => {
            </div>
         </div>
 
-        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 h-24">
            <div className="flex items-center gap-3">
                <div className="bg-green-50 p-2.5 rounded-lg text-green-500"><UserPlus size={20}/></div>
                <div>
@@ -160,7 +158,7 @@ const ClientesView: React.FC = () => {
                  <p className="text-lg font-bold text-slate-800">3</p>
                </div>
            </div>
-           <div className="h-10 w-20">
+           <div className="h-10 w-24">
                <ResponsiveContainer width="100%" height="100%">
                    <AreaChart data={sparkData}>
                        <Area type="monotone" dataKey="v" stroke="#10b981" fill="#dcfce7" strokeWidth={2} isAnimationActive={false} />
@@ -169,7 +167,7 @@ const ClientesView: React.FC = () => {
            </div>
         </div>
 
-        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 h-24">
            <div className="flex items-center gap-3">
                <div className="bg-orange-50 p-2.5 rounded-lg text-orange-500"><Users size={20}/></div>
                <div>
@@ -177,7 +175,7 @@ const ClientesView: React.FC = () => {
                  <p className="text-lg font-bold text-slate-800">R$ 145</p>
                </div>
            </div>
-           <div className="h-10 w-20">
+           <div className="h-10 w-24">
                <ResponsiveContainer width="100%" height="100%">
                    <AreaChart data={sparkData}>
                        <Area type="monotone" dataKey="v" stroke="#f97316" fill="#ffedd5" strokeWidth={2} isAnimationActive={false} />
@@ -187,10 +185,7 @@ const ClientesView: React.FC = () => {
         </div>
       </div>
 
-      {/* List Container */}
       <div className="flex-1 flex flex-col min-h-0 bg-white md:mx-4 md:mb-4 md:rounded-2xl border-t md:border border-slate-200 shadow-sm overflow-hidden">
-        
-        {/* Abas e Busca */}
         <div className="p-4 border-b border-slate-100 flex flex-col gap-4">
             <div className="flex p-1 bg-slate-100 rounded-xl self-start">
                 <button 
@@ -219,7 +214,6 @@ const ClientesView: React.FC = () => {
             </div>
         </div>
 
-        {/* Lista de Itens */}
         <div className="flex-1 overflow-y-auto">
             {filteredClients.length === 0 ? (
                 <div className="p-12 text-center text-slate-400">
@@ -246,7 +240,6 @@ const ClientesView: React.FC = () => {
                                 <button 
                                     onClick={() => setOpenMenuId(openMenuId === client.id ? null : client.id)}
                                     className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-all"
-                                    aria-label="Menu de opções"
                                 >
                                     <MoreVertical size={20} />
                                 </button>
@@ -288,5 +281,3 @@ const ClientesView: React.FC = () => {
 };
 
 export default ClientesView;
-
-// Fix Chart Rendering

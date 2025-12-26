@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
     Plus, Users, Loader2, Search, ArrowRight, User as UserIcon, 
-    Briefcase, ShieldCheck, ShieldAlert 
+    Briefcase, ShieldCheck, ShieldAlert, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { LegacyProfessional } from '../../types';
@@ -13,6 +13,7 @@ import Toast, { ToastType } from '../shared/Toast';
 const EquipeView: React.FC = () => {
     const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedProf, setSelectedProf] = useState<LegacyProfessional | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -21,25 +22,26 @@ const EquipeView: React.FC = () => {
     const fetchProfessionals = async () => {
         if (!isMounted.current) return;
         setLoading(true);
+        setError(null);
         
-        // Watchdog Timer: Destrava a UI se demorar mais de 8s
+        // Watchdog Timer: Destrava a UI se demorar mais de 10s
         const watchdog = setTimeout(() => {
             if (isMounted.current && loading) {
                 setLoading(false);
-                setToast({ message: "A conexão está lenta, mas a interface foi liberada.", type: "info" });
+                setError("O carregamento está demorando mais que o esperado. Verifique sua conexão.");
             }
-        }, 8000);
+        }, 10000);
 
         try {
-            const { data, error } = await supabase
+            const { data, error: sbError } = await supabase
                 .from('professionals')
                 .select('*')
                 .order('name', { ascending: true });
             
-            if (error) throw error;
+            if (sbError) throw sbError;
             if (isMounted.current) setProfessionals(data || []);
         } catch (error: any) {
-            if (isMounted.current) setToast({ message: `Erro ao carregar equipe: ${error.message}`, type: 'error' });
+            if (isMounted.current) setError(error.message || "Erro desconhecido ao carregar equipe.");
         } finally {
             clearTimeout(watchdog);
             if (isMounted.current) setLoading(false);
@@ -151,6 +153,18 @@ const EquipeView: React.FC = () => {
 
             <main className="flex-1 overflow-y-auto p-8">
                 <div className="max-w-6xl mx-auto">
+                    {error && (
+                        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between text-amber-800">
+                           <div className="flex items-center gap-3">
+                               <AlertTriangle size={20} />
+                               <span className="text-sm font-medium">{error}</span>
+                           </div>
+                           <button onClick={fetchProfessionals} className="p-2 hover:bg-amber-100 rounded-lg transition-colors">
+                               <RefreshCw size={18} />
+                           </button>
+                        </div>
+                    )}
+
                     <div className="mb-8 relative max-w-md">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <input 
@@ -167,7 +181,7 @@ const EquipeView: React.FC = () => {
                             <Loader2 className="animate-spin mb-4" size={48} />
                             <p className="font-medium">Carregando sua equipe...</p>
                         </div>
-                    ) : filteredProfessionals.length === 0 ? (
+                    ) : filteredProfessionals.length === 0 && !error ? (
                         <div className="bg-white rounded-3xl p-16 text-center border border-slate-200 border-dashed">
                             <Users size={64} className="mx-auto text-slate-200 mb-4" />
                             <h3 className="text-lg font-bold text-slate-600">Equipe vazia</h3>

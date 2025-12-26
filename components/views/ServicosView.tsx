@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
     Plus, Scissors, Clock, DollarSign, Edit2, Trash2, 
-    Loader2, Search, X, CheckCircle, Hash
+    Loader2, Search, X, CheckCircle, AlertTriangle, RefreshCw
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { Service } from '../../types';
@@ -11,32 +11,50 @@ import Toast, { ToastType } from '../shared/Toast';
 const ServicosView: React.FC = () => {
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
     const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
+    const isMounted = useRef(true);
 
     const fetchServices = async () => {
+        if (!isMounted.current) return;
         setLoading(true);
+        setError(null);
+
+        // Watchdog local: 10s
+        const watchdog = setTimeout(() => {
+            if (isMounted.current && loading) {
+                setLoading(false);
+                setError("O tempo de resposta do servidor expirou. Tente atualizar a página.");
+            }
+        }, 10000);
+
         try {
-            const { data, error } = await supabase
+            const { data, error: sbError } = await supabase
                 .from('services')
                 .select('*')
                 .order('nome', { ascending: true });
             
-            if (error) throw error;
-            setServices(data || []);
+            if (sbError) throw sbError;
+            if (isMounted.current) setServices(data || []);
         } catch (error: any) {
-            setToast({ message: `Error: ${error.message}`, type: 'error' });
+            if (isMounted.current) setError(error.message || "Falha ao conectar com o banco de dados.");
         } finally {
-            setLoading(false);
+            clearTimeout(watchdog);
+            if (isMounted.current) setLoading(false);
         }
     };
 
     useEffect(() => {
+        isMounted.current = true;
         fetchServices();
+        return () => {
+            isMounted.current = false;
+        };
     }, []);
 
     const handleOpenModal = (service?: Service) => {
@@ -120,6 +138,18 @@ const ServicosView: React.FC = () => {
 
             <main className="flex-1 overflow-y-auto p-8">
                 <div className="max-w-6xl mx-auto">
+                    {error && (
+                        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between text-amber-800">
+                           <div className="flex items-center gap-3">
+                               <AlertTriangle size={20} />
+                               <span className="text-sm font-medium">{error}</span>
+                           </div>
+                           <button onClick={fetchServices} className="p-2 hover:bg-amber-100 rounded-lg transition-colors">
+                               <RefreshCw size={18} />
+                           </button>
+                        </div>
+                    )}
+
                     <div className="mb-8 relative max-w-md">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <input 
@@ -136,7 +166,7 @@ const ServicosView: React.FC = () => {
                             <Loader2 className="animate-spin mb-4" size={48} />
                             <p className="font-medium">Carregando serviços...</p>
                         </div>
-                    ) : filteredServices.length === 0 ? (
+                    ) : filteredServices.length === 0 && !error ? (
                         <div className="bg-white rounded-3xl p-16 text-center border border-slate-200 border-dashed">
                             <Scissors size={64} className="mx-auto text-slate-200 mb-4" />
                             <h3 className="text-lg font-bold text-slate-600">Nenhum serviço encontrado</h3>

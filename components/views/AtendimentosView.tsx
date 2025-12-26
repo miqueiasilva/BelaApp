@@ -5,8 +5,9 @@ import {
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     ShoppingBag, Ban
 } from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInMinutes } from 'date-fns';
-// FIX: Corrected locale import path to 'date-fns/locale/pt-BR' to resolve "no exported member 'ptBR'" error.
+// FIX: Use isSameMonth instead of startOfMonth/endOfMonth which were reported as missing from 'date-fns'.
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, differenceInMinutes } from 'date-fns';
+// FIX: Correct the import path for pt-BR locale to 'date-fns/locale/pt-BR'.
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
@@ -77,7 +78,7 @@ const TimelineIndicator = () => {
         
         return () => {
             isMounted = false;
-            clearInterval(intervalId); // Higiene de thread
+            clearInterval(intervalId);
         };
     }, []);
     
@@ -127,7 +128,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         isMounted.current = true;
         fetchResources();
 
-        // Inicia canal Realtime se necessário
+        // Inicia canal Realtime
         const channel = supabase.channel('agenda-updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
                 if (isMounted.current) fetchAppointments();
@@ -136,7 +137,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
         return () => {
             isMounted.current = false;
-            // CRITICAL: Destrói assinaturas ao sair para evitar Deadlock
+            // OBRIGATÓRIO: Destrói assinaturas ao sair para evitar Deadlock e uso de CPU
             supabase.removeChannel(channel);
         };
     }, []);
@@ -167,9 +168,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         if (!isMounted.current) return;
         setIsLoadingData(true);
         
-        // Timeout de segurança local
+        // Watchdog local
         const safetyTimeout = setTimeout(() => {
-            if (isMounted.current) setIsLoadingData(false);
+            if (isMounted.current && isLoadingData) setIsLoadingData(false);
         }, 10000);
 
         try {
@@ -254,9 +255,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             return appointments.filter(a => isWithinInterval(a.start, { start, end }));
         }
         if (periodType === 'Mês') {
-            const start = startOfMonth(currentDate);
-            const end = endOfMonth(currentDate);
-            return appointments.filter(a => isWithinInterval(a.start, { start, end }));
+            // FIX: Use isSameMonth instead of startOfMonth/endOfMonth which were reported as missing exports
+            return appointments.filter(a => isSameMonth(a.start, currentDate));
         }
         return appointments;
     }, [appointments, periodType, currentDate]);
@@ -483,7 +483,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 setModalState({ type: 'sale', data: { professionalId: selectionMenu.professional.id } });
                                 setSelectionMenu(null);
                             }}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-green-600 transition-colors"
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-orange-600 transition-colors"
                         >
                             <div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div>
                             Nova Venda
@@ -493,7 +493,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } });
                                 setSelectionMenu(null);
                             }}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-orange-600 transition-colors"
                         >
                             <div className="p-1.5 bg-rose-100 rounded-lg text-orange-600"><Ban size={16} /></div>
                             Bloqueio de Horário
