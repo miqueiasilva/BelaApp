@@ -3,38 +3,19 @@ import {
   UserPlus, Search, Phone, Edit, 
   Trash2, FileUp, MoreVertical, Cake, Users, History, Loader2, RefreshCw, AlertCircle
 } from 'lucide-react';
-import { initialAppointments } from '../../data/mockData';
 import { Client } from '../../types';
 import ClientModal from '../modals/ClientModal';
 import Toast, { ToastType } from '../shared/Toast';
-import { differenceInDays, isSameMonth } from 'date-fns';
-import { ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { supabase } from '../../services/supabaseClient';
-
-interface ClientStats {
-  totalSpent: number;
-  visits: number;
-  lastVisitDate: Date | null;
-  status: 'Novo' | 'Ativo' | 'Inativo' | 'Recuperar';
-}
-
-interface EnrichedClient extends Client {
-  stats: ClientStats;
-}
-
-const sparkData = [ { v: 40 }, { v: 30 }, { v: 60 }, { v: 80 }, { v: 50 }, { v: 90 }, { v: 100 } ];
 
 const ClientesView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'todos' | 'aniversariantes'>('todos');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
 
-  // Fetch real data from Supabase
   const fetchClients = async () => {
     setLoading(true);
     try {
@@ -46,228 +27,151 @@ const ClientesView: React.FC = () => {
         if (error) throw error;
         setClients(data || []);
     } catch (e: any) {
-        setToast({ message: "Erro ao carregar clientes: " + e.message, type: 'error' });
+        console.error("Erro ao carregar clientes do banco:", e);
+        showToast("Falha ao sincronizar com o servidor", 'error');
     } finally {
         setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchClients();
-  }, []);
-
-  const enrichedClients = useMemo<EnrichedClient[]>(() => {
-    return clients.map(client => {
-      // Mock stats based on appointments (would ideally come from DB queries)
-      const clientApps = initialAppointments.filter(app => app.client?.id === client.id && app.status === 'concluido');
-      const totalSpent = clientApps.reduce((acc, app) => acc + app.service.price, 0);
-      const visits = clientApps.length;
-      const lastVisitDate = clientApps.length > 0 
-        ? new Date(Math.max(...clientApps.map(a => new Date(a.start).getTime())))
-        : null;
-        
-      const daysSinceLastVisit = lastVisitDate ? differenceInDays(new Date(), lastVisitDate) : null;
-
-      let status: 'Novo' | 'Ativo' | 'Inativo' | 'Recuperar' = 'Novo';
-      if (visits > 0) {
-        if (daysSinceLastVisit !== null && daysSinceLastVisit < 30) status = 'Ativo';
-        else if (daysSinceLastVisit !== null && daysSinceLastVisit < 90) status = 'Inativo';
-        else status = 'Recuperar';
-      }
-
-      return { ...client, stats: { totalSpent, visits, lastVisitDate, status } };
-    });
-  }, [clients]);
-
-  const filteredClients = useMemo(() => {
-    let list = enrichedClients.filter(client => 
-      client.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      client.whatsapp?.includes(searchTerm)
-    );
-
-    if (activeTab === 'aniversariantes') {
-      const today = new Date();
-      list = list.filter(c => {
-        if (!c.nascimento) return false;
-        const bday = new Date(c.nascimento);
-        return isSameMonth(bday, today);
-      });
-    }
-
-    return list;
-  }, [enrichedClients, searchTerm, activeTab]);
+  useEffect(() => { fetchClients(); }, []);
 
   const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
+  /**
+   * FUNÇÃO REFATORADA: handleSaveClient
+   * Objetivo: Garantir persistência real antes do feedback visual.
+   */
   const handleSaveClient = async (clientData: Client) => {
-    try {
-        const isUpdate = !!clientData.id;
-        
-        // Clean ID for insert if necessary
-        const { id, ...dataToUpsert } = clientData;
-        const payload = isUpdate ? { id, ...dataToUpsert } : dataToUpsert;
+    const isUpdate = !!clientData.id;
+    
+    // 1. Limpeza de Payload: Garantimos que campos nulos não quebrem o DB
+    const payload = {
+        nome: clientData.nome,
+        whatsapp: clientData.whatsapp || null,
+        email: clientData.email || null,
+        nascimento: clientData.nascimento || null,
+        instagram: (clientData as any).instagram || null,
+        origem: (clientData as any).origem || 'link',
+        consent: true
+    };
 
-        const { data, error } = await supabase
+    try {
+        // 2. Operação Assíncrona com Await
+        // .select() é crucial para retornar o objeto atualizado do banco
+        const { data: savedRow, error } = await supabase
             .from('clients')
-            .upsert(payload)
-            .select()
+            .upsert(isUpdate ? { id: clientData.id, ...payload } : payload)
+            .select() 
             .single();
 
-        if (error) throw error;
+        // 3. Validação Rigorosa da Resposta
+        if (error) {
+            // Se houver erro de rede ou de constraint do banco, cai aqui
+            throw new Error(`DB Error: ${error.message}`);
+        }
 
-        // Optimistic UI Update or Refresh
-        await fetchClients(); 
+        if (!savedRow) {
+            throw new Error("O servidor não retornou os dados salvos.");
+        }
+
+        // 4. Sincronização de Estado (Evita Stale Data)
+        // Em vez de dar F5, atualizamos o array local com o dado real vindo do DB
+        setClients(prev => {
+            if (isUpdate) {
+                return prev.map(c => c.id === savedRow.id ? savedRow : c);
+            } else {
+                return [savedRow, ...prev];
+            }
+        });
+
+        // 5. Sucesso real confirmado
+        showToast(isUpdate ? 'Perfil atualizado!' : 'Cliente cadastrado!');
         setIsModalOpen(false);
         setSelectedClient(null);
-        showToast(isUpdate ? 'Cliente atualizado com sucesso!' : 'Novo cliente cadastrado!');
+
     } catch (e: any) {
-        showToast("Erro ao persistir dados: " + e.message, 'error');
+        // 6. Tratamento de Erros Silenciosos
+        console.error("CRITICAL ERROR NO SALVAMENTO:", {
+            error: e,
+            payload: payload,
+            timestamp: new Date().toISOString()
+        });
+
+        showToast(
+            e.message.includes("violates check constraint") 
+            ? "Dados inválidos. Verifique os campos." 
+            : "Erro de conexão. Os dados NÃO foram salvos.", 
+            'error'
+        );
     }
   };
 
   const handleEdit = (client: Client) => {
     setSelectedClient(client);
     setIsModalOpen(true);
-    setOpenMenuId(null);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Tem certeza que deseja remover este cliente? Os dados serão perdidos permanentemente.')) return;
-    
-    try {
-        const { error } = await supabase.from('clients').delete().eq('id', id);
-        if (error) throw error;
-        
-        setClients(prev => prev.filter(c => c.id !== id));
-        showToast('Cliente removido.', 'info');
-        setOpenMenuId(null);
-    } catch (e: any) {
-        showToast("Erro ao excluir: " + e.message, 'error');
-    }
-  };
+  const filteredClients = clients.filter(c => 
+    c.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    c.whatsapp?.includes(searchTerm)
+  );
 
   return (
-    <div className="h-full flex flex-col bg-slate-50 relative font-sans overflow-hidden">
+    <div className="h-full flex flex-col bg-slate-50 font-sans">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-      <header className="bg-white border-b border-slate-200 px-4 py-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-slate-800 flex items-center">
-            <Users className="text-orange-500 mr-2" size={24} />
-            Gestão de Clientes
-          </h1>
-          {loading && <Loader2 className="w-4 h-4 animate-spin text-orange-500" />}
-        </div>
-        
-        <div className="flex gap-2 w-full md:w-auto">
-            <button onClick={fetchClients} className="p-2.5 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-all">
-                <RefreshCw size={20} />
-            </button>
-            <button 
-              onClick={() => { setSelectedClient(null); setIsModalOpen(true); }}
-              className="flex-1 md:flex-none bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-100 flex items-center justify-center gap-2 transition-all active:scale-95"
-            >
-              <UserPlus size={18} /> <span className="text-sm">Novo Cliente</span>
-            </button>
-        </div>
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center flex-shrink-0">
+        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <Users className="text-orange-500" /> Gestão de Clientes
+        </h1>
+        <button 
+          onClick={() => { setSelectedClient(null); setIsModalOpen(true); }}
+          className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-orange-100"
+        >
+          <UserPlus size={18} /> Novo Cliente
+        </button>
       </header>
 
-      {/* KPI Cards (Simplified for the fix) */}
-      <div className="flex md:grid md:grid-cols-3 gap-4 p-4 overflow-x-auto scrollbar-hide flex-shrink-0">
-        <div className="min-w-[240px] bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between h-40">
-           <div className="flex items-center gap-3">
-               <div className="bg-blue-50 p-2.5 rounded-xl text-blue-500"><Users size={20}/></div>
-               <div>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total de Clientes</p>
-                 <p className="text-2xl font-black text-slate-800 leading-tight">{clients.length}</p>
-               </div>
-           </div>
-           <ResponsiveContainer width="100%" height={50}>
-               <AreaChart data={sparkData}>
-                   <Area type="monotone" dataKey="v" stroke="#3b82f6" fill="#dbeafe" strokeWidth={2" isAnimationActive={false} />
-               </AreaChart>
-           </ResponsiveContainer>
+      <div className="p-4 border-b bg-white">
+        <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <input 
+                type="text" 
+                placeholder="Buscar por nome ou celular..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-100 outline-none"
+            />
         </div>
-        {/* Outros KPIs... */}
       </div>
 
-      <div className="flex-1 flex flex-col min-h-0 bg-white md:mx-4 md:mb-4 md:rounded-2xl border-t md:border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex flex-col gap-4">
-            <div className="flex p-1 bg-slate-100 rounded-xl self-start">
-                <button onClick={() => setActiveTab('todos')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'todos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}>Todos</button>
-                <button onClick={() => setActiveTab('aniversariantes')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === 'aniversariantes' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Cake size={14} /> Aniversários</button>
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+            <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+                <Loader2 className="animate-spin mb-2" />
+                <p className="text-sm">Carregando base de clientes...</p>
             </div>
-            
-            <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                <input 
-                    type="text" 
-                    placeholder="Buscar por nome ou telefone..." 
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-100 text-sm transition-all"
-                />
-            </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-            {loading ? (
-                <div className="p-20 text-center flex flex-col items-center gap-3">
-                    <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
-                    <p className="text-slate-400 font-medium">Sincronizando dados...</p>
-                </div>
-            ) : filteredClients.length === 0 ? (
-                <div className="p-12 text-center text-slate-400">
-                    <Users size={48} className="mx-auto mb-3 opacity-20" />
-                    <p className="text-sm">Nenhum cliente encontrado.</p>
-                </div>
-            ) : (
-                <div className="divide-y divide-slate-100">
-                    {filteredClients.map(client => (
-                        <div key={client.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
-                            <div className="flex items-center gap-4 min-w-0">
-                                <div className="w-12 h-12 rounded-full bg-slate-100 flex-shrink-0 flex items-center justify-center text-slate-400 font-bold border border-slate-200 overflow-hidden text-lg">
-                                    {client.nome?.charAt(0).toUpperCase() || '?'}
-                                </div>
-                                <div className="min-w-0">
-                                    <h4 className="font-bold text-slate-800 text-sm truncate">{client.nome}</h4>
-                                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                                        <Phone size={10} className="text-slate-300" /> {client.whatsapp || 'Sem telefone'}
-                                    </p>
-                                </div>
+        ) : (
+            <div className="divide-y divide-slate-100">
+                {filteredClients.map(client => (
+                    <div key={client.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold">
+                                {client.nome.charAt(0)}
                             </div>
-
-                            <div className="relative">
-                                <button 
-                                    onClick={() => setOpenMenuId(openMenuId === client.id ? null : client.id!)}
-                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-all"
-                                >
-                                    <MoreVertical size={20} />
-                                </button>
-
-                                {openMenuId === client.id && (
-                                    <>
-                                        <div className="fixed inset-0 z-20" onClick={() => setOpenMenuId(null)}></div>
-                                        <div className="absolute right-0 top-10 w-48 bg-white rounded-xl shadow-xl border border-slate-100 z-30 py-2 animate-in fade-in zoom-in-95 duration-100">
-                                            <button onClick={() => handleEdit(client)} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                                                <Edit size={16} className="text-slate-400" /> Editar Dados
-                                            </button>
-                                            <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                                                <History size={16} className="text-slate-400" /> Ver Histórico
-                                            </button>
-                                            <div className="border-t border-slate-50 my-1"></div>
-                                            <button onClick={() => handleDelete(client.id!)} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 font-medium">
-                                                <Trash2 size={16} /> Excluir Cliente
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
+                            <div>
+                                <h4 className="font-bold text-slate-800">{client.nome}</h4>
+                                <p className="text-xs text-slate-500">{client.whatsapp || 'Sem celular'}</p>
                             </div>
                         </div>
-                    ))}
-                </div>
-            )}
-        </div>
+                        <button onClick={() => handleEdit(client)} className="p-2 text-slate-400 hover:text-orange-500 transition-colors">
+                            <Edit size={18} />
+                        </button>
+                    </div>
+                ))}
+            </div>
+        )}
       </div>
 
       {isModalOpen && (
