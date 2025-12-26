@@ -48,19 +48,15 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         if (!confirmLogout) return;
 
         try {
-            // Tenta o signOut mas com corrida contra um timeout para não travar a UI
             await Promise.race([
                 supabase.auth.signOut(),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
             ]);
         } catch (error) {
-            console.error("Erro ou timeout no logout do Supabase:", error);
+            console.error("Erro ou timeout no logout:", error);
         } finally {
-            // LIMPEZA FORÇADA (Executa sempre)
             localStorage.clear();
             sessionStorage.clear();
-            
-            // Força recarregamento total para limpar Main Thread e Memória RAM
             window.location.href = '/'; 
         }
     };
@@ -146,3 +142,4 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 };
 
 export default Sidebar;
+// Updated to BelaFlow

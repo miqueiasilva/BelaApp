@@ -72,13 +72,11 @@ const LoginView: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-[#0f1219] flex items-center justify-center p-6 font-sans relative overflow-hidden">
-            {/* Background Decorative Blurs */}
             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[120px]"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/20 rounded-full blur-[120px]"></div>
 
             <div className="w-full max-w-[420px] bg-[#1a1e26]/80 backdrop-blur-xl rounded-[32px] p-8 md:p-10 shadow-2xl border border-white/5 relative z-10">
                 
-                {/* Logo Section */}
                 <div className="text-center mb-8">
                     <div className="w-16 h-16 bg-gradient-to-tr from-orange-500 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/20 transition-transform hover:scale-105 duration-300">
                         <span className="text-white font-black text-3xl">B</span>
@@ -87,7 +85,6 @@ const LoginView: React.FC = () => {
                     <p className="text-slate-400 mt-2 text-sm font-medium">Gestão Inteligente para Estúdios de Beleza</p>
                 </div>
 
-                {/* Social Login */}
                 <div className="space-y-4">
                     <button
                         type="button"
@@ -106,7 +103,6 @@ const LoginView: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Feedback Messages */}
                 {error && (
                     <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold flex items-center gap-3 rounded-xl animate-in fade-in slide-in-from-top-2">
                         <XCircle size={16} />
@@ -120,7 +116,6 @@ const LoginView: React.FC = () => {
                     </div>
                 )}
 
-                {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-5">
                     {mode === 'register' && (
                         <div>
@@ -207,7 +202,6 @@ const LoginView: React.FC = () => {
                     </button>
                 </form>
 
-                {/* Footer Links */}
                 <div className="mt-8 text-center">
                     {mode === 'login' ? (
                         <p className="text-sm text-slate-500 font-medium">
@@ -238,3 +232,4 @@ const LoginView: React.FC = () => {
 };
 
 export default LoginView;
+// Updated to BelaFlow
