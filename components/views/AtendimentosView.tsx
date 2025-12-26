@@ -299,8 +299,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
             <div className="flex-1 overflow-auto bg-slate-50 relative">
                 <div className="min-w-full">
-                    <div className="grid sticky top-0 z-20 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(220px, 1fr))` }}>
-                        <div className="border-r border-slate-200 h-24 bg-white"></div>
+                    <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(220px, 1fr))` }}>
+                        {/* Header Corner (Sticky Top + Left) */}
+                        <div className="sticky left-0 z-50 border-r border-slate-200 h-24 bg-white min-w-[60px]"></div>
                         {columns.map(col => (
                             <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-24 bg-slate-50/30">
                                 <div className="flex items-center gap-3 px-4 py-2 bg-white rounded-2xl border border-slate-200 shadow-sm min-w-[140px]">
@@ -314,8 +315,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         ))}
                     </div>
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(220px, 1fr))` }}>
-                        <div className="border-r border-slate-200 bg-white sticky left-0 z-10">
-                            {timeSlots.map(time => <div key={time} className="h-20 text-right pr-3 text-[11px] text-slate-400 font-bold pt-2 border-b border-slate-50/50 border-dashed"><span>{time}</span></div>)}
+                        {/* Time Column (Sticky Left) */}
+                        <div className="border-r border-slate-100 bg-white sticky left-0 z-30 min-w-[60px]">
+                            {timeSlots.map(time => (
+                                <div key={time} className="h-20 text-right pr-3 text-[11px] text-slate-400 font-bold pt-2 border-b border-slate-50/50 border-dashed bg-white">
+                                    <span>{time}</span>
+                                </div>
+                            ))}
                         </div>
                         {columns.map((col, idx) => (
                             <div 
