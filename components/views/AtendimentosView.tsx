@@ -2,7 +2,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
-    ShoppingBag, Ban
+    ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
+    LayoutGrid, PlayCircle, CreditCard, Check
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -95,6 +96,7 @@ interface AtendimentosViewProps {
 }
 
 type PeriodType = 'Dia' | 'Semana' | 'Mês' | 'Lista';
+type ViewMode = 'profissional' | 'andamento' | 'pagamento';
 
 const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -109,7 +111,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
 
+    // --- Novos Estados de Visualização ---
+    const [viewMode, setViewMode] = useState<ViewMode>('profissional');
+    const [showConfig, setShowConfig] = useState(false);
+    const [colWidth, setColWidth] = useState(250);
+    const [isAutoWidth, setIsAutoWidth] = useState(false);
+    const [timeSlot, setTimeSlot] = useState(30);
+
     const isMounted = useRef(true);
+    const configRef = useRef<HTMLDivElement>(null);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -123,13 +133,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             })
             .subscribe();
 
+        const handleClickOutside = (event: MouseEvent) => {
+            if (configRef.current && !configRef.current.contains(event.target as Node)) {
+                setShowConfig(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+
         return () => {
             isMounted.current = false;
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
-            }
-            // CRITICAL CLEANUP: Unsubscribe to free database connections
+            if (abortControllerRef.current) abortControllerRef.current.abort();
             supabase.removeChannel(channel);
+            document.removeEventListener('mousedown', handleClickOutside);
         };
     }, []);
 
@@ -145,25 +160,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     role: p.role
                 })));
             }
-        } catch (e) { 
-            console.error("Error resources:", e); 
-        }
+        } catch (e) { console.error("Error resources:", e); }
     };
 
     const fetchAppointments = async () => {
         if (!isMounted.current) return;
-        
-        // Use AbortController to cancel previous request if user navigates away fast
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
 
         setIsLoadingData(true);
         try {
-            const { data, error } = await supabase
-                .from('appointments')
-                .select('*')
-                .abortSignal(abortControllerRef.current.signal);
-
+            const { data, error } = await supabase.from('appointments').select('*').abortSignal(abortControllerRef.current.signal);
             if (error) throw error;
             if (data && isMounted.current) {
                 const mapped = data.map(row => {
@@ -183,17 +190,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 setAppointments(mapped);
             }
         } catch (e: any) {
-            if (e.name !== 'AbortError') {
-                console.error("Fetch error:", e);
-            }
-        } finally {
-            if (isMounted.current) setIsLoadingData(false);
-        }
+            if (e.name !== 'AbortError') console.error("Fetch error:", e);
+        } finally { if (isMounted.current) setIsLoadingData(false); }
     };
 
-    useEffect(() => {
-        if (resources.length > 0) fetchAppointments();
-    }, [resources, currentDate]);
+    useEffect(() => { if (resources.length > 0) fetchAppointments(); }, [resources, currentDate]);
 
     const handleDateChange = (direction: number) => {
         if (periodType === 'Dia' || periodType === 'Lista') setCurrentDate(prev => addDays(prev, direction));
@@ -202,6 +203,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     };
 
     const columns = useMemo<DynamicColumn[]>(() => {
+        // Lógica de colunas baseada no modo de visualização
+        if (viewMode === 'andamento') {
+            const prosWithActive = resources.filter(p => 
+                appointments.some(a => a.professional.id === p.id && a.status === 'em_atendimento' && isSameDay(a.start, currentDate))
+            );
+            return (prosWithActive.length > 0 ? prosWithActive : resources).map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
+        }
+
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -214,24 +223,34 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             }));
         }
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
-    }, [periodType, currentDate, resources]);
+    }, [periodType, currentDate, resources, viewMode, appointments]);
 
     const filteredAppointments = useMemo(() => {
-        if (periodType === 'Dia' || periodType === 'Lista') return appointments.filter(a => isSameDay(a.start, currentDate));
+        let filtered = appointments;
+        if (viewMode === 'pagamento') filtered = appointments.filter(a => a.status === 'concluido');
+        
+        if (periodType === 'Dia' || periodType === 'Lista') return filtered.filter(a => isSameDay(a.start, currentDate));
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
-            return appointments.filter(a => isWithinInterval(a.start, { start, end }));
+            return filtered.filter(a => isWithinInterval(a.start, { start, end }));
         }
-        if (periodType === 'Mês') return appointments.filter(a => isSameMonth(a.start, currentDate));
-        return appointments;
-    }, [appointments, periodType, currentDate]);
+        if (periodType === 'Mês') return filtered.filter(a => isSameMonth(a.start, currentDate));
+        return filtered;
+    }, [appointments, periodType, currentDate, viewMode]);
 
-    const timeSlots = Array.from({ length: (END_HOUR - START_HOUR) * 2 }, (_, i) => { 
-        const hour = START_HOUR + Math.floor(i / 2);
-        const minute = (i % 2) * 30;
-        return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-    });
+    const timeSlots = useMemo(() => {
+        const slots = [];
+        const totalMinutes = (END_HOUR - START_HOUR) * 60;
+        const count = totalMinutes / timeSlot;
+        for (let i = 0; i < count; i++) {
+            const totalMins = (START_HOUR * 60) + (i * timeSlot);
+            const hour = Math.floor(totalMins / 60);
+            const minute = totalMins % 60;
+            slots.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+        }
+        return slots;
+    }, [timeSlot]);
 
     const handleGridClick = (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date) => {
         const rect = e.currentTarget.getBoundingClientRect();
@@ -244,36 +263,90 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
     };
 
-    const handleSaveAppointment = async (app: LegacyAppointment) => {
-        setAppointments(prev => {
-            const idx = prev.findIndex(p => p.id === app.id);
-            if (idx >= 0) return prev.map(p => p.id === app.id ? app : p);
-            return [...prev, app];
-        });
-        setModalState(null);
-        setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
-        fetchAppointments();
-    };
-
-    const handleSaveBlock = async (app: LegacyAppointment) => {
-        setAppointments(prev => [...prev, app]);
-        setModalState(null);
-        setToast({ message: 'Horário bloqueado com sucesso!', type: 'success' });
-        fetchAppointments();
-    };
-
     return (
         <div className="flex h-full bg-white relative flex-col font-sans">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-6 z-10">
-                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4">
-                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                        Atendimentos {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}
-                    </h2>
-                    <div className="flex items-center gap-2">
+            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30">
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
+                    <div className="flex items-center gap-4">
+                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            Agenda {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}
+                        </h2>
+                        
+                        {/* Seletor de Modo de Visualização */}
+                        <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                            <button 
+                                onClick={() => setViewMode('profissional')}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <LayoutGrid size={14} /> Equipe
+                            </button>
+                            <button 
+                                onClick={() => setViewMode('andamento')}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <PlayCircle size={14} /> Andamento
+                            </button>
+                            <button 
+                                onClick={() => setViewMode('pagamento')}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <CreditCard size={14} /> Pagamento
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
+                        <div className="relative" ref={configRef}>
+                            <button 
+                                onClick={() => setShowConfig(!showConfig)}
+                                className={`p-2 rounded-lg border transition-all ${showConfig ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-50'}`}
+                            >
+                                <SettingsIcon size={20} />
+                            </button>
+                            {showConfig && (
+                                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 p-5 animate-in fade-in zoom-in-95">
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Configurações da Grade</h4>
+                                    
+                                    <div className="space-y-6">
+                                        <div>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <label className="text-sm font-bold text-slate-700">Largura das Colunas</label>
+                                                <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-mono">{colWidth}px</span>
+                                            </div>
+                                            <input 
+                                                type="range" min="150" max="450" step="10" 
+                                                disabled={isAutoWidth}
+                                                value={colWidth} onChange={e => setColWidth(Number(e.target.value))}
+                                                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500 disabled:opacity-30"
+                                            />
+                                            <div className="flex items-center gap-2 mt-2">
+                                                <input type="checkbox" id="autoWidth" checked={isAutoWidth} onChange={e => setIsAutoWidth(e.target.checked)} className="rounded text-orange-500" />
+                                                <label htmlFor="autoWidth" className="text-xs font-medium text-slate-500 cursor-pointer">Ajustar automaticamente</label>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-sm font-bold text-slate-700 block mb-2">Intervalo de Tempo</label>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {[15, 30, 60].map(min => (
+                                                    <button 
+                                                        key={min} onClick={() => setTimeSlot(min)}
+                                                        className={`py-1.5 rounded-lg border text-[10px] font-bold uppercase transition-all ${timeSlot === min ? 'bg-orange-500 border-orange-600 text-white shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                                                    >
+                                                        {min} min
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="relative">
-                            <button onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium">
+                            <button onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">
                                 {periodType} <ChevronDown size={16} />
                             </button>
                             {isPeriodDropdownOpen && (
@@ -293,32 +366,32 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         <button onClick={() => handleDateChange(-1)} className="p-2 hover:bg-slate-100 rounded-full"><ChevronLeft size={20} /></button>
                         <button onClick={() => handleDateChange(1)} className="p-2 hover:bg-slate-100 rounded-full"><ChevronRight size={20} /></button>
                     </div>
-                    <span className="text-orange-500 font-bold text-lg capitalize">{format(currentDate, "EEE, dd 'de' MMMM", { locale: pt }).replace('.', '')}</span>
+                    <span className="text-orange-500 font-bold text-lg capitalize tracking-tight">{format(currentDate, "EEE, dd 'de' MMMM", { locale: pt }).replace('.', '')}</span>
                 </div>
             </header>
 
-            <div className="flex-1 overflow-auto bg-slate-50 relative">
+            <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
                 <div className="min-w-full">
-                    <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(220px, 1fr))` }}>
-                        {/* Header Corner (Sticky Top + Left) */}
-                        <div className="sticky left-0 z-50 border-r border-slate-200 h-24 bg-white min-w-[60px]"></div>
+                    <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
+                        <div className="sticky left-0 z-50 border-r border-slate-200 h-20 bg-white min-w-[60px] flex items-center justify-center">
+                            <Maximize2 size={16} className="text-slate-300" />
+                        </div>
                         {columns.map(col => (
-                            <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-24 bg-slate-50/30">
-                                <div className="flex items-center gap-3 px-4 py-2 bg-white rounded-2xl border border-slate-200 shadow-sm min-w-[140px]">
-                                    {col.photo && <img src={col.photo} alt={col.title} className="w-10 h-10 rounded-full object-cover border-2 border-orange-100" />}
+                            <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-20 bg-slate-50/10">
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-full max-w-[200px] overflow-hidden">
+                                    {col.photo && <img src={col.photo} alt={col.title} className="w-8 h-8 rounded-full object-cover border border-orange-100 flex-shrink-0" />}
                                     <div className="flex flex-col overflow-hidden">
-                                        <span className="text-xs font-bold text-slate-800 leading-tight">{col.title}</span>
-                                        {col.subtitle && <span className="text-[10px] text-slate-400 font-semibold">{col.subtitle}</span>}
+                                        <span className="text-[11px] font-black text-slate-800 leading-tight truncate">{col.title}</span>
+                                        {col.subtitle && <span className="text-[9px] text-slate-400 font-bold uppercase">{col.subtitle}</span>}
                                     </div>
                                 </div>
                             </div>
                         ))}
                     </div>
-                    <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(220px, 1fr))` }}>
-                        {/* Time Column (Sticky Left) */}
+                    <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="border-r border-slate-100 bg-white sticky left-0 z-30 min-w-[60px]">
                             {timeSlots.map(time => (
-                                <div key={time} className="h-20 text-right pr-3 text-[11px] text-slate-400 font-bold pt-2 border-b border-slate-50/50 border-dashed bg-white">
+                                <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-50/50 border-dashed bg-white">
                                     <span>{time}</span>
                                 </div>
                             ))}
@@ -326,7 +399,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         {columns.map((col, idx) => (
                             <div 
                                 key={col.id} 
-                                className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/10'}`}
+                                className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`}
                                 onClick={(e) => {
                                     if (e.target === e.currentTarget) {
                                         const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0];
@@ -347,24 +420,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                             ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }}
                                             onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }}
                                             title={`${format(app.start, 'HH:mm')} - ${app.client?.nome || 'Bloqueado'} (${app.service.name})`}
-                                            className={`absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1 cursor-pointer z-10 hover:brightness-95 transition-all overflow-hidden flex flex-col ${isVeryShort ? 'justify-center' : 'justify-start'} ${getStatusColor(app.status)}`}
+                                            className={`absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer z-10 hover:brightness-95 transition-all overflow-hidden flex flex-col ${isVeryShort ? 'justify-center' : 'justify-start'} ${getStatusColor(app.status)} ${viewMode === 'pagamento' && app.status === 'concluido' ? 'ring-2 ring-green-400 ring-offset-1' : ''}`}
                                             style={{ ...getAppointmentStyle(app.start, app.end), borderLeftColor: app.service.color }}
                                         >
                                             <div className="flex items-center gap-1 overflow-hidden">
                                                 <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
                                                 {isVeryShort && <span className="font-bold text-slate-900 text-[10px] truncate leading-none flex-1">{app.client?.nome || 'Bloqueado'}</span>}
                                             </div>
-                                            
-                                            {!isVeryShort && (
-                                                <p className="font-bold text-slate-900 text-[11px] truncate leading-tight mt-0.5">
-                                                    {app.client?.nome || 'Bloqueado'}
-                                                </p>
-                                            )}
-                                            
-                                            {!isShort && (
-                                                <p className="text-[10px] font-medium text-slate-600 truncate leading-tight">
-                                                    {app.service.name}
-                                                </p>
+                                            {!isVeryShort && <p className="font-bold text-slate-900 text-[11px] truncate leading-tight mt-0.5">{app.client?.nome || 'Bloqueado'}</p>}
+                                            {!isShort && <p className="text-[10px] font-medium text-slate-600 truncate leading-tight">{app.service.name}</p>}
+                                            {viewMode === 'pagamento' && app.status === 'concluido' && (
+                                                <div className="absolute top-1 right-1"><CreditCard size={12} className="text-green-600 opacity-50" /></div>
                                             )}
                                         </div>
                                     );
@@ -415,34 +481,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     }} 
                 />
             )}
-
-            {modalState?.type === 'appointment' && (
-                <AppointmentModal 
-                    appointment={modalState.data} 
-                    onClose={() => setModalState(null)} 
-                    onSave={handleSaveAppointment} 
-                />
-            )}
-
-            {modalState?.type === 'block' && (
-                <BlockTimeModal 
-                    professional={modalState.data.professional} 
-                    startTime={modalState.data.start} 
-                    onClose={() => setModalState(null)} 
-                    onSave={handleSaveBlock} 
-                />
-            )}
-
-            {modalState?.type === 'sale' && (
-                <NewTransactionModal 
-                    type="receita"
-                    onClose={() => setModalState(null)}
-                    onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }}
-                />
-            )}
             
             <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
-            <div className="fixed bottom-8 right-8 z-10"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
+            <div className="fixed bottom-8 right-8 z-20"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
         </div>
     );
 };
