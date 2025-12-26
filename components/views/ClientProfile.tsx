@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -44,13 +45,15 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
 );
 
 const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }) => {
-    const [isEditing, setIsEditing] = useState(false);
+    const isNew = !client.id;
+    const [isEditing, setIsEditing] = useState(isNew);
     const [isUploading, setIsUploading] = useState(false);
     const [activeTab, setActiveTab] = useState<'geral' | 'consumo' | 'atividades'>('geral');
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     const [formData, setFormData] = useState<any>({
         ...client,
+        nome: client.nome || '',
         apelido: (client as any).apelido || '',
         cpf: (client as any).cpf || '',
         rg: (client as any).rg || '',
@@ -72,7 +75,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         setFormData((prev: any) => ({ ...prev, [name]: value }));
     };
 
-    // CORREÇÃO DO UPLOAD (Prevenção de Loop Infinito)
     const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -94,28 +96,20 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 .getPublicUrl(filePath);
 
             setFormData((prev: any) => ({ ...prev, photo_url: publicUrl }));
-            console.log("Upload concluído com sucesso. URL gerada:", publicUrl);
             
         } catch (error: any) {
             console.error("Falha no upload do avatar:", error);
             alert(`Erro no upload: ${error.message}`);
         } finally {
-            // ESSENCIAL: Garante que o loading pare independente do resultado
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
-    // CORREÇÃO DO SALVAMENTO (Debug e Persistência)
     const handleSave = async () => {
-        console.log("Botão 'Salvar' acionado. Iniciando persistência...");
-        console.log("Payload para o banco:", formData);
-        
         try {
-            // A prop onSave chama o upsert no ClientesView.tsx
             await onSave(formData);
             setIsEditing(false);
-            console.log("Dados salvos com sucesso.");
         } catch (error: any) {
             console.error("Erro crítico ao persistir dados do cliente:", error);
             alert(`Erro ao salvar: ${error.message}`);
@@ -146,14 +140,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                             </button>
                         ) : (
                             <div className="flex gap-2">
-                                <button onClick={() => setIsEditing(false)} className="px-4 py-2.5 text-slate-500 font-bold text-sm">Cancelar</button>
-                                {/* CORREÇÃO: Mudança de submit para button para evitar bloqueios invisíveis de abas ocultas */}
+                                <button onClick={() => !isNew ? setIsEditing(false) : onClose()} className="px-4 py-2.5 text-slate-500 font-bold text-sm">Cancelar</button>
                                 <button 
                                     type="button" 
                                     onClick={handleSave} 
                                     className="px-6 py-2.5 bg-orange-600 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95"
                                 >
-                                    <Save size={18} /> Salvar Alterações
+                                    <Save size={18} /> {isNew ? 'Criar Cliente' : 'Salvar Alterações'}
                                 </button>
                             </div>
                         )}
@@ -190,7 +183,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     </div>
 
                     <div className="flex-1">
-                        <h2 className="text-2xl font-black text-slate-800 leading-tight">{formData.nome}</h2>
+                        <h2 className="text-2xl font-black text-slate-800 leading-tight">{formData.nome || 'Novo Cliente'}</h2>
                         <div className="flex items-center gap-3 mt-1">
                             <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-200">
                                 {formData.origem}
@@ -202,15 +195,15 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     </div>
                 </div>
 
-                {/* KPIs */}
+                {/* KPIs - ZERADOS PARA NOVOS CLIENTES */}
                 <div className="grid grid-cols-3 gap-2 py-2">
                     <div className="text-center p-3 bg-slate-50/50 rounded-2xl border border-slate-50">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Atendimentos</p>
-                        <p className="text-lg font-black text-slate-700">12</p>
+                        <p className="text-lg font-black text-slate-700">{isNew ? '0' : '12'}</p>
                     </div>
                     <div className="text-center p-3 bg-slate-50/50 rounded-2xl border border-slate-50">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Ticket Médio</p>
-                        <p className="text-lg font-black text-slate-700">R$ 85</p>
+                        <p className="text-lg font-black text-slate-700">R$ {isNew ? '0' : '85'}</p>
                     </div>
                     <div className="text-center p-3 bg-rose-50 rounded-2xl border border-rose-100">
                         <p className="text-[10px] font-bold text-rose-400 uppercase tracking-tighter">Saldo</p>
@@ -226,13 +219,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 <button onClick={() => setActiveTab('atividades')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'atividades' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Log</button>
             </nav>
 
-            {/* CONTEÚDO */}
             <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50">
                 <div className="max-w-3xl mx-auto space-y-6 pb-20">
                     {activeTab === 'geral' && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                             
-                            {/* SEÇÃO 1: DADOS PESSOAIS */}
                             <Card title="Informações Pessoais" icon={<User size={18} />}>
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2">
                                     {!isEditing ? (
@@ -247,7 +238,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         </>
                                     ) : (
                                         <>
-                                            <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} span="col-span-full md:col-span-2" />
+                                            <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} placeholder="Nome e Sobrenome" span="col-span-full md:col-span-2" />
                                             <EditField label="Apelido" name="apelido" value={formData.apelido} onChange={handleInputChange} placeholder="Ex: Gabi" />
                                             <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} placeholder="000.000.000-00" />
                                             <EditField label="RG" name="rg" value={formData.rg} onChange={handleInputChange} placeholder="00.000.000-0" />
@@ -267,7 +258,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 </div>
                             </Card>
 
-                            {/* SEÇÃO 2: CONTATO */}
                             <Card title="Canais de Contato" icon={<Phone size={18} />}>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
                                     {!isEditing ? (
@@ -284,7 +274,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 </div>
                             </Card>
 
-                            {/* SEÇÃO 3: ENDEREÇO COMPLETO */}
                             <Card title="Endereço e Localização" icon={<Home size={18} />}>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2">
                                     {!isEditing ? (
@@ -299,17 +288,16 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     ) : (
                                         <>
                                             <EditField label="CEP" name="cep" value={formData.cep} onChange={handleInputChange} placeholder="00000-000" />
-                                            <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} span="col-span-full md:col-span-3" />
-                                            <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} />
-                                            <EditField label="Bairro" name="bairro" value={formData.bairro} onChange={handleInputChange} />
-                                            <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} />
+                                            <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} placeholder="Rua, Av..." span="col-span-full md:col-span-3" />
+                                            <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} placeholder="123" />
+                                            <EditField label="Bairro" name="bairro" value={formData.bairro} onChange={handleInputChange} placeholder="Bairro" />
+                                            <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} placeholder="Sua Cidade" />
                                             <EditField label="Estado" name="estado" value={formData.estado} onChange={handleInputChange} placeholder="UF" />
                                         </>
                                     )}
                                 </div>
                             </Card>
 
-                            {/* SEÇÃO 4: CONFIGURAÇÕES */}
                             <Card title="Configurações e Origem" icon={<Settings size={18} />}>
                                 <div className="space-y-6">
                                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">

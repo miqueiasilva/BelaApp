@@ -112,6 +112,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const [currentDate, setCurrentDate] = useState(new Date());
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
+    const [orderedProfessionals, setOrderedProfessionals] = useState<LegacyProfessional[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [periodType, setPeriodType] = useState<PeriodType>('Dia');
     const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
@@ -146,6 +147,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         };
     }, []);
 
+    useEffect(() => {
+        if (resources.length > 0) {
+            setOrderedProfessionals(resources);
+        }
+    }, [resources]);
+
     const fetchResources = async () => {
         try {
             const { data, error } = await supabase.from('professionals').select('id, name, photo_url, role').order('name');
@@ -159,6 +166,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 })));
             }
         } catch (e) { console.error("Error resources:", e); }
+    };
+
+    const moveProfessional = (index: number, direction: 'left' | 'right') => {
+        const newOrder = [...orderedProfessionals];
+        const targetIndex = direction === 'left' ? index - 1 : index + 1;
+
+        if (targetIndex >= 0 && targetIndex < newOrder.length) {
+            const temp = newOrder[index];
+            newOrder[index] = newOrder[targetIndex];
+            newOrder[targetIndex] = temp;
+            setOrderedProfessionals(newOrder);
+        }
     };
 
     const fetchAppointments = async () => {
@@ -189,18 +208,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } catch (e: any) {
             if (e.name !== 'AbortError') console.error("Fetch error:", e);
         } finally { if (isMounted.current) setIsLoadingData(false); }
-    };
-
-    // FUNÇÃO PARA REORDENAR PROFISSIONAIS
-    const moveProfessional = (index: number, direction: 'left' | 'right') => {
-        const newResources = [...resources];
-        const targetIndex = direction === 'left' ? index - 1 : index + 1;
-        
-        if (targetIndex < 0 || targetIndex >= newResources.length) return;
-        
-        // Troca de posição (Swap)
-        [newResources[index], newResources[targetIndex]] = [newResources[targetIndex], newResources[index]];
-        setResources(newResources);
     };
 
     const handleSaveAppointment = async (app: LegacyAppointment) => {
@@ -256,8 +263,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 subtitle: format(day, 'dd/MM'), type: 'date', data: day 
             }));
         }
-        return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
-    }, [periodType, currentDate, resources]);
+        return orderedProfessionals.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
+    }, [periodType, currentDate, orderedProfessionals]);
 
     const filteredAppointments = useMemo(() => {
         if (periodType === 'Dia' || periodType === 'Lista') return appointments.filter(a => isSameDay(a.start, currentDate));
@@ -298,7 +305,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         <div className="flex h-full bg-white relative flex-col font-sans">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-20">
+            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30 shadow-sm">
                 <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
                     <div className="flex items-center gap-4">
                         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -356,13 +363,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
                 <div className="min-w-full">
                     {/* Header Grid */}
-                    <div className="grid sticky top-0 z-20 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        {/* CANTO SUPERIOR ESQUERDO FIXO */}
-                        <div className="sticky left-0 z-[70] bg-white border-r border-slate-200 h-20 min-w-[60px] flex items-center justify-center shadow-[4px_0_8px_rgba(0,0,0,0.05)]">
+                    <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
+                        <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-sm">
                             <Maximize2 size={16} className="text-slate-300" />
                         </div>
-                        {columns.map((col, index) => (
-                            <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-20 bg-slate-50/10 group/header relative">
+                        {columns.map((col, idx) => (
+                            <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-24 bg-slate-50/10 group relative">
                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-full max-w-[200px] overflow-hidden">
                                     {col.photo && <img src={col.photo} alt={col.title} className="w-8 h-8 rounded-full object-cover border border-orange-100 flex-shrink-0" />}
                                     <div className="flex flex-col overflow-hidden">
@@ -373,23 +379,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 
                                 {/* CONTROLES DE REORDENAÇÃO */}
                                 {periodType === 'Dia' && col.type === 'professional' && (
-                                    <div className="absolute inset-x-0 bottom-1 flex justify-center gap-4 opacity-0 group-hover/header:opacity-100 transition-opacity">
-                                        {index > 0 && (
+                                    <div className="absolute inset-x-0 bottom-1 flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {idx > 0 && (
                                             <button 
-                                                onClick={(e) => { e.stopPropagation(); moveProfessional(index, 'left'); }}
-                                                className="p-1 bg-white hover:bg-orange-500 hover:text-white rounded-full text-slate-400 shadow-sm transition-all"
-                                                title="Mover para esquerda"
+                                                onClick={(e) => { e.stopPropagation(); moveProfessional(idx, 'left'); }}
+                                                className="p-1 bg-white text-slate-400 hover:text-orange-500 rounded border border-slate-200 shadow-sm transition-colors"
                                             >
-                                                <ChevronLeft size={12} />
+                                                <ChevronLeft size={14} />
                                             </button>
                                         )}
-                                        {index < columns.length - 1 && (
+                                        {idx < columns.length - 1 && (
                                             <button 
-                                                onClick={(e) => { e.stopPropagation(); moveProfessional(index, 'right'); }}
-                                                className="p-1 bg-white hover:bg-orange-500 hover:text-white rounded-full text-slate-400 shadow-sm transition-all"
-                                                title="Mover para direita"
+                                                onClick={(e) => { e.stopPropagation(); moveProfessional(idx, 'right'); }}
+                                                className="p-1 bg-white text-slate-400 hover:text-orange-500 rounded border border-slate-200 shadow-sm transition-colors"
                                             >
-                                                <ChevronRight size={12} />
+                                                <ChevronRight size={14} />
                                             </button>
                                         )}
                                     </div>
@@ -400,10 +404,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
                     {/* Main Grid Body */}
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        {/* COLUNA DE HORÁRIOS FIXA (STICKY) */}
-                        <div className="sticky left-0 z-50 bg-slate-50 border-r border-slate-200 min-w-[60px] shadow-[4px_0_12px_rgba(0,0,0,0.05)]">
+                        {/* Time Column Sticky */}
+                        <div className="sticky left-0 z-20 bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_12px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
-                                <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-white/50 border-dashed bg-slate-50">
+                                <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed">
                                     <span>{time}</span>
                                 </div>
                             ))}
