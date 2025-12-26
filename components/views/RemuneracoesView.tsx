@@ -1,10 +1,10 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { initialAppointments } from '../../data/mockData';
 import { format, isSameMonth, addMonths } from 'date-fns';
 // FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
 import { ptBR as pt } from 'date-fns/locale';
-import { Wallet, ChevronDown, ChevronUp, Download, CheckCircle, Loader2, User } from 'lucide-react';
+import { Wallet, ChevronDown, ChevronUp, Download, CheckCircle, Loader2, User, AlertCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 
 const DEFAULT_COMMISSION_RATE = 0.5; // 50%
@@ -14,28 +14,53 @@ const RemuneracoesView: React.FC = () => {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [professionals, setProfessionals] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const isMounted = useRef(true);
 
   const handlePrevMonth = () => setCurrentDate(prev => addMonths(prev, -1));
   const handleNextMonth = () => setCurrentDate(prev => addMonths(prev, 1));
 
   // Fetch real professionals from database
-  useEffect(() => {
-    const fetchStaff = async () => {
-        setIsLoading(true);
-        try {
-            const { data, error } = await supabase
-                .from('professionals')
-                .select('*')
-                .order('name');
-            if (error) throw error;
-            setProfessionals(data || []);
-        } catch (e) {
-            console.error("Erro ao carregar equipe para remunerações:", e);
-        } finally {
+  const fetchStaff = async () => {
+    if (!isMounted.current) return;
+    setIsLoading(true);
+    setError(null);
+
+    // Watchdog Timer: 10s timeout
+    const safetyTimeout = setTimeout(() => {
+        if (isLoading && isMounted.current) {
             setIsLoading(false);
+            setError("O servidor demorou muito para responder. Tente novamente.");
         }
-    };
+    }, 10000);
+
+    try {
+        const { data, error } = await supabase
+            .from('professionals')
+            .select('*')
+            .order('name');
+        
+        if (error) throw error;
+        
+        if (isMounted.current) {
+            setProfessionals(data || []);
+        }
+    } catch (e: any) {
+        if (isMounted.current) {
+            setError(e.message || "Erro ao carregar dados financeiros.");
+        }
+    } finally {
+        clearTimeout(safetyTimeout);
+        if (isMounted.current) setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    isMounted.current = true;
     fetchStaff();
+    return () => {
+        isMounted.current = false;
+    };
   }, []);
 
   const filteredAppointments = useMemo(() => {
@@ -49,7 +74,7 @@ const RemuneracoesView: React.FC = () => {
     return professionals.map(prof => {
       const apps = filteredAppointments.filter(a => Number(a.professional.id) === Number(prof.id));
       const totalRevenue = apps.reduce((acc, curr) => acc + curr.service.price, 0);
-      const commission = totalRevenue * (prof.commission_rate / 100 || DEFAULT_COMMISSION_RATE);
+      const commission = totalRevenue * ((prof.commission_rate || 50) / 100);
       return {
         professional: prof,
         appointments: apps,
@@ -67,7 +92,25 @@ const RemuneracoesView: React.FC = () => {
     return (
         <div className="h-full flex flex-col items-center justify-center text-slate-400">
             <Loader2 className="animate-spin w-10 h-10 mb-4 text-orange-500" />
-            <p className="font-medium">Carregando dados financeiros...</p>
+            <p className="font-medium animate-pulse">Calculando remunerações...</p>
+        </div>
+    );
+  }
+
+  if (error) {
+    return (
+        <div className="h-full flex flex-col items-center justify-center p-8 text-center">
+            <div className="bg-red-50 p-6 rounded-3xl mb-4 border border-red-100 max-w-sm">
+                <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                <h3 className="font-bold text-red-800 text-lg mb-2">Ops! Algo deu errado</h3>
+                <p className="text-red-600 text-sm mb-6">{error}</p>
+                <button 
+                    onClick={fetchStaff}
+                    className="w-full bg-red-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2"
+                >
+                    <RefreshCw size={18} /> Tentar Novamente
+                </button>
+            </div>
         </div>
     );
   }
@@ -85,13 +128,13 @@ const RemuneracoesView: React.FC = () => {
         </div>
         
         <div className="flex items-center bg-white rounded-lg border border-slate-200 shadow-sm p-1">
-          <button onClick={handlePrevMonth} className="p-2 hover:bg-slate-100 rounded-md text-slate-600">
+          <button onClick={handlePrevMonth} className="p-2 hover:bg-slate-100 rounded-md text-slate-600 transition-colors">
             <ChevronDown className="w-5 h-5 rotate-90" />
           </button>
           <div className="px-4 font-semibold text-slate-700 min-w-[160px] text-center capitalize">
             {format(currentDate, 'MMMM yyyy', { locale: pt })}
           </div>
-          <button onClick={handleNextMonth} className="p-2 hover:bg-slate-100 rounded-md text-slate-600">
+          <button onClick={handleNextMonth} className="p-2 hover:bg-slate-100 rounded-md text-slate-600 transition-colors">
             <ChevronDown className="w-5 h-5 -rotate-90" />
           </button>
         </div>
@@ -184,7 +227,7 @@ const RemuneracoesView: React.FC = () => {
                                                 {app.service.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                             </td>
                                             <td className="px-4 py-2 text-right text-green-600 font-medium">
-                                                + {(app.service.price * (item.professional.commission_rate / 100 || DEFAULT_COMMISSION_RATE)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                + {(app.service.price * ((item.professional.commission_rate || 50) / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                             </td>
                                         </tr>
                                     ))}

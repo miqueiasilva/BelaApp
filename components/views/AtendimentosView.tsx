@@ -76,7 +76,7 @@ const TimelineIndicator = () => {
         
         return () => {
             isMounted = false;
-            clearInterval(intervalId); // CRITICAL: Kill timer on unmount
+            clearInterval(intervalId); // CRITICAL: Kill timer to prevent deadlock
         };
     }, []);
     
@@ -126,7 +126,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         isMounted.current = true;
         fetchResources();
         return () => {
-            isMounted.current = false; // Kill any pending state updates
+            isMounted.current = false; // Kill state updates
+            // Force reset any UI block if needed
         };
     }, []);
 
@@ -155,6 +156,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const fetchAppointments = async () => {
         if (!isMounted.current) return;
         setIsLoadingData(true);
+        
+        // Safety timeout for loading
+        const safetyTimeout = setTimeout(() => {
+            if (isLoadingData && isMounted.current) {
+                setIsLoadingData(false);
+                setToast({ message: "O carregamento está demorando. Verifique sua conexão.", type: "info" });
+            }
+        }, 10000);
+
         try {
             const { data, error } = await supabase.from('appointments').select('*');
             if (error) throw error;
@@ -188,6 +198,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } catch (e) {
             console.error("Error fetching appointments:", e);
         } finally {
+            clearTimeout(safetyTimeout);
             if (isMounted.current) setIsLoadingData(false);
         }
     };
@@ -362,7 +373,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             </header>
 
             <div className="flex flex-1 overflow-hidden relative">
-                {/* Fix: Container com altura mínima garantida para evitar colapso */}
                 <div className="flex-1 overflow-auto bg-slate-50 md:bg-white relative min-h-[500px]">
                     {(periodType === 'Dia' || periodType === 'Semana') && (
                         <div className="relative min-h-full min-w-full">

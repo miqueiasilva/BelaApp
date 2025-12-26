@@ -45,28 +45,24 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     };
 
     const handleLogout = async () => {
-        const confirm = window.confirm("Deseja realmente sair do sistema?");
-        if (!confirm) return;
+        const confirmLogout = window.confirm("Deseja realmente sair do sistema?");
+        if (!confirmLogout) return;
 
         try {
-            // Tenta o signOut mas não bloqueia a main thread se o servidor não responder
+            // Tenta avisar o servidor, mas com timeout agressivo de 2s para não travar a UI
             await Promise.race([
                 supabase.auth.signOut(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Logout Timeout')), 2000))
             ]);
-        } catch (error) {
-            console.warn("Logout suave expirou, forçando limpeza local.");
+        } catch (e) {
+            console.warn("Logout suave falhou ou expirou. Executando Hard Logout.", e);
         } finally {
-            // Lógica de Hard Logout - Limpa TUDO e força reload
+            // HARD LOGOUT: Limpeza total e forçada
             localStorage.clear();
             sessionStorage.clear();
-            // Preserva apenas chaves críticas de configuração se existirem
-            const url = localStorage.getItem('VITE_SUPABASE_URL');
-            const key = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
-            if (url) localStorage.setItem('VITE_SUPABASE_URL', url);
-            if (key) localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
             
-            window.location.href = '/'; // Hard reload para estado inicial
+            // Força o navegador a descartar o estado da aplicação e limpar a memória RAM
+            window.location.href = '/'; 
         }
     };
 
