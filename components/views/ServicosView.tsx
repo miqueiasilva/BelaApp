@@ -1,44 +1,42 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     Plus, Scissors, Clock, DollarSign, Edit2, Trash2, 
-    Loader2, Search, X, CheckCircle, AlertTriangle, RefreshCw
+    Loader2, Search, X, CheckCircle, AlertTriangle, RefreshCw,
+    LayoutGrid, List, FileSpreadsheet, SlidersHorizontal, ChevronRight,
+    Tag, MoreVertical, Filter, Download, ArrowUpRight
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { Service } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
+import ServiceModal from '../modals/ServiceModal';
+
+type ViewMode = 'list' | 'kanban';
 
 const ServicosView: React.FC = () => {
+    // --- State ---
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
+    const [filterCategory, setFilterCategory] = useState<string>('all');
+    const [viewMode, setViewMode] = useState<ViewMode>('list');
+    const [selectedIds, setSelectedIds] = useState<number[]>([]);
     
-    // Estados para o Seletor de Tempo (HH:MM)
-    const [localHours, setLocalHours] = useState(0);
-    const [localMinutes, setLocalMinutes] = useState(30);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     const isMounted = useRef(true);
     const abortControllerRef = useRef<AbortController | null>(null);
 
+    // --- Data Fetching ---
     const fetchServices = async () => {
         if (!isMounted.current) return;
-        
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
 
         setLoading(true);
         setError(null);
-
-        const watchdog = setTimeout(() => {
-            if (isMounted.current && loading) {
-                setLoading(false);
-                setError("O tempo limite de conexão foi excedido (8s).");
-            }
-        }, 8000);
 
         try {
             const { data, error: sbError } = await supabase
@@ -48,15 +46,12 @@ const ServicosView: React.FC = () => {
                 .abortSignal(abortControllerRef.current.signal);
 
             if (sbError) throw sbError;
-            if (isMounted.current) {
-                setServices(data || []);
-            }
+            if (isMounted.current) setServices(data || []);
         } catch (error: any) {
             if (isMounted.current && error.name !== 'AbortError') {
                 setError(error.message || "Erro inesperado ao carregar catálogo.");
             }
         } finally {
-            clearTimeout(watchdog);
             if (isMounted.current) setLoading(false);
         }
     };
@@ -66,51 +61,50 @@ const ServicosView: React.FC = () => {
         fetchServices();
         return () => {
             isMounted.current = false;
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
-            }
+            if (abortControllerRef.current) abortControllerRef.current.abort();
         };
     }, []);
 
-    // Atualiza o tempo local quando abre o modal ou muda o serviço
-    useEffect(() => {
-        if (editingService?.duracao_min !== undefined) {
-            setLocalHours(Math.floor(editingService.duracao_min / 60));
-            setLocalMinutes(editingService.duracao_min % 60);
-        }
-    }, [editingService]);
+    // --- Derived Data ---
+    const categories = useMemo(() => {
+        const cats = services.map(s => (s as any).categoria || 'Geral');
+        return Array.from(new Set(cats)).sort();
+    }, [services]);
 
-    const handleOpenModal = (service?: Service) => {
-        const targetService = service || { nome: '', preco: 0, duracao_min: 30, cor_hex: '#f97316', ativo: true };
-        setEditingService(targetService);
-        setIsModalOpen(true);
-    };
+    const filteredServices = useMemo(() => {
+        return services.filter(s => {
+            const matchesSearch = s.nome.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesCat = filterCategory === 'all' || (s as any).categoria === filterCategory;
+            return matchesSearch && matchesCat;
+        });
+    }, [services, searchTerm, filterCategory]);
 
-    const handleSave = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!editingService?.nome) return;
-        
-        setIsSaving(true);
-        
-        // Converte horas/minutos de volta para o total de minutos
-        const totalMinutes = (Number(localHours) * 60) + Number(localMinutes);
-        const payload = { ...editingService, duracao_min: totalMinutes };
+    const groupedServices = useMemo(() => {
+        const groups: Record<string, Service[]> = {};
+        filteredServices.forEach(s => {
+            const cat = (s as any).categoria || 'Geral';
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push(s);
+        });
+        return groups;
+    }, [filteredServices]);
 
+    // --- Handlers ---
+    const handleSave = async (payload: any) => {
         try {
             if (payload.id) {
                 const { error } = await supabase.from('services').update(payload).eq('id', payload.id);
                 if (error) throw error;
+                setToast({ message: 'Serviço atualizado!', type: 'success' });
             } else {
                 const { error } = await supabase.from('services').insert([payload]);
                 if (error) throw error;
+                setToast({ message: 'Serviço cadastrado!', type: 'success' });
             }
-            setToast({ message: 'Serviço salvo com sucesso!', type: 'success' });
-            setIsModalOpen(false);
             fetchServices();
-        } catch (error: any) { 
-            setToast({ message: error.message, type: 'error' }); 
-        } finally { 
-            setIsSaving(false); 
+        } catch (error: any) {
+            setToast({ message: error.message, type: 'error' });
+            throw error;
         }
     };
 
@@ -124,87 +118,236 @@ const ServicosView: React.FC = () => {
         } catch (e: any) {
             setToast({ message: e.message, type: 'error' });
         }
-    }
+    };
 
-    const filteredServices = services.filter(s => s.nome.toLowerCase().includes(searchTerm.toLowerCase()));
+    const formatDuration = (min: number) => {
+        const h = Math.floor(min / 60);
+        const m = min % 60;
+        if (h > 0) return `${h}h${m > 0 ? ` ${m}min` : ''}`;
+        return `${m} min`;
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.length === filteredServices.length) setSelectedIds([]);
+        else setSelectedIds(filteredServices.map(s => s.id));
+    };
+
+    const toggleSelect = (id: number) => {
+        setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    };
 
     return (
-        <div className="h-full flex flex-col bg-slate-50 relative font-sans">
+        <div className="h-full flex flex-col bg-slate-50 relative font-sans overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            <header className="bg-white border-b border-slate-200 px-8 py-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <Scissors className="text-orange-500" /> Serviços e Preços
-                    </h1>
+            {/* TOOLBAR HEADER */}
+            <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 z-20">
+                <div className="flex items-center gap-4">
+                    <div>
+                        <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 leading-none">
+                            <Scissors className="text-orange-500" size={24} /> 
+                            Serviços
+                        </h1>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{services.length} itens no total</span>
+                    </div>
+
+                    <div className="hidden lg:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 ml-4">
+                        <button 
+                            onClick={() => setViewMode('list')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <List size={18} />
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('kanban')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'kanban' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <LayoutGrid size={18} />
+                        </button>
+                    </div>
                 </div>
-                <button onClick={() => handleOpenModal()} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg transition-all active:scale-95">
-                    <Plus size={20} /> Novo Serviço
-                </button>
+
+                {/* FILTROS CENTRAIS */}
+                <div className="flex-1 max-w-2xl flex items-center gap-2">
+                    <div className="relative flex-1 group">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-orange-500 transition-colors" size={18} />
+                        <input 
+                            type="text" 
+                            placeholder="Buscar serviço..." 
+                            value={searchTerm} 
+                            onChange={(e) => setSearchTerm(e.target.value)} 
+                            className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-orange-100 focus:border-orange-400 outline-none transition-all text-sm font-medium" 
+                        />
+                    </div>
+                    
+                    <div className="relative">
+                        <select 
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                            className="appearance-none bg-slate-50 border border-slate-200 rounded-2xl pl-4 pr-10 py-2.5 text-xs font-black uppercase tracking-wider text-slate-600 focus:ring-2 focus:ring-orange-100 outline-none cursor-pointer hover:bg-white transition-all"
+                        >
+                            <option value="all">Todas Categorias</option>
+                            {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                        </select>
+                        <Filter size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    </div>
+                    
+                    <button className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-slate-400 hover:text-orange-500 hover:border-orange-200 transition-all shadow-sm">
+                        <SlidersHorizontal size={18} />
+                    </button>
+                </div>
+
+                <div className="flex items-center gap-3">
+                    <div className="relative group">
+                        <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all">
+                            <Download size={16} /> Exportar
+                        </button>
+                        {/* Popover de exportação simulado */}
+                    </div>
+
+                    <button onClick={() => { setEditingService(null); setIsModalOpen(true); }} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95">
+                        <Plus size={20} /> Novo Serviço
+                    </button>
+                </div>
             </header>
 
-            <main className="flex-1 overflow-y-auto p-8">
-                <div className="max-w-6xl mx-auto">
-                    {error && (
-                        <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-[32px] flex flex-col items-center text-center text-amber-800">
-                           <AlertTriangle size={32} className="mb-3 text-amber-600" />
-                           <h3 className="font-bold text-lg mb-1">Atenção</h3>
-                           <p className="text-sm mb-4 max-w-sm">{error}</p>
-                           <button onClick={fetchServices} className="bg-amber-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-amber-700 transition-colors">
-                                <RefreshCw size={18} /> Tentar carregar novamente
-                           </button>
+            {/* MAIN CONTENT AREA */}
+            <main className="flex-1 overflow-hidden relative flex flex-col">
+                
+                {/* AÇÕES EM MASSA (BARRA FLUTUANTE) */}
+                {selectedIds.length > 0 && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-6 animate-in slide-in-from-top-4 duration-300">
+                        <span className="text-xs font-black uppercase tracking-widest">{selectedIds.length} selecionados</span>
+                        <div className="w-px h-4 bg-slate-700"></div>
+                        <div className="flex items-center gap-4">
+                            <button className="text-xs font-bold hover:text-orange-400 transition-colors flex items-center gap-2"><Tag size={14}/> Mudar Categoria</button>
+                            <button className="text-xs font-bold hover:text-rose-400 transition-colors flex items-center gap-2"><Trash2 size={14}/> Excluir Todos</button>
                         </div>
-                    )}
+                        <button onClick={() => setSelectedIds([])} className="p-1 hover:bg-white/10 rounded-full"><X size={16}/></button>
+                    </div>
+                )}
 
-                    {!error && (
-                        <div className="mb-8 relative max-w-md">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <input 
-                                type="text" 
-                                placeholder="Buscar por nome do serviço..." 
-                                value={searchTerm} 
-                                onChange={(e) => setSearchTerm(e.target.value)} 
-                                className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all" 
-                            />
-                        </div>
-                    )}
-
+                <div className="flex-1 overflow-auto p-6 scrollbar-hide">
+                    
                     {loading ? (
-                        <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                            <Loader2 className="animate-spin mb-4" size={48} />
-                            <p className="font-medium">Carregando catálogo...</p>
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                            <Loader2 className="animate-spin mb-4 text-orange-500" size={48} />
+                            <p className="font-bold uppercase tracking-widest text-xs">Acessando catálogo...</p>
                         </div>
                     ) : filteredServices.length === 0 ? (
-                        !error && (
-                            <div className="bg-white rounded-[32px] p-16 text-center border border-slate-200 border-dashed text-slate-400">
-                                <Scissors size={64} className="mx-auto opacity-20 mb-4" />
-                                <p>Nenhum serviço encontrado.</p>
-                            </div>
-                        )
+                        <div className="bg-white rounded-[40px] p-20 text-center border-2 border-slate-100 border-dashed max-w-2xl mx-auto my-12">
+                            <Scissors size={80} className="mx-auto text-slate-100 mb-6" />
+                            <h3 className="text-xl font-black text-slate-800 mb-2">Nenhum serviço encontrado</h3>
+                            <p className="text-slate-400 text-sm mb-8">Refine sua busca ou cadastre um novo procedimento agora.</p>
+                            <button onClick={() => setIsModalOpen(true)} className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-black shadow-lg shadow-orange-100">Começar Agora</button>
+                        </div>
+                    ) : viewMode === 'list' ? (
+                        /* VIEW: LISTA (TABELA PROFISSIONAL) */
+                        <div className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm">
+                            <table className="w-full text-left text-sm border-collapse">
+                                <thead>
+                                    <tr className="bg-slate-50/50 border-b border-slate-100">
+                                        <th className="px-6 py-5 w-12">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={selectedIds.length === filteredServices.length && filteredServices.length > 0} 
+                                                onChange={toggleSelectAll}
+                                                className="w-4 h-4 rounded text-orange-500 border-slate-300 focus:ring-orange-500" 
+                                            />
+                                        </th>
+                                        <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Categoria</th>
+                                        <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Procedimento</th>
+                                        <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Tempo</th>
+                                        <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Preço</th>
+                                        <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {filteredServices.map(s => {
+                                        const isSelected = selectedIds.includes(s.id);
+                                        return (
+                                            <tr key={s.id} className={`group hover:bg-orange-50/30 transition-all ${isSelected ? 'bg-orange-50/50' : ''}`}>
+                                                <td className="px-6 py-4">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={isSelected}
+                                                        onChange={() => toggleSelect(s.id)}
+                                                        className="w-4 h-4 rounded text-orange-500 border-slate-300 focus:ring-orange-500" 
+                                                    />
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="inline-flex items-center gap-2 px-2 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-500 uppercase tracking-wider border border-slate-200">
+                                                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
+                                                        {(s as any).categoria || 'Geral'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-800 leading-tight group-hover:text-orange-600 transition-colors">{s.nome}</span>
+                                                        <span className="text-[10px] text-slate-400 font-medium line-clamp-1">{(s as any).descricao || 'Sem descrição cadastrada'}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 font-mono font-bold text-slate-500 text-xs">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Clock size={12} className="text-slate-300" />
+                                                        {formatDuration(s.duracao_min)}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="font-black text-slate-800 tracking-tight">R$ {s.preco.toFixed(2)}</span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button onClick={() => { setEditingService(s); setIsModalOpen(true); }} className="p-2 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all" title="Editar"><Edit2 size={16}/></button>
+                                                        <button onClick={() => handleDelete(s.id)} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Excluir"><Trash2 size={16}/></button>
+                                                        <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"><MoreVertical size={16}/></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {filteredServices.map(service => (
-                                <div key={service.id} className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
-                                    <div className="absolute top-0 left-0 w-2 h-full" style={{ backgroundColor: service.cor_hex || '#f97316' }}></div>
-                                    <div className="flex justify-between items-start mb-4">
-                                        <h3 className="font-bold text-slate-800 text-lg leading-tight group-hover:text-orange-600 transition-colors">{service.nome}</h3>
-                                        <div className="flex gap-1">
-                                            <button onClick={() => handleOpenModal(service)} className="p-2 bg-slate-50 text-slate-500 hover:text-blue-600 rounded-lg transition-colors"><Edit2 size={16} /></button>
-                                            <button onClick={() => handleDelete(service.id)} className="p-2 bg-slate-50 text-slate-500 hover:text-rose-600 rounded-lg transition-colors"><Trash2 size={16} /></button>
-                                        </div>
+                        /* VIEW: KANBAN (AGRUPADO POR CATEGORIA) */
+                        <div className="flex gap-6 min-h-full items-start overflow-x-auto pb-8 scrollbar-hide">
+                            {Object.entries(groupedServices).map(([cat, items]) => (
+                                <div key={cat} className="flex-shrink-0 w-80 flex flex-col max-h-full">
+                                    <div className="flex items-center justify-between mb-4 px-2">
+                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                            {cat}
+                                            {/* FIX: Explicitly cast 'items' to 'Service[]' to resolve property 'length' and 'map' missing on 'unknown' error from Object.entries inference. */}
+                                            <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full text-[9px] font-black">{(items as Service[]).length}</span>
+                                        </h3>
+                                        <button className="text-slate-300 hover:text-orange-500"><Plus size={16}/></button>
                                     </div>
-                                    <div className="space-y-3">
-                                        <div className="flex items-center gap-2 text-slate-600 text-sm font-medium">
-                                            <Clock size={16} className="text-slate-400" />
-                                            <span>
-                                                {Math.floor(service.duracao_min / 60) > 0 ? `${Math.floor(service.duracao_min / 60)}h ` : ''}
-                                                {service.duracao_min % 60} minutos
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2 text-slate-600 text-sm font-bold">
-                                            <DollarSign size={16} className="text-green-500" />
-                                            <span>{service.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                                        </div>
+                                    <div className="space-y-3 overflow-y-auto pr-1">
+                                        {/* FIX: Explicitly cast 'items' to 'Service[]' to resolve property 'map' missing on 'unknown' error. */}
+                                        {(items as Service[]).map(s => (
+                                            <div 
+                                                key={s.id} 
+                                                onClick={() => { setEditingService(s); setIsModalOpen(true); }}
+                                                className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-orange-200 transition-all cursor-pointer group relative overflow-hidden"
+                                            >
+                                                <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <h4 className="font-bold text-slate-800 text-sm leading-tight pr-4 group-hover:text-orange-600 transition-colors">{s.nome}</h4>
+                                                    <button className="text-slate-300 hover:text-slate-600"><MoreVertical size={14}/></button>
+                                                </div>
+                                                <div className="flex items-center justify-between mt-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 uppercase">
+                                                            <Clock size={10} /> {formatDuration(s.duracao_min)}
+                                                        </div>
+                                                    </div>
+                                                    <span className="font-black text-slate-700 text-sm">R$ {s.preco.toFixed(2)}</span>
+                                                </div>
+                                                <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <ArrowUpRight size={14} className="text-orange-400" />
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             ))}
@@ -213,89 +356,14 @@ const ServicosView: React.FC = () => {
                 </div>
             </main>
 
-            {isModalOpen && editingService && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-                        <header className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                            <h2 className="text-xl font-bold text-slate-800">{editingService.id ? 'Editar Serviço' : 'Novo Serviço'}</h2>
-                            <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20} /></button>
-                        </header>
-                        <form onSubmit={handleSave} className="p-8 space-y-6">
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nome do Procedimento</label>
-                                <input 
-                                    required 
-                                    value={editingService.nome} 
-                                    onChange={e => setEditingService({...editingService, nome: e.target.value})} 
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-medium" 
-                                    placeholder="Ex: Escova Progressiva" 
-                                />
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-6">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Preço (R$)</label>
-                                    <input 
-                                        required 
-                                        type="number" 
-                                        step="0.01" 
-                                        value={editingService.preco} 
-                                        onChange={e => setEditingService({...editingService, preco: parseFloat(e.target.value)})} 
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-bold text-slate-800" 
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Duração do Serviço</label>
-                                    <div className="flex items-center gap-2">
-                                        {/* Campo Horas */}
-                                        <div className="relative flex-1 group">
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                value={localHours}
-                                                onChange={(e) => setLocalHours(Math.max(0, parseInt(e.target.value) || 0))}
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-mono text-center text-lg font-bold"
-                                                placeholder="0"
-                                            />
-                                            <span className="absolute right-3 top-4 text-slate-400 text-[10px] font-black uppercase pointer-events-none group-focus-within:text-orange-500">h</span>
-                                        </div>
-
-                                        <span className="text-xl font-bold text-slate-300">:</span>
-
-                                        {/* Campo Minutos */}
-                                        <div className="relative flex-1 group">
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                max="59"
-                                                value={localMinutes}
-                                                onChange={(e) => setLocalMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-mono text-center text-lg font-bold"
-                                                placeholder="00"
-                                            />
-                                            <span className="absolute right-3 top-4 text-slate-400 text-[10px] font-black uppercase pointer-events-none group-focus-within:text-orange-500">m</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between px-1 mt-1">
-                                        <span className="text-[10px] text-slate-400 font-medium">Total: {(Number(localHours) * 60) + Number(localMinutes)} min</span>
-                                        <span className="text-[10px] text-slate-400 font-medium italic">Máx 59min no campo à direita</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="pt-4 flex gap-4">
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-100 transition-all">Cancelar</button>
-                                <button 
-                                    type="submit" 
-                                    disabled={isSaving} 
-                                    className="flex-[2] bg-orange-500 text-white py-4 rounded-2xl font-bold shadow-lg shadow-orange-100 hover:bg-orange-600 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                                >
-                                    {isSaving ? <Loader2 className="animate-spin w-5 h-5" /> : 'Salvar Alterações'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+            {/* MODAL DE CADASTRO/EDIÇÃO */}
+            {isModalOpen && (
+                <ServiceModal 
+                    service={editingService}
+                    availableCategories={categories}
+                    onClose={() => { setIsModalOpen(false); setEditingService(null); }}
+                    onSave={handleSave}
+                />
             )}
         </div>
     );
