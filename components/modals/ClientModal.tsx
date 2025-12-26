@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { X, User, Phone, Mail, Calendar, Tag, Plus, Save, Loader2, Instagram, MapPin, Briefcase, IdCard } from 'lucide-react';
+import { X, User, Phone, Mail, Calendar, Tag, Plus, Save, Loader2, Instagram, MapPin, Briefcase, CreditCard } from 'lucide-react';
 import { Client } from '../../types';
 
 interface ClientModalProps {
@@ -130,7 +129,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
                         <option value="outro">Outro / Prefere não dizer</option>
                     </select>
                 </div>
-                <InputField label="CPF" name="cpf" value={formData.cpf} placeholder="000.000.000-00" icon={IdCard} />
+                <InputField label="CPF" name="cpf" value={formData.cpf} placeholder="000.000.000-00" icon={CreditCard} />
                 <InputField label="RG" name="rg" value={formData.rg} placeholder="00.000.000-0" />
                 <InputField label="Profissão" name="profissao" value={formData.profissao} placeholder="Ex: Designer" icon={Briefcase} />
             </div>
