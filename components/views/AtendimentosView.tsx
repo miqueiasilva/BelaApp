@@ -1,560 +1,837 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { 
-    ChevronLeft, ChevronRight, MessageSquare, 
-    ChevronDown, RefreshCw, Calendar as CalendarIcon,
-    ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
-    LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock
-} from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
-import { ptBR as pt } from 'date-fns/locale/pt-BR';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { format, addDays, startOfWeek, endOfWeek, startOfDay, addMinutes, isSameDay } from "date-fns";
+import { ptBR } from "date-fns/locale";
+// Ajuste este import para o seu projeto:
+import { supabase } from "../services/supabaseClient";
 
-import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
-import AppointmentModal from '../modals/AppointmentModal';
-import BlockTimeModal from '../modals/BlockTimeModal';
-import NewTransactionModal from '../modals/NewTransactionModal';
-import JaciBotPanel from '../JaciBotPanel';
-import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
-import Toast, { ToastType } from '../shared/Toast';
-import { supabase } from '../../services/supabaseClient';
+/**
+ * ✅ Tela de Atendimentos (Agenda)
+ * - Visões: Dia / Semana / Mês / Lista (Mês aqui é simplificado como placeholder)
+ * - Colunas por profissional
+ * - Grid por horário (08:00 a 21:00, step 30min)
+ * - Cards de agendamentos
+ * - Drag & drop entre colunas e horários
+ * - Modal simples (inline) para criar atendimento
+ *
+ * ⚠️ Requer: tailwind no projeto.
+ */
+
+type ViewMode = "dia" | "semana" | "mes" | "lista";
+
+type Professional = {
+  id: string;
+  name: string;
+  avatar_url?: string | null;
+};
+
+type AppointmentStatus = "confirmado" | "pendente" | "cancelado";
+
+type Appointment = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  start_time: string; // HH:mm
+  duration_min: number;
+  professional_id: string;
+  client_name: string;
+  service_name: string;
+  price_cents?: number | null;
+  status: AppointmentStatus;
+  notes?: string | null;
+};
 
 const START_HOUR = 8;
-const END_HOUR = 20; 
-const PIXELS_PER_MINUTE = 80 / 60; 
+const END_HOUR = 21;
+const STEP_MIN = 30;
 
-interface DynamicColumn {
-    id: string | number;
-    title: string;
-    subtitle?: string;
-    photo?: string; 
-    type: 'professional' | 'status' | 'payment' | 'date';
-    data?: LegacyProfessional | Date; 
+// px por minuto (altura do card) — ajuste fino aqui
+const PX_PER_MIN = 1.2;
+// largura mínima de coluna
+const MIN_COL_W = 220;
+
+function toMinutes(hhmm: string) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+function yToTimeMinutes(yPx: number) {
+  // converte posição y em minutos do dia
+  const minutes = Math.round(yPx / PX_PER_MIN);
+  return minutes;
+}
+function minutesToHHmm(totalMin: number) {
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+function snapToStep(mins: number, step = STEP_MIN) {
+  return Math.round(mins / step) * step;
+}
+function dateToISO(d: Date) {
+  return format(d, "yyyy-MM-dd");
 }
 
-const getAppointmentPosition = (start: Date, end: Date) => {
-    const startMinutes = start.getHours() * 60 + start.getMinutes();
-    const endMinutes = end.getHours() * 60 + end.getMinutes();
-    const top = (startMinutes - START_HOUR * 60) * PIXELS_PER_MINUTE;
-    const height = (endMinutes - startMinutes) * PIXELS_PER_MINUTE;
-    return { top: `${top}px`, height: `${height - 2}px` };
-};
+export default function AtendimentosView() {
+  const [view, setView] = useState<ViewMode>("dia");
+  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [professionals, setProfessionals] = useState<Professional[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
 
-const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
-    const baseClasses = "absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer z-10 hover:brightness-95 transition-all overflow-hidden flex flex-col";
-    
-    if (viewMode === 'pagamento') {
-        const isPaid = app.status === 'concluido'; 
-        if (isPaid) return `${baseClasses} bg-emerald-50 border-emerald-500 text-emerald-900`;
-        return `${baseClasses} bg-rose-50 border-rose-500 text-rose-900`;
+  // filtros (simples)
+  const [filterProfessionalIds, setFilterProfessionalIds] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+
+  // modal criar atendimento
+  const [newOpen, setNewOpen] = useState(false);
+  const [newForm, setNewForm] = useState<Partial<Appointment>>({
+    date: dateToISO(new Date()),
+    start_time: "08:00",
+    duration_min: 60,
+    status: "pendente",
+  });
+
+  // drag
+  const dragRef = useRef<{
+    apptId: string;
+    originProfessionalId: string;
+    originStart: string;
+    originDate: string;
+  } | null>(null);
+
+  const dayStart = useMemo(() => startOfDay(currentDate), [currentDate]);
+
+  const weekRange = useMemo(() => {
+    const s = startOfWeek(currentDate, { weekStartsOn: 1 });
+    const e = endOfWeek(currentDate, { weekStartsOn: 1 });
+    return { start: s, end: e };
+  }, [currentDate]);
+
+  const visibleDates = useMemo(() => {
+    if (view === "dia") return [currentDate];
+    if (view === "semana") {
+      const days: Date[] = [];
+      let d = weekRange.start;
+      while (d <= weekRange.end) {
+        days.push(d);
+        d = addDays(d, 1);
+      }
+      return days;
+    }
+    // "mes" e "lista": simplificado (use currentDate como base)
+    return [currentDate];
+  }, [view, currentDate, weekRange]);
+
+  const timeSlots = useMemo(() => {
+    const slots: { label: string; minutes: number }[] = [];
+    const startMin = START_HOUR * 60;
+    const endMin = END_HOUR * 60;
+    for (let m = startMin; m <= endMin; m += STEP_MIN) {
+      slots.push({ label: minutesToHHmm(m), minutes: m });
+    }
+    return slots;
+  }, []);
+
+  const filteredProfessionals = useMemo(() => {
+    if (filterProfessionalIds.size === 0) return professionals;
+    return professionals.filter((p) => filterProfessionalIds.has(p.id));
+  }, [professionals, filterProfessionalIds]);
+
+  const visibleAppointments = useMemo(() => {
+    const isoDates = new Set(visibleDates.map(dateToISO));
+    let list = appointments.filter((a) => isoDates.has(a.date));
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (a) =>
+          a.client_name.toLowerCase().includes(q) ||
+          a.service_name.toLowerCase().includes(q)
+      );
+    }
+    if (filterProfessionalIds.size > 0) {
+      list = list.filter((a) => filterProfessionalIds.has(a.professional_id));
+    }
+    return list;
+  }, [appointments, visibleDates, search, filterProfessionalIds]);
+
+  // --- Supabase fetch ---
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+
+      // 1) profissionais
+      const { data: profs, error: pErr } = await supabase
+        .from("professionals")
+        .select("id, name, avatar_url")
+        .order("name", { ascending: true });
+
+      if (!pErr && profs) setProfessionals(profs as Professional[]);
+
+      // 2) atendimentos (puxa uma janela baseada na view)
+      // Ajuste: se quiser, troque por server-side RPC de range
+      const startISO =
+        view === "semana" ? dateToISO(weekRange.start) : dateToISO(currentDate);
+      const endISO =
+        view === "semana" ? dateToISO(weekRange.end) : dateToISO(currentDate);
+
+      const { data: appts, error: aErr } = await supabase
+        .from("appointments")
+        .select(
+          "id, date, start_time, duration_min, professional_id, client_name, service_name, price_cents, status, notes"
+        )
+        .gte("date", startISO)
+        .lte("date", endISO);
+
+      if (!aErr && appts) setAppointments(appts as Appointment[]);
+
+      setLoading(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, currentDate]);
+
+  async function refreshAppointments() {
+    const startISO =
+      view === "semana" ? dateToISO(weekRange.start) : dateToISO(currentDate);
+    const endISO =
+      view === "semana" ? dateToISO(weekRange.end) : dateToISO(currentDate);
+
+    const { data: appts } = await supabase
+      .from("appointments")
+      .select(
+        "id, date, start_time, duration_min, professional_id, client_name, service_name, price_cents, status, notes"
+      )
+      .gte("date", startISO)
+      .lte("date", endISO);
+
+    if (appts) setAppointments(appts as Appointment[]);
+  }
+
+  function toggleProfessional(id: string) {
+    setFilterProfessionalIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function goPrev() {
+    setCurrentDate((d) => (view === "semana" ? addDays(d, -7) : addDays(d, -1)));
+  }
+  function goNext() {
+    setCurrentDate((d) => (view === "semana" ? addDays(d, 7) : addDays(d, 1)));
+  }
+  function goToday() {
+    setCurrentDate(new Date());
+  }
+
+  // --- Drag handlers ---
+  function onDragStart(appt: Appointment) {
+    dragRef.current = {
+      apptId: appt.id,
+      originProfessionalId: appt.professional_id,
+      originStart: appt.start_time,
+      originDate: appt.date,
+    };
+  }
+
+  async function onDropOnColumn(e: React.DragEvent, targetProfessionalId: string, targetDateISO: string) {
+    e.preventDefault();
+    const drag = dragRef.current;
+    if (!drag) return;
+
+    // descobrir o horário pelo Y do drop
+    const col = e.currentTarget as HTMLDivElement;
+    const rect = col.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+
+    // y -> minutos desde START_HOUR
+    const minutesFromStart = yToTimeMinutes(y);
+    const baseMin = START_HOUR * 60;
+    const dayMin = baseMin + snapToStep(minutesFromStart);
+
+    const snapped = clamp(dayMin, START_HOUR * 60, END_HOUR * 60);
+    const newStart = minutesToHHmm(snapped);
+
+    // update supabase
+    await supabase
+      .from("appointments")
+      .update({
+        professional_id: targetProfessionalId,
+        date: targetDateISO,
+        start_time: newStart,
+      })
+      .eq("id", drag.apptId);
+
+    dragRef.current = null;
+    await refreshAppointments();
+  }
+
+  function onDragOver(e: React.DragEvent) {
+    e.preventDefault();
+  }
+
+  // --- Criar atendimento ---
+  async function createAppointment() {
+    const payload: Partial<Appointment> = {
+      ...newForm,
+    };
+
+    if (!payload.client_name || !payload.service_name || !payload.professional_id || !payload.date || !payload.start_time) {
+      alert("Preencha Cliente, Serviço, Profissional, Data e Horário.");
+      return;
     }
 
-    if (viewMode === 'andamento') {
-        switch (app.status) {
-            case 'concluido': return `${baseClasses} bg-green-100 border-green-600 text-green-900`;
-            case 'cancelado': return `${baseClasses} bg-red-100 border-red-600 text-red-900 opacity-60`;
-            case 'faltou': return `${baseClasses} bg-orange-100 border-orange-600 text-orange-900`;
-            case 'confirmado':
-            case 'confirmado_whatsapp': return `${baseClasses} bg-blue-100 border-blue-600 text-blue-900`;
-            case 'em_atendimento': return `${baseClasses} bg-indigo-100 border-indigo-600 text-indigo-900 animate-pulse`;
-            default: return `${baseClasses} bg-slate-100 border-slate-400 text-slate-700`;
-        }
-    }
+    await supabase.from("appointments").insert({
+      date: payload.date,
+      start_time: payload.start_time,
+      duration_min: payload.duration_min ?? 60,
+      professional_id: payload.professional_id,
+      client_name: payload.client_name,
+      service_name: payload.service_name,
+      price_cents: payload.price_cents ?? null,
+      status: payload.status ?? "pendente",
+      notes: payload.notes ?? null,
+    });
 
-    switch (app.status) {
-        case 'concluido': return `${baseClasses} bg-green-50 border-green-200 text-green-900`;
-        case 'bloqueado': return `${baseClasses} bg-slate-100 border-slate-300 text-slate-500 opacity-80`;
-        case 'confirmado': return `${baseClasses} bg-cyan-50 border-cyan-200 text-cyan-900`;
-        case 'confirmado_whatsapp': return `${baseClasses} bg-teal-50 border-teal-200 text-teal-900`;
-        case 'chegou': return `${baseClasses} bg-purple-50 border-purple-200 text-purple-900`;
-        case 'em_atendimento': return `${baseClasses} bg-indigo-50 border-indigo-200 text-indigo-900 animate-pulse`;
-        case 'faltou': return `${baseClasses} bg-orange-50 border-orange-200 text-orange-900`;
-        case 'cancelado': return `${baseClasses} bg-rose-50 border-rose-200 text-rose-800 opacity-60`;
-        case 'em_espera': return `${baseClasses} bg-stone-50 border-stone-200 text-stone-900`;
-        default: return `${baseClasses} bg-blue-50 border-blue-200 text-blue-900`;
-    }
-}
+    setNewOpen(false);
+    setNewForm({
+      date: dateToISO(currentDate),
+      start_time: "08:00",
+      duration_min: 60,
+      status: "pendente",
+    });
+    await refreshAppointments();
+  }
 
-const TimelineIndicator = () => {
-    const [topPosition, setTopPosition] = useState(0);
-    useEffect(() => {
-        const calculatePosition = () => {
-            const now = new Date();
-            const startOfDayMinutes = START_HOUR * 60;
-            const nowMinutes = now.getHours() * 60 + now.getMinutes();
-            if (nowMinutes < startOfDayMinutes || nowMinutes > END_HOUR * 60) {
-                setTopPosition(-1); return;
-            }
-            const top = (nowMinutes - startOfDayMinutes) * PIXELS_PER_MINUTE;
-            setTopPosition(top);
-        };
-        calculatePosition();
-        const intervalId = setInterval(calculatePosition, 60000); 
-        return () => clearInterval(intervalId);
-    }, []);
-    if (topPosition < 0) return null;
-    return (
-        <div className="absolute w-full z-10 pointer-events-none" style={{ top: `${topPosition}px` }}>
-            <div className="h-px bg-red-500 w-full relative">
-                <div className="absolute -left-1 -top-1 w-2.5 h-2.5 bg-red-500 rounded-full shadow-sm"></div>
-            </div>
+  // --- Render helpers ---
+  const headerTitle = useMemo(() => {
+    if (view === "dia") return format(currentDate, "EEE, dd/MM/yyyy", { locale: ptBR });
+    if (view === "semana")
+      return `${format(weekRange.start, "dd/MM", { locale: ptBR })} - ${format(weekRange.end, "dd/MM/yyyy", { locale: ptBR })}`;
+    if (view === "lista") return "Lista de atendimentos";
+    return format(currentDate, "MMMM yyyy", { locale: ptBR });
+  }, [view, currentDate, weekRange]);
+
+  const gridHeightPx = useMemo(() => {
+    const totalMin = (END_HOUR - START_HOUR) * 60;
+    return totalMin * PX_PER_MIN;
+  }, []);
+
+  function apptStyle(appt: Appointment) {
+    const startMin = toMinutes(appt.start_time);
+    const topMin = startMin - START_HOUR * 60;
+    const top = topMin * PX_PER_MIN;
+    const height = (appt.duration_min || 30) * PX_PER_MIN;
+    return { top, height };
+  }
+
+  // Agrupa por dia para semana
+  const apptsByDate = useMemo(() => {
+    const map = new Map<string, Appointment[]>();
+    for (const a of visibleAppointments) {
+      const arr = map.get(a.date) ?? [];
+      arr.push(a);
+      map.set(a.date, arr);
+    }
+    return map;
+  }, [visibleAppointments]);
+
+  return (
+    <div className="w-full h-full flex bg-neutral-50">
+      {/* Sidebar */}
+      <aside className="w-[280px] border-r bg-white p-4 hidden lg:block">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-lg font-semibold">Atendimentos</div>
+          <button
+            className="px-3 py-2 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600"
+            onClick={() => {
+              setNewForm((f) => ({ ...f, date: dateToISO(currentDate) }));
+              setNewOpen(true);
+            }}
+          >
+            Agendar
+          </button>
         </div>
-    );
-};
 
-interface AtendimentosViewProps {
-    onAddTransaction: (t: FinancialTransaction) => void;
-}
+        <div className="space-y-3">
+          <div className="text-sm font-semibold text-neutral-700">Visualização</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              className={`px-3 py-2 rounded-xl border text-sm ${view === "dia" ? "bg-neutral-900 text-white" : "bg-white"}`}
+              onClick={() => setView("dia")}
+            >
+              Dia
+            </button>
+            <button
+              className={`px-3 py-2 rounded-xl border text-sm ${view === "semana" ? "bg-neutral-900 text-white" : "bg-white"}`}
+              onClick={() => setView("semana")}
+            >
+              Semana
+            </button>
+            <button
+              className={`px-3 py-2 rounded-xl border text-sm ${view === "mes" ? "bg-neutral-900 text-white" : "bg-white"}`}
+              onClick={() => setView("mes")}
+            >
+              Mês
+            </button>
+            <button
+              className={`px-3 py-2 rounded-xl border text-sm ${view === "lista" ? "bg-neutral-900 text-white" : "bg-white"}`}
+              onClick={() => setView("lista")}
+            >
+              Lista
+            </button>
+          </div>
 
-type PeriodType = 'Dia' | 'Semana' | 'Mês' | 'Lista';
-type ViewMode = 'profissional' | 'andamento' | 'pagamento';
+          <div className="pt-2">
+            <div className="text-sm font-semibold text-neutral-700 mb-2">Buscar</div>
+            <input
+              className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+              placeholder="Cliente ou serviço..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
 
-const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction }) => {
-    const [currentDate, setCurrentDate] = useState(new Date());
-    const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
-    const [resources, setResources] = useState<LegacyProfessional[]>([]);
-    const [isLoadingData, setIsLoadingData] = useState(false);
-    const [periodType, setPeriodType] = useState<PeriodType>('Dia');
-    const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
-    const [modalState, setModalState] = useState<{ type: 'appointment' | 'block' | 'sale'; data: any } | null>(null);
-    const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
-    const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
+          <div className="pt-2">
+            <div className="text-sm font-semibold text-neutral-700 mb-2">Profissionais</div>
+            <div className="space-y-2 max-h-[50vh] overflow-auto pr-1">
+              {professionals.map((p) => {
+                const checked = filterProfessionalIds.size === 0 ? true : filterProfessionalIds.has(p.id);
+                return (
+                  <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleProfessional(p.id)}
+                      className="accent-orange-500"
+                    />
+                    <span className="w-7 h-7 rounded-full bg-neutral-200 overflow-hidden flex items-center justify-center text-xs">
+                      {p.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.avatar_url} alt={p.name} className="w-full h-full object-cover" />
+                      ) : (
+                        p.name.slice(0, 2).toUpperCase()
+                      )}
+                    </span>
+                    <span className="text-neutral-800">{p.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="text-xs text-neutral-500 mt-2">
+              Dica: marque/desmarque para filtrar.
+            </div>
+          </div>
+        </div>
+      </aside>
 
-    const [viewMode, setViewMode] = useState<ViewMode>('profissional');
-    const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
-    const [colWidth, setColWidth] = useState(220);
-    const [isAutoWidth, setIsAutoWidth] = useState(false);
-    const [timeSlot, setTimeSlot] = useState(30);
+      {/* Main */}
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* Topbar */}
+        <div className="bg-white border-b px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button className="px-3 py-2 rounded-xl border hover:bg-neutral-50" onClick={goPrev}>
+              ‹
+            </button>
+            <button className="px-3 py-2 rounded-xl border hover:bg-neutral-50" onClick={goToday}>
+              Hoje
+            </button>
+            <button className="px-3 py-2 rounded-xl border hover:bg-neutral-50" onClick={goNext}>
+              ›
+            </button>
+            <div className="ml-2 font-semibold text-neutral-800">{headerTitle}</div>
+          </div>
 
-    const isMounted = useRef(true);
-    const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
-    const abortControllerRef = useRef<AbortController | null>(null);
+          <div className="flex items-center gap-2">
+            <button
+              className="px-3 py-2 rounded-xl border hover:bg-neutral-50"
+              onClick={() => refreshAppointments()}
+              title="Atualizar"
+            >
+              ↻
+            </button>
 
-    useEffect(() => {
-        isMounted.current = true;
-        fetchResources();
-        const channel = supabase.channel('agenda-live')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
-                if (isMounted.current) fetchAppointments();
-            })
-            .subscribe();
-        return () => {
-            isMounted.current = false;
-            if (abortControllerRef.current) abortControllerRef.current.abort();
-            supabase.removeChannel(channel);
-        };
-    }, []);
+            <button
+              className="px-3 py-2 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600 lg:hidden"
+              onClick={() => {
+                setNewForm((f) => ({ ...f, date: dateToISO(currentDate) }));
+                setNewOpen(true);
+              }}
+            >
+              Agendar
+            </button>
+          </div>
+        </div>
 
-    const fetchResources = async () => {
-        try {
-            const { data, error } = await supabase.from('professionals').select('id, name, photo_url, role').order('name');
-            if (error) throw error;
-            if (data && isMounted.current) {
-                setResources(data.map((p: any) => ({
-                    id: p.id,
-                    name: p.name,
-                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
-                    role: p.role
-                })));
-            }
-        } catch (e) { console.error("Error resources:", e); }
-    };
-
-    const fetchAppointments = async () => {
-        if (!isMounted.current) return;
-        if (abortControllerRef.current) abortControllerRef.current.abort();
-        abortControllerRef.current = new AbortController();
-        setIsLoadingData(true);
-        try {
-            const { data, error } = await supabase.from('appointments').select('*').abortSignal(abortControllerRef.current.signal);
-            if (error) throw error;
-            if (data && isMounted.current) {
-                const mapped = data.map(row => {
-                    const start = new Date(row.date);
-                    const dur = row.duration || 30;
-                    return {
-                        id: row.id,
-                        start,
-                        end: new Date(start.getTime() + dur * 60000),
-                        status: row.status as AppointmentStatus,
-                        notas: row.notes || '',
-                        client: { id: 0, nome: row.client_name || 'Cliente', consent: true },
-                        professional: resources.find(p => p.id === Number(row.resource_id)) || { id: 0, name: row.professional_name, avatarUrl: '' },
-                        service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : '#3b82f6' }
-                    } as LegacyAppointment;
-                });
-                setAppointments(mapped);
-            }
-        } catch (e: any) {
-            if (e.name !== 'AbortError') console.error("Fetch error:", e);
-        } finally { if (isMounted.current) setIsLoadingData(false); }
-    };
-
-    const handleSaveAppointment = async (app: LegacyAppointment) => {
-        setIsLoadingData(true);
-        try {
-            const payload = {
-                client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name,
-                service_name: app.service.name, value: app.service.price, duration: app.service.duration,
-                date: app.start.toISOString(), status: app.status, notes: app.notas, origem: 'interno'
-            };
-            if (app.id && appointments.some(a => a.id === app.id)) {
-                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
-                if (error) throw error;
-            } else {
-                const { error } = await supabase.from('appointments').insert([payload]);
-                if (error) throw error;
-            }
-            setToast({ message: 'Agendamento salvo!', type: 'success' });
-            setModalState(null);
-            fetchAppointments();
-        } catch (e: any) { setToast({ message: 'Erro ao salvar.', type: 'error' }); } finally { setIsLoadingData(false); }
-    };
-
-    const handleSaveBlock = async (block: LegacyAppointment) => {
-        setIsLoadingData(true);
-        try {
-            const payload = {
-                resource_id: block.professional.id, professional_name: block.professional.name, service_name: 'Bloqueio',
-                value: 0, duration: block.service.duration, date: block.start.toISOString(), status: 'bloqueado', notes: block.notas, origem: 'interno'
-            };
-            const { error } = await supabase.from('appointments').insert([payload]);
-            if (error) throw error;
-            setToast({ message: 'Horário bloqueado!', type: 'info' });
-            setModalState(null);
-            fetchAppointments();
-        } catch (e: any) { setToast({ message: 'Erro ao bloquear.', type: 'error' }); } finally { setIsLoadingData(false); }
-    };
-
-    useEffect(() => { if (resources.length > 0) fetchAppointments(); }, [resources, currentDate]);
-
-    const handleDateChange = (direction: number) => {
-        if (periodType === 'Dia' || periodType === 'Lista') setCurrentDate(prev => addDays(prev, direction));
-        else if (periodType === 'Semana') setCurrentDate(prev => addWeeks(prev, direction));
-        else if (periodType === 'Mês') setCurrentDate(prev => addMonths(prev, direction));
-    };
-
-    const columns = useMemo<DynamicColumn[]>(() => {
-        if (periodType === 'Semana') {
-            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
-            const end = endOfWeek(currentDate, { weekStartsOn: 1 });
-            return eachDayOfInterval({ start, end }).map(day => ({ 
-                id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), 
-                subtitle: format(day, 'dd/MM'), type: 'date', data: day 
-            }));
-        }
-        return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
-    }, [periodType, currentDate, resources]);
-
-    const filteredAppointments = useMemo(() => {
-        if (periodType === 'Dia' || periodType === 'Lista') return appointments.filter(a => isSameDay(a.start, currentDate));
-        if (periodType === 'Semana') {
-            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
-            const end = endOfWeek(currentDate, { weekStartsOn: 1 });
-            return appointments.filter(a => isWithinInterval(a.start, { start, end }));
-        }
-        if (periodType === 'Mês') return appointments.filter(a => isSameMonth(a.start, currentDate));
-        return appointments;
-    }, [appointments, periodType, currentDate]);
-
-    const timeSlotsLabels = useMemo(() => {
-        const labels = [];
-        const totalMinutes = (END_HOUR - START_HOUR) * 60;
-        const slotsCount = totalMinutes / timeSlot;
-        for (let i = 0; i < slotsCount; i++) {
-            const minutesFromStart = i * timeSlot;
-            const hour = START_HOUR + Math.floor(minutesFromStart / 60);
-            const min = minutesFromStart % 60;
-            labels.push(`${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`);
-        }
-        return labels;
-    }, [timeSlot]);
-
-    const handleGridClick = (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const offsetY = e.clientY - rect.top;
-        const minutes = (offsetY / PIXELS_PER_MINUTE);
-        const totalMinutesFromDayStart = (START_HOUR * 60) + minutes;
-        const roundedMinutes = Math.round(totalMinutesFromDayStart / 15) * 15;
-        const targetDate = new Date(colDate || currentDate);
-        targetDate.setHours(Math.floor(roundedMinutes / 60), roundedMinutes % 60, 0, 0);
-        setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
-    };
-
-    return (
-        <div className="flex h-full bg-white relative flex-col font-sans">
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-            
-            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-20">
-                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
-                    <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                            Agenda {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}
-                        </h2>
-
-                        <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                            <button 
-                                onClick={() => setViewMode('profissional')}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                <LayoutGrid size={14} /> Equipe
-                            </button>
-                            <button 
-                                onClick={() => setViewMode('andamento')}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                <PlayCircle size={14} /> Andamento
-                            </button>
-                            <button 
-                                onClick={() => setViewMode('pagamento')}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                <CreditCard size={14} /> Pagamento
-                            </button>
+        {/* Content */}
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="p-6 text-neutral-600">Carregando agenda…</div>
+          ) : view === "lista" ? (
+            <ListView items={visibleAppointments} professionals={professionals} />
+          ) : view === "mes" ? (
+            <MonthPlaceholder currentDate={currentDate} />
+          ) : (
+            <div className="p-4">
+              {/* Para semana: repete o grid por dia, um abaixo do outro (simples e útil) */}
+              {view === "semana" ? (
+                <div className="space-y-8">
+                  {visibleDates.map((d) => {
+                    const iso = dateToISO(d);
+                    return (
+                      <div key={iso} className="bg-white border rounded-2xl overflow-hidden">
+                        <div className="px-4 py-3 border-b font-semibold">
+                          {format(d, "EEEE, dd/MM/yyyy", { locale: ptBR })}
                         </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-                        <button 
-                            onClick={() => setIsConfigModalOpen(true)}
-                            className="p-2 rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-50 transition-all"
-                            title="Configurações de Exibição"
-                        >
-                            <SlidersHorizontal size={20} />
-                        </button>
-
-                        <button onClick={() => setIsPeriodModalOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">
-                            {periodType} <ChevronDown size={16} />
-                        </button>
-                        
-                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all active:scale-95">Agendar</button>
-                    </div>
+                        <AgendaGrid
+                          dateISO={iso}
+                          professionals={filteredProfessionals}
+                          timeSlots={timeSlots}
+                          gridHeightPx={gridHeightPx}
+                          appointments={(apptsByDate.get(iso) ?? []).filter((a) =>
+                            filteredProfessionals.some((p) => p.id === a.professional_id)
+                          )}
+                          onDragStart={onDragStart}
+                          onDragOver={onDragOver}
+                          onDropOnColumn={onDropOnColumn}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="flex items-center gap-4">
-                    <button onClick={() => setCurrentDate(new Date())} className="text-sm font-bold bg-slate-100 px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors">HOJE</button>
-                    <div className="flex items-center gap-1">
-                        <button onClick={() => handleDateChange(-1)} className="p-2 hover:bg-slate-100 rounded-full"><ChevronLeft size={20} /></button>
-                        <button onClick={() => handleDateChange(1)} className="p-2 hover:bg-slate-100 rounded-full"><ChevronRight size={20} /></button>
-                    </div>
-                    <span className="text-orange-500 font-bold text-lg capitalize tracking-tight">{format(currentDate, "EEE, dd 'de' MMMM", { locale: pt }).replace('.', '')}</span>
+              ) : (
+                <div className="bg-white border rounded-2xl overflow-hidden">
+                  <AgendaGrid
+                    dateISO={dateToISO(currentDate)}
+                    professionals={filteredProfessionals}
+                    timeSlots={timeSlots}
+                    gridHeightPx={gridHeightPx}
+                    appointments={visibleAppointments.filter((a) =>
+                      filteredProfessionals.some((p) => p.id === a.professional_id)
+                    )}
+                    onDragStart={onDragStart}
+                    onDragOver={onDragOver}
+                    onDropOnColumn={onDropOnColumn}
+                  />
                 </div>
-            </header>
+              )}
+            </div>
+          )}
+        </div>
+      </main>
 
-            <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
-                <div className="min-w-full">
-                    {/* Header Grid */}
-                    <div className="grid sticky top-0 z-20 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        {/* CRITICAL FIX: Higher Z-Index for sticky header corner to overlap the time column when scrolling */}
-                        <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-20 min-w-[60px] flex items-center justify-center shadow-[2px_0_8px_rgba(0,0,0,0.05)]">
-                            <Maximize2 size={16} className="text-slate-300" />
-                        </div>
-                        {columns.map(col => (
-                            <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-20 bg-slate-50/10">
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-full max-w-[200px] overflow-hidden">
-                                    {col.photo && <img src={col.photo} alt={col.title} className="w-8 h-8 rounded-full object-cover border border-orange-100 flex-shrink-0" />}
-                                    <div className="flex flex-col overflow-hidden">
-                                        <span className="text-[11px] font-black text-slate-800 leading-tight truncate">{col.title}</span>
-                                        {col.subtitle && <span className="text-[9px] text-slate-400 font-bold uppercase">{col.subtitle}</span>}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Main Grid Body */}
-                    <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        {/* CRITICAL FIX: Higher Z-Index for time column and right shadow to stand above scrolling professional columns */}
-                        <div className="sticky left-0 z-50 bg-white border-r border-slate-200 min-w-[60px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                            {timeSlotsLabels.map(time => (
-                                <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-50/50 border-dashed bg-white">
-                                    <span>{time}</span>
-                                </div>
-                            ))}
-                        </div>
-                        
-                        {columns.map((col, idx) => (
-                            <div 
-                                key={col.id} 
-                                className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair z-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`}
-                                onClick={(e) => {
-                                    if (e.target === e.currentTarget) {
-                                        const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0];
-                                        const date = col.type === 'date' ? (col.data as Date) : currentDate;
-                                        handleGridClick(e, prof, date);
-                                    }
-                                }}
-                            >
-                                {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
-                                {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (app.professional.id === col.id || app.professional.name === col.title))).map(app => {
-                                    const durationInMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
-                                    const isVeryShort = durationInMinutes <= 20;
-                                    const isShort = durationInMinutes <= 35;
-
-                                    return (
-                                        <div
-                                            key={app.id}
-                                            ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }}
-                                            onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }}
-                                            title={`${format(app.start, 'HH:mm')} - ${app.client?.nome || 'Bloqueado'} (${app.service.name})`}
-                                            className={getCardStyle(app, viewMode)}
-                                            style={{ ...getAppointmentPosition(app.start, app.end), borderLeftColor: app.service.color }}
-                                        >
-                                            <div className="flex items-center gap-1 overflow-hidden">
-                                                <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
-                                                {isVeryShort && <span className="font-bold text-slate-900 text-[10px] truncate leading-none flex-1">{app.client?.nome || 'Bloqueado'}</span>}
-                                            </div>
-                                            {!isVeryShort && <p className="font-bold text-slate-900 text-[11px] truncate leading-tight mt-0.5">{app.client?.nome || 'Bloqueado'}</p>}
-                                            {!isShort && <p className="text-[10px] font-medium text-slate-600 truncate leading-tight">{app.service.name}</p>}
-                                            {viewMode === 'pagamento' && app.status === 'concluido' && (
-                                                <div className="absolute top-1 right-1 text-emerald-600"><Check size={12} /></div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        ))}
-                        <TimelineIndicator />
-                    </div>
-                </div>
+      {/* Modal - Novo Atendimento */}
+      {newOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="w-full max-w-md bg-white rounded-2xl border shadow-lg overflow-hidden">
+            <div className="px-4 py-3 border-b flex items-center justify-between">
+              <div className="font-semibold">Novo Atendimento</div>
+              <button className="px-3 py-1 rounded-lg hover:bg-neutral-100" onClick={() => setNewOpen(false)}>
+                ✕
+              </button>
             </div>
 
-            {/* Modals */}
-            {isConfigModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
-                    <div className="relative w-full max-w-sm bg-white rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <header className="px-6 py-4 border-b flex justify-between items-center bg-slate-50">
-                            <h3 className="font-extrabold text-slate-800">Aparência da Grade</h3>
-                            <button onClick={() => setIsConfigModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20} /></button>
-                        </header>
-                        <div className="p-8 space-y-8">
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <label className="text-sm font-black text-slate-700 uppercase tracking-wider">Largura das Colunas</label>
-                                    <span className="text-xs bg-orange-50 text-orange-600 px-2 py-1 rounded-lg font-mono font-bold">{colWidth}px</span>
-                                </div>
-                                <input 
-                                    type="range" min="150" max="450" step="10" 
-                                    disabled={isAutoWidth}
-                                    value={colWidth} onChange={e => setColWidth(Number(e.target.value))}
-                                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500 disabled:opacity-30"
-                                />
-                                <div className="flex items-center gap-3">
-                                    <input type="checkbox" id="autoWidth" checked={isAutoWidth} onChange={e => setIsAutoWidth(e.target.checked)} className="w-5 h-5 rounded text-orange-500 border-slate-300 focus:ring-orange-500" />
-                                    <label htmlFor="autoWidth" className="text-sm font-bold text-slate-600 cursor-pointer">Ajustar ao conteúdo</label>
-                                </div>
-                            </div>
-                            <div className="space-y-4">
-                                <label className="text-sm font-black text-slate-700 uppercase tracking-wider block">Intervalo de Tempo</label>
-                                <div className="grid grid-cols-3 gap-3">
-                                    {[15, 30, 60].map(min => (
-                                        <button 
-                                            key={min} onClick={() => { setTimeSlot(min); setIsConfigModalOpen(false); }}
-                                            className={`py-3 rounded-2xl border-2 font-bold transition-all ${timeSlot === min ? 'bg-orange-500 border-orange-500 text-white shadow-lg' : 'bg-white text-slate-500 border-slate-100 hover:bg-slate-50'}`}
-                                        >
-                                            {min} min
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                        <footer className="p-6 bg-slate-50 flex justify-end">
-                            <button onClick={() => setIsConfigModalOpen(false)} className="px-8 py-3 bg-slate-800 text-white font-bold rounded-2xl hover:bg-slate-900 transition-all">Fechar</button>
-                        </footer>
-                    </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="text-sm text-neutral-600">Cliente</label>
+                <input
+                  className="w-full border rounded-xl px-3 py-2 text-sm"
+                  value={newForm.client_name ?? ""}
+                  onChange={(e) => setNewForm((f) => ({ ...f, client_name: e.target.value }))}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-neutral-600">Data</label>
+                  <input
+                    type="date"
+                    className="w-full border rounded-xl px-3 py-2 text-sm"
+                    value={newForm.date ?? dateToISO(currentDate)}
+                    onChange={(e) => setNewForm((f) => ({ ...f, date: e.target.value }))}
+                  />
                 </div>
-            )}
-
-            {isPeriodModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPeriodModalOpen(false)}></div>
-                    <div className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="p-4 border-b bg-slate-50 font-extrabold text-slate-800 text-center">Visualizar por:</div>
-                        <div className="p-4 space-y-2">
-                            {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (
-                                <button 
-                                    key={item} 
-                                    onClick={() => { setPeriodType(item as PeriodType); setIsPeriodModalOpen(false); }} 
-                                    className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold transition-all ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}
-                                >
-                                    {item}
-                                    {periodType === item && <Check size={18} />}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                <div>
+                  <label className="text-sm text-neutral-600">Horário</label>
+                  <input
+                    type="time"
+                    className="w-full border rounded-xl px-3 py-2 text-sm"
+                    value={newForm.start_time ?? "08:00"}
+                    onChange={(e) => setNewForm((f) => ({ ...f, start_time: e.target.value }))}
+                  />
                 </div>
-            )}
+              </div>
 
-            {selectionMenu && (
-                <>
-                    <div className="fixed inset-0 z-50" onClick={() => setSelectionMenu(null)} />
-                    <div 
-                        className="fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-100 w-64 py-2 animate-in fade-in zoom-in-95 duration-150"
-                        style={{ top: Math.min(selectionMenu.y, window.innerHeight - 200), left: Math.min(selectionMenu.x, window.innerWidth - 260) }}
-                    >
-                        <button onClick={() => { setModalState({ type: 'appointment', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 transition-colors">
-                            <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600"><CalendarIcon size={16} /></div> Novo Agendamento
-                        </button>
-                        <button onClick={() => { setModalState({ type: 'sale', data: { professionalId: selectionMenu.professional.id } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-orange-600 transition-colors">
-                            <div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div> Nova Venda
-                        </button>
-                        <button onClick={() => { setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-orange-600 transition-colors">
-                            <div className="p-1.5 bg-rose-100 rounded-lg text-orange-600"><Ban size={16} /></div> Bloqueio
-                        </button>
-                    </div>
-                </>
-            )}
+              <div>
+                <label className="text-sm text-neutral-600">Profissional</label>
+                <select
+                  className="w-full border rounded-xl px-3 py-2 text-sm bg-white"
+                  value={newForm.professional_id ?? ""}
+                  onChange={(e) => setNewForm((f) => ({ ...f, professional_id: e.target.value }))}
+                >
+                  <option value="">Selecione…</option>
+                  {professionals.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            {activeAppointmentDetail && (
-                <AppointmentDetailPopover 
-                    appointment={activeAppointmentDetail} 
-                    targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} 
-                    onClose={() => setActiveAppointmentDetail(null)} 
-                    onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
-                    onDelete={async (id) => { 
-                        setAppointments(prev => prev.filter(p => p.id !== id));
-                        await supabase.from('appointments').delete().eq('id', id); 
-                        setActiveAppointmentDetail(null);
-                        setToast({ message: 'Agendamento removido.', type: 'info' });
-                    }} 
-                    onUpdateStatus={async (id, status) => { 
-                        setAppointments(prev => prev.map(p => p.id === id ? { ...p, status } : p));
-                        await supabase.from('appointments').update({ status }).eq('id', id); 
-                        setActiveAppointmentDetail(null); 
-                    }} 
+              <div>
+                <label className="text-sm text-neutral-600">Serviço</label>
+                <input
+                  className="w-full border rounded-xl px-3 py-2 text-sm"
+                  value={newForm.service_name ?? ""}
+                  onChange={(e) => setNewForm((f) => ({ ...f, service_name: e.target.value }))}
                 />
-            )}
+              </div>
 
-            {modalState?.type === 'appointment' && (
-                <AppointmentModal 
-                    appointment={modalState.data} 
-                    onClose={() => setModalState(null)} 
-                    onSave={handleSaveAppointment} 
-                />
-            )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-neutral-600">Duração (min)</label>
+                  <input
+                    type="number"
+                    className="w-full border rounded-xl px-3 py-2 text-sm"
+                    value={newForm.duration_min ?? 60}
+                    onChange={(e) => setNewForm((f) => ({ ...f, duration_min: Number(e.target.value) }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-neutral-600">Status</label>
+                  <select
+                    className="w-full border rounded-xl px-3 py-2 text-sm bg-white"
+                    value={newForm.status ?? "pendente"}
+                    onChange={(e) => setNewForm((f) => ({ ...f, status: e.target.value as AppointmentStatus }))}
+                  >
+                    <option value="pendente">Pendente</option>
+                    <option value="confirmado">Confirmado</option>
+                    <option value="cancelado">Cancelado</option>
+                  </select>
+                </div>
+              </div>
 
-            {modalState?.type === 'block' && (
-                <BlockTimeModal 
-                    professional={modalState.data.professional} 
-                    startTime={modalState.data.start} 
-                    onClose={() => setModalState(null)} 
-                    onSave={handleSaveBlock} 
+              <div>
+                <label className="text-sm text-neutral-600">Observação</label>
+                <textarea
+                  className="w-full border rounded-xl px-3 py-2 text-sm"
+                  rows={3}
+                  value={newForm.notes ?? ""}
+                  onChange={(e) => setNewForm((f) => ({ ...f, notes: e.target.value }))}
                 />
-            )}
+              </div>
+            </div>
 
-            {modalState?.type === 'sale' && (
-                <NewTransactionModal 
-                    type="receita"
-                    onClose={() => setModalState(null)}
-                    onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }}
-                />
-            )}
-            
-            <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
-            <div className="fixed bottom-8 right-8 z-10"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
+            <div className="p-4 border-t flex justify-end gap-2">
+              <button className="px-4 py-2 rounded-xl border hover:bg-neutral-50" onClick={() => setNewOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                className="px-4 py-2 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600"
+                onClick={createAppointment}
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
         </div>
-    );
-};
+      )}
+    </div>
+  );
+}
 
-export default AtendimentosView;
+function AgendaGrid(props: {
+  dateISO: string;
+  professionals: Professional[];
+  timeSlots: { label: string; minutes: number }[];
+  gridHeightPx: number;
+  appointments: Appointment[];
+  onDragStart: (appt: Appointment) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDropOnColumn: (e: React.DragEvent, professionalId: string, dateISO: string) => void;
+}) {
+  const { dateISO, professionals, timeSlots, gridHeightPx, appointments, onDragStart, onDragOver, onDropOnColumn } = props;
+
+  const colWidth = useMemo(() => Math.max(MIN_COL_W, Math.floor(1200 / Math.max(1, professionals.length))), [professionals.length]);
+
+  const apptsByProf = useMemo(() => {
+    const map = new Map<string, Appointment[]>();
+    for (const a of appointments) {
+      const arr = map.get(a.professional_id) ?? [];
+      arr.push(a);
+      map.set(a.professional_id, arr);
+    }
+    // ordenar por horário
+    for (const [k, arr] of map.entries()) {
+      arr.sort((x, y) => toMinutes(x.start_time) - toMinutes(y.start_time));
+      map.set(k, arr);
+    }
+    return map;
+  }, [appointments]);
+
+  return (
+    <div className="w-full overflow-x-auto">
+      {/* Header row */}
+      <div className="flex border-b bg-white sticky top-0 z-10">
+        <div className="w-[80px] shrink-0 border-r bg-white" />
+        {professionals.map((p) => (
+          <div
+            key={p.id}
+            className="shrink-0 border-r px-3 py-2 flex items-center gap-2"
+            style={{ width: colWidth }}
+            title={p.name}
+          >
+            <div className="w-8 h-8 rounded-full bg-neutral-200 overflow-hidden flex items-center justify-center text-xs">
+              {p.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={p.avatar_url} alt={p.name} className="w-full h-full object-cover" />
+              ) : (
+                p.name.slice(0, 2).toUpperCase()
+              )}
+            </div>
+            <div className="font-semibold text-sm text-neutral-800 truncate">{p.name}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Body */}
+      <div className="flex">
+        {/* Time axis */}
+        <div className="w-[80px] shrink-0 border-r bg-white">
+          <div style={{ height: gridHeightPx }} className="relative">
+            {timeSlots.map((t) => (
+              <div
+                key={t.label}
+                className="absolute left-0 right-0 text-xs text-neutral-500 px-2"
+                style={{ top: (t.minutes - START_HOUR * 60) * PX_PER_MIN - 8 }}
+              >
+                {t.label}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Columns */}
+        {professionals.map((p) => (
+          <div
+            key={p.id}
+            className="shrink-0 border-r bg-white relative"
+            style={{ width: colWidth }}
+          >
+            {/* grid lines */}
+            <div
+              className="relative"
+              style={{ height: gridHeightPx }}
+              onDragOver={onDragOver}
+              onDrop={(e) => onDropOnColumn(e, p.id, dateISO)}
+            >
+              {timeSlots.map((t) => (
+                <div
+                  key={t.label}
+                  className="absolute left-0 right-0 border-t border-neutral-100"
+                  style={{ top: (t.minutes - START_HOUR * 60) * PX_PER_MIN }}
+                />
+              ))}
+
+              {/* appointments */}
+              {(apptsByProf.get(p.id) ?? []).map((a) => (
+                <AppointmentCard key={a.id} appt={a} onDragStart={onDragStart} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AppointmentCard({ appt, onDragStart }: { appt: Appointment; onDragStart: (appt: Appointment) => void }) {
+  const top = (toMinutes(appt.start_time) - START_HOUR * 60) * PX_PER_MIN;
+  const height = (appt.duration_min || 30) * PX_PER_MIN;
+
+  const statusBadge =
+    appt.status === "confirmado"
+      ? "bg-emerald-100 text-emerald-700"
+      : appt.status === "cancelado"
+      ? "bg-rose-100 text-rose-700"
+      : "bg-amber-100 text-amber-700";
+
+  return (
+    <div
+      draggable
+      onDragStart={() => onDragStart(appt)}
+      className="absolute left-2 right-2 rounded-xl border bg-sky-50 hover:bg-sky-100 cursor-grab active:cursor-grabbing shadow-sm"
+      style={{ top, height, minHeight: 34 }}
+      title={`${appt.client_name} • ${appt.service_name}`}
+    >
+      <div className="p-2 h-full flex flex-col justify-between">
+        <div className="flex items-start justify-between gap-2">
+          <div className="font-semibold text-sm text-neutral-900 truncate">{appt.client_name}</div>
+          <div className={`text-[10px] px-2 py-0.5 rounded-full ${statusBadge}`}>{appt.status}</div>
+        </div>
+        <div className="text-xs text-neutral-700 truncate">{appt.service_name}</div>
+        <div className="text-[11px] text-neutral-500">
+          {appt.start_time} • {appt.duration_min}min
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ListView({ items, professionals }: { items: Appointment[]; professionals: Professional[] }) {
+  const profMap = useMemo(() => new Map(professionals.map((p) => [p.id, p.name])), [professionals]);
+
+  const sorted = useMemo(() => {
+    return [...items].sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return toMinutes(a.start_time) - toMinutes(b.start_time);
+    });
+  }, [items]);
+
+  return (
+    <div className="p-4">
+      <div className="bg-white border rounded-2xl overflow-hidden">
+        <div className="px-4 py-3 border-b font-semibold">Atendimentos</div>
+        <div className="divide-y">
+          {sorted.map((a) => (
+            <div key={a.id} className="px-4 py-3 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="font-semibold text-neutral-900 truncate">
+                  {a.client_name} • {a.service_name}
+                </div>
+                <div className="text-sm text-neutral-600">
+                  {a.date} • {a.start_time} • {a.duration_min}min • {profMap.get(a.professional_id) ?? "—"}
+                </div>
+              </div>
+              <div className="text-xs px-2 py-1 rounded-full border bg-neutral-50 text-neutral-700">
+                {a.status}
+              </div>
+            </div>
+          ))}
+          {sorted.length === 0 && <div className="px-4 py-6 text-neutral-600">Sem atendimentos no período.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MonthPlaceholder({ currentDate }: { currentDate: Date }) {
+  return (
+    <div className="p-6 text-neutral-700">
+      <div className="bg-white border rounded-2xl p-5">
+        <div className="font-semibold mb-2">Visão “Mês” (placeholder)</div>
+        <div className="text-sm text-neutral-600">
+          Aqui você pode evoluir depois para um calendário mensal (grid 7x5).
+          <br />
+          Por enquanto, a tela está focada em <b>Dia</b>, <b>Semana</b> e <b>Lista</b>.
+        </div>
+        <div className="mt-3 text-sm">
+          Mês atual: <b>{format(currentDate, "MMMM yyyy", { locale: ptBR })}</b>
+        </div>
+      </div>
+    </div>
+  );
+}
