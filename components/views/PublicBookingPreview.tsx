@@ -144,21 +144,29 @@ const PublicBookingPreview: React.FC = () => {
 
     // --- Slot Generation Logic ---
     const generateAvailableSlots = async (date: Date, professional: any) => {
-        if (!studio || selectedServices.length === 0) return;
+        if (!selectedServices.length) return;
         setIsLoadingSlots(true);
         setSelectedTime(null);
 
         try {
             const dayKey = weekdayMap[getDay(date)];
-            const businessHours = studio.business_hours?.[dayKey];
+            
+            // Fallback robusto: se não houver configuração, assume 09:00 - 18:00 (exceto Domingo)
+            const fallbackHours = dayKey === 'sunday' 
+                ? { active: false, start: '09:00', end: '18:00' }
+                : { active: true, start: '09:00', end: '18:00' };
 
-            if (!businessHours || !businessHours.active) {
+            const businessHours = studio?.business_hours?.[dayKey] || fallbackHours;
+
+            if (!businessHours.active) {
                 setAvailableSlots([]);
+                setIsLoadingSlots(false);
                 return;
             }
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             
+            // 1. Busca agendamentos do dia para este profissional
             const { data: busyAppointments } = await supabase
                 .from('appointments')
                 .select('date, duration')
@@ -168,20 +176,28 @@ const PublicBookingPreview: React.FC = () => {
                 .lte('date', addDays(startOfDay(date), 1).toISOString());
 
             const slots: string[] = [];
-            const [startH, startM] = businessHours.start.split(':').map(Number);
-            const [endH, endM] = businessHours.end.split(':').map(Number);
+            
+            // Extração de horários (garante fallback se vier string vazia)
+            const [startH, startM] = (businessHours.start || '09:00').split(':').map(Number);
+            const [endH, endM] = (businessHours.end || '18:00').split(':').map(Number);
             
             let currentPointer = new Date(date);
             currentPointer.setHours(startH, startM, 0, 0);
+            
             const endLimit = new Date(date);
             endLimit.setHours(endH, endM, 0, 0);
+            
             const now = new Date();
 
-            while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
+            // Loop de geração de slots
+            while (isBefore(addMinutes(currentPointer, totalDuration), addMinutes(endLimit, 1))) {
+                // Regra 1: Não mostrar horários passados se for hoje
                 if (isSameDay(date, now) && isBefore(currentPointer, now)) {
                     currentPointer = addMinutes(currentPointer, 15);
                     continue;
                 }
+
+                // Regra 2: Verificar colisão com agendamentos existentes
                 const hasOverlap = busyAppointments?.some(app => {
                     const appStart = parseISO(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
@@ -189,11 +205,14 @@ const PublicBookingPreview: React.FC = () => {
                     const slotEnd = addMinutes(currentPointer, totalDuration);
                     return (slotStart < appEnd) && (slotEnd > appStart);
                 });
+
                 if (!hasOverlap) {
                     slots.push(format(currentPointer, 'HH:mm'));
                 }
-                currentPointer = addMinutes(currentPointer, 15);
+
+                currentPointer = addMinutes(currentPointer, 15); // Intervalo de 15min para maior oferta de horários
             }
+
             setAvailableSlots(slots);
         } catch (e) {
             console.error("Erro ao gerar slots", e);
@@ -267,8 +286,6 @@ const PublicBookingPreview: React.FC = () => {
             // 3. Feedback Sucesso
             setToast({ message: "Agendamento realizado com sucesso!", type: 'success' });
             setShowSuccess(true);
-            
-            // Limpar estado para nova reserva se necessário (opcional)
         } catch (e: any) {
             console.error("Erro ao finalizar reserva:", e);
             setToast({ message: `Erro ao agendar: ${e.message}`, type: 'error' });
@@ -313,7 +330,7 @@ const PublicBookingPreview: React.FC = () => {
     );
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans relative pb-40">
+        <div className="min-h-screen bg-slate-50 font-sans relative pb-40 text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
             {/* HEADER */}
@@ -345,15 +362,15 @@ const PublicBookingPreview: React.FC = () => {
                             <Star size={14} fill="currentColor" /> 5.0
                         </div>
                         <span className="text-slate-200">|</span>
-                        <div className="flex items-center gap-1 text-xs font-medium">
-                            <MapPin size={14} className="text-orange-500" /> 
-                            {studio?.address || "Endereço não informado"}
+                        <div className="flex items-center gap-1 text-xs font-medium text-left">
+                            <MapPin size={14} className="text-orange-500 flex-shrink-0" /> 
+                            <span className="truncate max-w-[200px]">{studio?.address || "Endereço não informado"}</span>
                         </div>
                     </div>
                 </div>
 
                 <div className="mt-8 space-y-2">
-                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-2">Escolha os serviços</h2>
+                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-2 text-left">Escolha os serviços</h2>
                     {Object.entries(servicesByCategory).map(([cat, items]) => (
                         <AccordionCategory 
                             key={cat}
@@ -369,7 +386,7 @@ const PublicBookingPreview: React.FC = () => {
             {selectedServices.length > 0 && !isBookingOpen && !showSuccess && (
                 <div className="fixed bottom-0 left-0 right-0 p-6 z-40 bg-gradient-to-t from-white via-white to-white/80 backdrop-blur-md border-t border-slate-100 animate-in slide-in-from-bottom-full duration-500">
                     <div className="max-w-xl mx-auto flex items-center justify-between gap-6">
-                        <div className="flex-1">
+                        <div className="flex-1 text-left">
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                 {selectedServices.length} selecionados
                             </p>
@@ -396,7 +413,7 @@ const PublicBookingPreview: React.FC = () => {
                                         <ChevronLeft size={20} />
                                     </button>
                                 )}
-                                <div>
+                                <div className="text-left">
                                     <h3 className="font-black text-slate-800">
                                         {bookingStep === 1 && "Escolha o Profissional"}
                                         {bookingStep === 2 && "Data e Horário"}
@@ -422,7 +439,7 @@ const PublicBookingPreview: React.FC = () => {
                                                 <img src={p.photo_url || DEFAULT_LOGO} className="w-full h-full object-cover" alt={p.name} />
                                             </div>
                                             <div>
-                                                <p className="font-bold text-slate-800 text-base">{p.name}</p>
+                                                <p className="font-bold text-slate-800 text-base leading-none">{p.name}</p>
                                                 <p className="text-xs text-slate-400 mt-1 font-medium">{p.role}</p>
                                             </div>
                                         </button>
@@ -434,10 +451,10 @@ const PublicBookingPreview: React.FC = () => {
                                 <div className="space-y-8">
                                     {/* Mini Calendário Horizontal */}
                                     <div className="space-y-4">
-                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Selecione o Dia</h4>
+                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1 text-left">Selecione o Dia</h4>
                                         <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
                                             {nextDays.map((date) => {
-                                                const isClosed = !studio.business_hours?.[weekdayMap[getDay(date)]]?.active;
+                                                const isClosed = studio?.business_hours?.[weekdayMap[getDay(date)]]?.active === false;
                                                 const isSelected = isSameDay(date, selectedDate);
                                                 return (
                                                     <button
@@ -450,8 +467,8 @@ const PublicBookingPreview: React.FC = () => {
                                                             'bg-white border-slate-100 text-slate-600 hover:border-orange-200'
                                                         }`}
                                                     >
-                                                        <span className="text-[10px] font-black uppercase">{format(date, 'EEE', { locale: pt })}</span>
-                                                        <span className="text-xl font-black">{format(date, 'dd')}</span>
+                                                        <span className="text-[10px] font-black uppercase leading-none">{format(date, 'EEE', { locale: pt })}</span>
+                                                        <span className="text-xl font-black mt-1 leading-none">{format(date, 'dd')}</span>
                                                     </button>
                                                 );
                                             })}
@@ -460,7 +477,7 @@ const PublicBookingPreview: React.FC = () => {
 
                                     {/* Horários */}
                                     <div className="space-y-4">
-                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Horários Disponíveis</h4>
+                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1 text-left">Horários Disponíveis</h4>
                                         {isLoadingSlots ? (
                                             <div className="py-10 text-center text-slate-400 flex flex-col items-center">
                                                 <Loader2 className="animate-spin mb-2" />
@@ -485,7 +502,12 @@ const PublicBookingPreview: React.FC = () => {
                                         ) : (
                                             <div className="p-8 bg-slate-100/50 rounded-3xl border border-dashed border-slate-200 text-center">
                                                 <Clock className="mx-auto text-slate-300 mb-2" size={32} />
-                                                <p className="text-sm font-bold text-slate-400 leading-tight">Nenhum horário livre para<br/>os serviços selecionados neste dia.</p>
+                                                <p className="text-sm font-bold text-slate-400 leading-tight">
+                                                    {!studio?.business_hours?.[weekdayMap[getDay(selectedDate)]]?.active && studio?.business_hours 
+                                                        ? "O estúdio não abre neste dia." 
+                                                        : "Nenhum horário livre para a duração selecionada neste dia."
+                                                    }
+                                                </p>
                                             </div>
                                         )}
                                     </div>
@@ -503,14 +525,16 @@ const PublicBookingPreview: React.FC = () => {
 
                             {bookingStep === 3 && (
                                 <div className="space-y-6">
-                                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4 text-left">
                                         <div className="flex items-center gap-4 pb-4 border-b border-slate-50">
                                             <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600">
                                                 <Calendar size={24} />
                                             </div>
                                             <div>
-                                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Seu Horário</p>
-                                                <p className="text-base font-black text-slate-800">{format(selectedDate, "dd 'de' MMMM", { locale: pt })} às {selectedTime}</p>
+                                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Seu Horário</p>
+                                                <p className="text-base font-black text-slate-800 leading-tight">
+                                                    {format(selectedDate, "dd 'de' MMMM", { locale: pt })} às {selectedTime}
+                                                </p>
                                             </div>
                                         </div>
 
@@ -528,7 +552,7 @@ const PublicBookingPreview: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="space-y-4">
+                                    <div className="space-y-4 text-left">
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Seu Nome Completo</label>
                                             <input 
@@ -574,16 +598,16 @@ const PublicBookingPreview: React.FC = () => {
                     <h2 className="text-3xl font-black text-slate-800 mb-2">Agendamento Realizado!</h2>
                     <p className="text-slate-500 max-w-xs mb-10">Tudo certo, {clientName.split(' ')[0]}! Reservamos seu horário para o dia {format(selectedDate, 'dd/MM')} às {selectedTime}.</p>
                     
-                    <div className="bg-slate-50 w-full max-w-xs rounded-3xl p-6 border border-slate-100 mb-8">
+                    <div className="bg-slate-50 w-full max-w-xs rounded-3xl p-6 border border-slate-100 mb-8 text-left">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Resumo da Reserva</p>
-                        <div className="space-y-4 text-left">
+                        <div className="space-y-4">
                             <div className="flex items-center gap-3">
                                 <Clock size={16} className="text-orange-500" />
                                 <span className="text-sm font-bold text-slate-700">{selectedTime}</span>
                             </div>
                             <div className="flex items-center gap-3">
                                 <UserCircle2 size={16} className="text-orange-500" />
-                                <span className="text-sm font-bold text-slate-700">{selectedProfessional.name}</span>
+                                <span className="text-sm font-bold text-slate-700">{selectedProfessional?.name}</span>
                             </div>
                         </div>
                     </div>
