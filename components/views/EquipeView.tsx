@@ -71,16 +71,8 @@ const EquipeView: React.FC = () => {
         };
     }, []);
 
-    /**
-     * FUNÇÃO CORRIGIDA: handleSave
-     * Garante que o ID não seja enviado em novos registros para que o banco gere automaticamente.
-     */
+    // Função de Salvamento Robusta (Insert vs Update)
     const handleSave = async (profData: any) => {
-        if (!profData.name || profData.name.trim() === "") {
-            setToast({ message: 'O nome do profissional é obrigatório.', type: 'error' });
-            return;
-        }
-
         try {
             const payload = { ...profData };
             const isEditing = !!payload.id;
@@ -95,52 +87,33 @@ const EquipeView: React.FC = () => {
                 if (error) throw error;
                 setToast({ message: 'Profissional atualizado com sucesso!', type: 'success' });
             } else {
-                // INSERT - REMOÇÃO EXPLÍCITA DO ID PARA AUTO-GERAÇÃO NO BANCO
-                delete payload.id; 
-                
+                // INSERT - Removendo ID explicitamente para deixar o banco gerar
                 const { data, error } = await supabase
                     .from('professionals')
-                    .insert([payload])
+                    .insert([{ ...payload, id: undefined }])
                     .select()
                     .single();
                 
                 if (error) throw error;
                 setToast({ message: 'Novo colaborador cadastrado!', type: 'success' });
-                
-                // Se o componente de detalhe estiver aberto e for uma criação, sincroniza o ID
+                // Se for criação e o fluxo for abrir detalhe:
                 if (data) setSelectedProf(data as any);
             }
             fetchProfessionals();
         } catch (e: any) { 
-            console.error("Erro ao salvar profissional:", e);
-            setToast({ message: `Erro ao salvar: ${e.message}`, type: 'error' }); 
+            setToast({ message: e.message, type: 'error' }); 
         }
     };
 
-    /**
-     * FUNÇÃO CORRIGIDA: safeCreateNew
-     * Inserção imediata de placeholder sem enviar ID.
-     */
-    const safeCreateNew = async () => {
-        try {
-            const { data, error } = await supabase
-                .from('professionals')
-                .insert([{ 
-                    name: 'Novo Profissional', 
-                    role: 'Colaborador', 
-                    active: true, 
-                    online_booking: true, 
-                    commission_rate: 30 
-                }]) // Note: id omitido propositalmente
-                .select()
-                .single();
-
-            if (error) throw error;
-            setSelectedProf(data as any);
-            fetchProfessionals();
-        } catch (e: any) {
-            setToast({ message: `Erro ao criar: ${e.message}`, type: 'error' });
-        }
+    const handleCreateNew = () => {
+        // Agora o handleSave cuida do insert. Vamos abrir o detalhe com um objeto vazio (ID nulo)
+        setSelectedProf({ 
+            name: 'Novo Profissional', 
+            role: 'Colaborador', 
+            active: true, 
+            online_booking: true, 
+            commission_rate: 30 
+        } as any);
     };
 
     const handleToggleActive = async (id: number, currentStatus: boolean) => {
@@ -176,6 +149,24 @@ const EquipeView: React.FC = () => {
             />
         );
     }
+
+    // Se for criação de novo (sem ID ainda), podemos usar o ProfessionalDetail mas precisamos passar o handleSave customizado
+    // Para simplificar este Wizard, usaremos o handleCreateNew atual que insere um placeholder e depois edita.
+    // Mas corrigindo o handleCreateNew para ser seguro:
+    const safeCreateNew = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('professionals')
+                .insert([{ name: 'Novo Profissional', role: 'Colaborador', active: true, online_booking: true, commission_rate: 30, id: undefined }])
+                .select()
+                .single();
+            if (error) throw error;
+            setSelectedProf(data as any);
+            fetchProfessionals();
+        } catch (e: any) {
+            setToast({ message: e.message, type: 'error' });
+        }
+    };
 
     const filteredProfessionals = professionals.filter(p => 
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
