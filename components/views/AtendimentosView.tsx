@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
@@ -125,32 +125,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const abortControllerRef = useRef<AbortController | null>(null);
 
-    const fetchResources = async () => {
-        if (!isMounted.current) return;
-        try {
-            const { data, error: resError } = await supabase
-                .from('professionals')
-                .select('id, name, photo_url, role, order_index')
-                .order('order_index', { ascending: true });
-
-            if (resError) throw resError;
-            if (data && isMounted.current) {
-                const mapped = data.map((p: any) => ({
-                    id: p.id,
-                    name: p.name,
-                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
-                    role: p.role,
-                    order_index: p.order_index
-                }));
-                setResources(mapped);
-                setOrderedProfessionals(mapped);
-            }
-        } catch (e: any) { 
-            console.error("Erro ao carregar profissionais:", e);
-        }
-    };
-
-    const fetchAppointments = async () => {
+    // FIX: Função de refresh centralizada
+    const refreshCalendar = useCallback(async () => {
         if (!isMounted.current) return;
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
@@ -188,6 +164,31 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 setError(e.message || "Erro ao conectar com a agenda.");
             }
         } finally { if (isMounted.current) setIsLoadingData(false); }
+    }, [resources]);
+
+    const fetchResources = async () => {
+        if (!isMounted.current) return;
+        try {
+            const { data, error: resError } = await supabase
+                .from('professionals')
+                .select('id, name, photo_url, role, order_index')
+                .order('order_index', { ascending: true });
+
+            if (resError) throw resError;
+            if (data && isMounted.current) {
+                const mapped = data.map((p: any) => ({
+                    id: p.id,
+                    name: p.name,
+                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
+                    role: p.role,
+                    order_index: p.order_index
+                }));
+                setResources(mapped);
+                setOrderedProfessionals(mapped);
+            }
+        } catch (e: any) { 
+            console.error("Erro ao carregar profissionais:", e);
+        }
     };
 
     useEffect(() => {
@@ -198,9 +199,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     useEffect(() => {
         if (resources.length > 0) {
-            fetchAppointments();
+            refreshCalendar();
         }
-    }, [resources, currentDate]);
+    }, [resources, currentDate, refreshCalendar]);
 
     const timeSlotsLabels = useMemo(() => {
         const labels = [];
@@ -259,10 +260,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             
             if (error) throw error;
             setToast({ message: "Agendamento movido!", type: 'success' });
-            fetchAppointments();
+            refreshCalendar();
         } catch (err: any) {
             setToast({ message: `Erro ao mover: ${err.message}`, type: 'error' });
         }
+    };
+
+    // Lógica para Venda Rápida
+    const handleQuickSale = (time: Date) => {
+        setModalState({ type: 'sale', data: { date: time } });
+        setSelectionMenu(null);
+        // Opcionalmente redirecionar ou mostrar toast
+        // setToast({ message: "Iniciando venda rápida...", type: 'info' });
     };
 
     return (
@@ -303,7 +312,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         <AlertTriangle size={64} className="text-rose-500 mb-6" />
                         <h3 className="text-xl font-black text-slate-800 mb-2">Erro de Sincronização</h3>
                         <p className="max-w-md text-sm text-slate-500 mb-8">{error}</p>
-                        <button onClick={fetchAppointments} className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black shadow-lg flex items-center gap-2 hover:bg-black transition-all active:scale-95"><RefreshCw size={20}/> Tentar Novamente</button>
+                        <button onClick={refreshCalendar} className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black shadow-lg flex items-center gap-2 hover:bg-black transition-all active:scale-95"><RefreshCw size={20}/> Tentar Novamente</button>
                     </div>
                 ) : (
                     <div className="min-w-fit">
@@ -368,6 +377,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 )}
             </div>
 
+            {/* Selection Menu (Action Popover) */}
             {selectionMenu && (
                 <>
                     <div className="fixed inset-0 z-50" onClick={() => setSelectionMenu(null)} />
@@ -394,7 +404,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             <div className="p-1.5 bg-rose-100 rounded-lg text-rose-600"><Ban size={16} /></div> Bloquear Horário
                         </button>
                         <button 
-                            onClick={() => { setModalState({ type: 'sale', data: { date: selectionMenu.time } }); setSelectionMenu(null); }} 
+                            onClick={() => handleQuickSale(selectionMenu.time)} 
                             className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
                         >
                             <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600"><ShoppingBag size={16} /></div> Venda Rápida
@@ -431,7 +441,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             const { error: delError } = await supabase.from('appointments').delete().eq('id', id); 
                             if (delError) throw delError;
                             setToast({ message: "Agendamento excluído!", type: 'info' });
-                            fetchAppointments();
+                            refreshCalendar();
                             setActiveAppointmentDetail(null);
                         } catch (e: any) { alert(e.message); }
                     }} 
@@ -440,7 +450,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             const { error: upError } = await supabase.from('appointments').update({ status }).eq('id', id); 
                             if (upError) throw upError;
                             setToast({ message: "Status atualizado!", type: 'success' });
-                            fetchAppointments();
+                            refreshCalendar();
                             setActiveAppointmentDetail(null); 
                         } catch (e: any) { alert(e.message); }
                     }} 
@@ -465,7 +475,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             }
                             setToast({ message: "Agenda atualizada com sucesso!", type: 'success' });
                             setModalState(null);
-                            fetchAppointments();
+                            refreshCalendar();
                         } catch (e: any) { alert(e.message); }
                     }} 
                 />
@@ -485,7 +495,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             await supabase.from('appointments').insert([payload]);
                             setToast({ message: "Horário bloqueado com sucesso!", type: 'info' });
                             setModalState(null);
-                            fetchAppointments();
+                            refreshCalendar();
                         } catch (e: any) { alert(e.message); }
                     }} 
                 />
@@ -499,7 +509,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         onAddTransaction(t); 
                         setModalState(null); 
                         setToast({ message: 'Venda registrada!', type: 'success' }); 
-                        fetchAppointments(); // Atualiza caso tenha serviços
+                        refreshCalendar(); 
                     }}
                 />
             )}
