@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   UserPlus, Search, Phone, Edit, 
@@ -14,20 +15,24 @@ const ClientesView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchClients = async () => {
     setLoading(true);
+    setError(null);
     try {
-        const { data, error } = await supabase
+        const { data, error: sbError } = await supabase
             .from('clients')
             .select('*')
             .order('nome', { ascending: true });
         
-        if (error) throw error;
+        if (sbError) throw sbError;
         setClients(data || []);
     } catch (e: any) {
         console.error("Erro ao carregar clientes:", e);
+        setError(e.message || "Não foi possível carregar a lista de clientes.");
     } finally {
+        // Garantia absoluta de desligar o loading
         setLoading(false);
     }
   };
@@ -37,16 +42,11 @@ const ClientesView: React.FC = () => {
   const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
   const handleSaveClient = async (clientData: Client) => {
-    console.log("Iniciando persistência de cliente. Dados recebidos:", clientData);
-    
-    // Payload limpo para evitar erros de tipos no Postgres
     const payload = { ...clientData };
     const isEditing = !!payload.id;
 
     try {
         if (isEditing) {
-            // OPERAÇÃO: EDITAR
-            console.log("Modo: EDIÇÃO. ID:", payload.id);
             const { data, error } = await supabase
                 .from('clients')
                 .update(payload)
@@ -59,11 +59,7 @@ const ClientesView: React.FC = () => {
             setClients(prev => prev.map(c => c.id === data.id ? data : c));
             showToast('Perfil atualizado com sucesso!');
         } else {
-            // OPERAÇÃO: NOVO
-            console.log("Modo: CRIAÇÃO (Novo Registro)");
-            // Remove o ID para o banco gerar automaticamente
             delete (payload as any).id;
-            
             const { data, error } = await supabase
                 .from('clients')
                 .insert([payload])
@@ -75,13 +71,9 @@ const ClientesView: React.FC = () => {
             setClients(prev => [data, ...prev]);
             showToast('Novo cliente cadastrado com sucesso!');
         }
-        
-        // Fecha o modal após sucesso
         setSelectedClient(null);
-
     } catch (e: any) {
         console.error("ERRO CRÍTICO NA PERSISTÊNCIA:", e);
-        // Alert exibe o erro real vindo do Supabase (ex: RLS, Constraint, Type error)
         alert(`Erro ao salvar no banco: ${e.message || 'Erro desconhecido'}`);
         showToast("Falha ao salvar dados.", 'error');
     }
@@ -127,6 +119,18 @@ const ClientesView: React.FC = () => {
                 <Loader2 className="animate-spin mb-2" />
                 <p className="text-[10px] font-black uppercase tracking-widest">Sincronizando base...</p>
             </div>
+        ) : error ? (
+            <div className="p-10 text-center">
+                <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
+                <p className="text-slate-600 font-bold mb-4">{error}</p>
+                <button onClick={fetchClients} className="bg-slate-800 text-white px-6 py-2 rounded-xl text-sm font-bold hover:bg-slate-900 transition-all flex items-center gap-2 mx-auto"><RefreshCw size={16}/> Tentar Novamente</button>
+            </div>
+        ) : filteredClients.length === 0 ? (
+            <div className="p-20 text-center text-slate-400 flex flex-col items-center">
+                <Users size={48} className="opacity-20 mb-4" />
+                <p className="font-bold uppercase tracking-widest text-xs">Nenhum cliente encontrado</p>
+                <button onClick={() => setSelectedClient({ nome: '', consent: true } as any)} className="mt-4 text-orange-500 font-black text-sm hover:underline">Cadastrar o primeiro agora</button>
+            </div>
         ) : (
             <div className="divide-y divide-slate-100">
                 {filteredClients.map(client => (
@@ -136,8 +140,16 @@ const ClientesView: React.FC = () => {
                         className="p-5 flex items-center justify-between hover:bg-orange-50/30 cursor-pointer transition-all active:scale-[0.99]"
                     >
                         <div className="flex items-center gap-4">
-                            <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-orange-600 font-black text-xl shadow-sm">
-                                {client.nome.charAt(0)}
+                            <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-orange-600 font-black text-xl shadow-sm overflow-hidden">
+                                {client.photo_url ? (
+                                    <img 
+                                        src={client.photo_url} 
+                                        className="w-full h-full object-cover" 
+                                        alt={client.nome} 
+                                    />
+                                ) : (
+                                    client.nome.charAt(0)
+                                )}
                             </div>
                             <div>
                                 <h4 className="font-bold text-slate-800 text-base">{client.nome}</h4>
