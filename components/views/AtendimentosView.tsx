@@ -385,18 +385,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                 className={getCardStyle(app, viewMode)}
                                                 style={{ ...pos, borderLeftColor: app.service.color }}
                                             >
-                                                {/* CONTEÚDO CORRIGIDO: Tipografia compacta e layout flex vertical para evitar sobreposição */}
-                                                <div className="flex flex-col h-full w-full overflow-hidden">
-                                                    <span className="text-[9px] font-mono text-slate-500/70 mb-0.5 leading-none">
-                                                        {format(app.start, 'HH:mm')}
-                                                    </span>
-                                                    <span className="text-xs font-bold text-slate-900 leading-tight truncate">
-                                                        {app.client?.nome || 'Bloqueado'}
-                                                    </span>
-                                                    <span className="text-[10px] text-slate-600 leading-none mt-0.5 truncate font-medium">
-                                                        {app.service.name}
-                                                    </span>
+                                                <div className="flex items-center gap-1 overflow-hidden">
+                                                    <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
                                                 </div>
+                                                <p className="font-bold text-slate-900 text-[11px] truncate leading-tight mt-0.5">{app.client?.nome || 'Bloqueado'}</p>
+                                                <p className="text-[10px] font-medium text-slate-600 truncate leading-tight">{app.service.name}</p>
                                             </div>
                                         );
                                     })}
