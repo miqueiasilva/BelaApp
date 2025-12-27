@@ -264,6 +264,9 @@ const PublicBookingPreview: React.FC = () => {
             appStart.setHours(h, m, 0, 0);
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             const totalPrice = selectedServices.reduce((acc, s) => acc + s.preco, 0);
+            
+            // Gerar resumo textual dos serviços
+            const serviceSummary = selectedServices.map(s => s.name).join(', ');
 
             const { error: appError } = await supabase
                 .from('appointments')
@@ -276,7 +279,8 @@ const PublicBookingPreview: React.FC = () => {
                     date: appStart.toISOString(),
                     duration: totalDuration,
                     value: totalPrice,
-                    service_name: selectedServices.length > 1 ? `${selectedServices[0].name} + ${selectedServices.length - 1}` : selectedServices[0].name,
+                    services: selectedServices, // Array JSON completo
+                    service_name: serviceSummary, // Resumo textual legível
                     status: 'agendado',
                     origem: 'link'
                 }]);
