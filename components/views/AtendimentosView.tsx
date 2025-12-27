@@ -22,15 +22,6 @@ const START_HOUR = 8;
 const END_HOUR = 20; 
 const PIXELS_PER_MINUTE = 80 / 60; 
 
-interface DynamicColumn {
-    id: string | number;
-    title: string;
-    subtitle?: string;
-    photo?: string; 
-    type: 'professional' | 'status' | 'payment' | 'date';
-    data?: LegacyProfessional | Date; 
-}
-
 const getAppointmentPosition = (isoDateString: string, duration: number) => {
     const timePart = isoDateString.split('T')[1] || "00:00:00";
     const [hours, minutes] = timePart.split(':').map(Number);
@@ -236,7 +227,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
     };
 
-    // --- Drag & Drop Handlers ---
     const handleDragStart = (e: React.DragEvent, app: LegacyAppointment) => {
         e.dataTransfer.setData('application/json', JSON.stringify({ appointmentId: app.id }));
         e.dataTransfer.effectAllowed = 'move';
@@ -268,7 +258,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 .eq('id', appointmentId);
             
             if (error) throw error;
-            setToast({ message: "Agendamento movido com sucesso!", type: 'success' });
+            setToast({ message: "Agendamento movido!", type: 'success' });
             fetchAppointments();
         } catch (err: any) {
             setToast({ message: `Erro ao mover: ${err.message}`, type: 'error' });
@@ -317,7 +307,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     </div>
                 ) : (
                     <div className="min-w-fit">
-                        {/* Grade Header */}
                         <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${orderedProfessionals.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                             <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                                 <Maximize2 size={16} className="text-slate-300" />
@@ -364,15 +353,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                 style={{ ...pos }}
                                             >
                                                 <div className="flex flex-col h-full w-full overflow-hidden">
-                                                    <span className="text-[9px] font-mono text-slate-500 leading-none mb-0.5">
-                                                        {format(app.start, 'HH:mm')}
-                                                    </span>
-                                                    <span className="text-xs font-bold text-slate-900 leading-tight truncate">
-                                                        {app.client?.nome || 'Bloqueado'}
-                                                    </span>
-                                                    <span className="text-[10px] text-slate-600 leading-none truncate mt-0.5">
-                                                        {app.service.name}
-                                                    </span>
+                                                    <span className="text-[9px] font-mono text-slate-500 leading-none mb-0.5">{format(app.start, 'HH:mm')}</span>
+                                                    <span className="text-xs font-bold text-slate-900 leading-tight truncate">{app.client?.nome || 'Bloqueado'}</span>
+                                                    <span className="text-[10px] text-slate-600 leading-none truncate mt-0.5">{app.service.name}</span>
                                                 </div>
                                             </div>
                                         );
@@ -385,7 +368,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 )}
             </div>
 
-            {/* Selection Menu (Action Popover) */}
             {selectionMenu && (
                 <>
                     <div className="fixed inset-0 z-50" onClick={() => setSelectionMenu(null)} />
@@ -403,28 +385,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             onClick={() => { setModalState({ type: 'appointment', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} 
                             className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
                         >
-                            <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600"><CalendarIcon size={16} /></div> 
-                            Novo Agendamento
+                            <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600"><CalendarIcon size={16} /></div> Novo Agendamento
                         </button>
                         <button 
                             onClick={() => { setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} 
                             className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                         >
-                            <div className="p-1.5 bg-rose-100 rounded-lg text-rose-600"><Ban size={16} /></div> 
-                            Bloquear Horário
+                            <div className="p-1.5 bg-rose-100 rounded-lg text-rose-600"><Ban size={16} /></div> Bloquear Horário
                         </button>
                         <button 
                             onClick={() => { setModalState({ type: 'sale', data: { date: selectionMenu.time } }); setSelectionMenu(null); }} 
                             className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
                         >
-                            <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600"><ShoppingBag size={16} /></div> 
-                            Venda Rápida
+                            <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600"><ShoppingBag size={16} /></div> Venda Rápida
                         </button>
                     </div>
                 </>
             )}
 
-            {/* Modals e Popovers */}
             {isConfigModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
@@ -442,20 +420,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             )}
 
-            {isPeriodModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPeriodModalOpen(false)}></div>
-                    <div className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95">
-                        <div className="p-4 border-b bg-slate-50 font-extrabold text-slate-800 text-center">Visualizar por:</div>
-                        <div className="p-4 space-y-2">
-                            {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (
-                                <button key={item} onClick={() => { setPeriodType(item as PeriodType); setIsPeriodModalOpen(false); }} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold transition-all ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}>{item}{periodType === item && <Check size={18} />}</button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {activeAppointmentDetail && (
                 <AppointmentDetailPopover 
                     appointment={activeAppointmentDetail} 
@@ -466,7 +430,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         try {
                             const { error: delError } = await supabase.from('appointments').delete().eq('id', id); 
                             if (delError) throw delError;
-                            setAppointments(prev => prev.filter(p => p.id !== id));
+                            setToast({ message: "Agendamento excluído!", type: 'info' });
+                            fetchAppointments();
                             setActiveAppointmentDetail(null);
                         } catch (e: any) { alert(e.message); }
                     }} 
@@ -474,7 +439,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         try {
                             const { error: upError } = await supabase.from('appointments').update({ status }).eq('id', id); 
                             if (upError) throw upError;
-                            setAppointments(prev => prev.map(p => p.id === id ? { ...p, status } : p));
+                            setToast({ message: "Status atualizado!", type: 'success' });
+                            fetchAppointments();
                             setActiveAppointmentDetail(null); 
                         } catch (e: any) { alert(e.message); }
                     }} 
@@ -493,12 +459,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 date: app.start.toISOString(), status: app.status, notes: app.notas, origem: 'interno'
                             };
                             if (app.id) {
-                                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
-                                if (error) throw error;
+                                await supabase.from('appointments').update(payload).eq('id', app.id);
                             } else {
-                                const { error } = await supabase.from('appointments').insert([payload]);
-                                if (error) throw error;
+                                await supabase.from('appointments').insert([payload]);
                             }
+                            setToast({ message: "Agenda atualizada com sucesso!", type: 'success' });
                             setModalState(null);
                             fetchAppointments();
                         } catch (e: any) { alert(e.message); }
@@ -514,10 +479,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     onSave={async (block) => {
                         try {
                             const payload = {
-                                resource_id: block.professional.id, professional_name: block.professional.name, service_name: 'Bloqueio',
+                                resource_id: block.professional.id, professional_name: block.professional.name, service_name: 'Bloqueio de Agenda',
                                 value: 0, duration: block.service.duration, date: block.start.toISOString(), status: 'bloqueado', notes: block.notas, origem: 'interno'
                             };
                             await supabase.from('appointments').insert([payload]);
+                            setToast({ message: "Horário bloqueado com sucesso!", type: 'info' });
                             setModalState(null);
                             fetchAppointments();
                         } catch (e: any) { alert(e.message); }
@@ -529,7 +495,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 <NewTransactionModal 
                     type="receita"
                     onClose={() => setModalState(null)}
-                    onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }}
+                    onSave={(t) => { 
+                        onAddTransaction(t); 
+                        setModalState(null); 
+                        setToast({ message: 'Venda registrada!', type: 'success' }); 
+                        fetchAppointments(); // Atualiza caso tenha serviços
+                    }}
                 />
             )}
             
