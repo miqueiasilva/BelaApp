@@ -26,13 +26,15 @@ const ClientesView: React.FC = () => {
             .select('*')
             .order('nome', { ascending: true });
         
-        if (sbError) throw sbError;
+        if (sbError) {
+            throw new Error(sbError.message || "Erro ao acessar a base de clientes.");
+        }
         setClients(data || []);
     } catch (e: any) {
         console.error("Erro ao carregar clientes:", e);
+        // Garante que o erro exibido seja uma string útil
         setError(e.message || "Não foi possível carregar a lista de clientes.");
     } finally {
-        // Garantia absoluta de desligar o loading
         setLoading(false);
     }
   };
@@ -47,34 +49,39 @@ const ClientesView: React.FC = () => {
 
     try {
         if (isEditing) {
-            const { data, error } = await supabase
+            const { data, error: upError } = await supabase
                 .from('clients')
                 .update(payload)
                 .eq('id', payload.id)
                 .select()
                 .single();
 
-            if (error) throw error;
+            if (upError) throw new Error(upError.message);
             
-            setClients(prev => prev.map(c => c.id === data.id ? data : c));
-            showToast('Perfil atualizado com sucesso!');
+            if (data) {
+                setClients(prev => prev.map(c => c.id === data.id ? data : c));
+                showToast('Perfil atualizado com sucesso!');
+            }
         } else {
             delete (payload as any).id;
-            const { data, error } = await supabase
+            const { data, error: inError } = await supabase
                 .from('clients')
                 .insert([payload])
                 .select()
                 .single();
 
-            if (error) throw error;
+            if (inError) throw new Error(inError.message);
 
-            setClients(prev => [data, ...prev]);
-            showToast('Novo cliente cadastrado com sucesso!');
+            if (data) {
+                setClients(prev => [data, ...prev]);
+                showToast('Novo cliente cadastrado com sucesso!');
+            }
         }
         setSelectedClient(null);
     } catch (e: any) {
         console.error("ERRO CRÍTICO NA PERSISTÊNCIA:", e);
-        alert(`Erro ao salvar no banco: ${e.message || 'Erro desconhecido'}`);
+        const msg = e.message || "Falha técnica ao salvar no banco.";
+        alert(`Erro ao salvar no banco: ${msg}`);
         showToast("Falha ao salvar dados.", 'error');
     }
   };
@@ -85,7 +92,7 @@ const ClientesView: React.FC = () => {
   );
 
   return (
-    <div className="h-full flex flex-col bg-slate-50 font-sans">
+    <div className="h-full flex flex-col bg-slate-50 font-sans text-left">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center flex-shrink-0">
@@ -120,10 +127,11 @@ const ClientesView: React.FC = () => {
                 <p className="text-[10px] font-black uppercase tracking-widest">Sincronizando base...</p>
             </div>
         ) : error ? (
-            <div className="p-10 text-center">
-                <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
-                <p className="text-slate-600 font-bold mb-4">{error}</p>
-                <button onClick={fetchClients} className="bg-slate-800 text-white px-6 py-2 rounded-xl text-sm font-bold hover:bg-slate-900 transition-all flex items-center gap-2 mx-auto"><RefreshCw size={16}/> Tentar Novamente</button>
+            <div className="p-12 text-center flex flex-col items-center justify-center max-w-md mx-auto">
+                <AlertCircle className="w-12 h-12 text-rose-500 mb-4" />
+                <p className="text-slate-800 font-bold mb-2">Ops! Tivemos um problema</p>
+                <p className="text-slate-500 text-sm mb-8 leading-relaxed">{error}</p>
+                <button onClick={fetchClients} className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black shadow-lg flex items-center gap-2 hover:bg-black transition-all active:scale-95"><RefreshCw size={20}/> Sincronizar Agora</button>
             </div>
         ) : filteredClients.length === 0 ? (
             <div className="p-20 text-center text-slate-400 flex flex-col items-center">
