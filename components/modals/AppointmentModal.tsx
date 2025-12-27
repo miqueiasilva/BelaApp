@@ -121,20 +121,20 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     return re.test(email);
   };
 
+  // --- FUNÇÃO handleSave REFORMULADA (BUG FIX: Infinite Loading) ---
   const handleSave = async () => {
     setError(null);
     setEmailError('');
     
+    // 1. Validação Básica
     if (!formData.client) {
       setError('Por favor, selecione um cliente.');
       return;
     }
-
     if (clientEmail && !validateEmail(clientEmail)) {
         setEmailError('Formato de e-mail inválido.');
         return;
     }
-
     if (selectedServices.length === 0) {
       setError('Por favor, selecione pelo menos um serviço.');
       return;
@@ -148,7 +148,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
       return;
     }
 
-    setIsSaving(true);
+    setIsSaving(true); // Trava o botão (Mostra Spinner)
     
     try {
         const payload = {
@@ -173,15 +173,19 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
         if (result.error) throw result.error;
         
-        // ORDEM CORRIGIDA: 1. Fecha o modal primeiro | 2. Dispara o refresh depois
+        // 2. SUCESSO: Primeiro atualiza a tela pai, depois fecha o modal
+        if (onSuccess) {
+            await onSuccess();
+        }
+        
         onClose();
-        if (onSuccess) onSuccess();
         
     } catch (err: any) {
-        console.error("Error saving appointment:", err);
-        setError(err.message || "Ocorreu um erro ao salvar o agendamento.");
+        console.error("ERRO CRÍTICO AO SALVAR AGENDAMENTO:", err);
+        setError(err.message || "Ocorreu um erro inesperado ao salvar no banco.");
     } finally {
-        setIsSaving(false);
+        // SEGURANÇA: Sempre destrava o botão, independente de sucesso ou erro
+        setIsSaving(false); 
     }
   };
   
@@ -444,7 +448,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                 <button 
                     onClick={handleSave} 
                     disabled={isSaving}
-                    className="px-6 py-2.5 text-sm font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 shadow-lg shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                    className="px-6 py-2.5 text-sm font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 shadow-lg shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <SaveIcon size={20} />}
                     Salvar Agendamento

@@ -449,20 +449,37 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 </div>
             </div>
 
-            {/* MODAL COMPARTILHAR (Popup centralizado) */}
+            {/* MODAL COMPARTILHAR (Refinado: Overlay mais escuro e botão Copy Azul Royal) */}
             {isShareModalOpen && (
-                <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white rounded-lg shadow-2xl w-full max-w-md p-6 relative animate-in zoom-in duration-200">
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 relative animate-in zoom-in-95 duration-200">
                         <header className="mb-4">
-                            <h3 className="text-lg font-bold text-slate-800">Compartilhar agenda</h3>
-                            <button onClick={() => setIsShareModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1"><X size={20}/></button>
+                            <h3 className="text-xl font-bold text-slate-800">Compartilhar agenda</h3>
+                            <button 
+                                onClick={() => setIsShareModalOpen(false)} 
+                                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                            >
+                                <X size={24}/>
+                            </button>
                         </header>
-                        <div className="space-y-4">
-                            <p className="text-gray-500 text-sm leading-relaxed">Compartilhe o link da agenda do seu negócio para seus clientes marcarem horários online de qualquer lugar.</p>
+                        <div className="space-y-5">
+                            <p className="text-slate-500 text-sm leading-relaxed">
+                                Compartilhe o link da agenda do seu negócio para seus clientes marcarem horários online de qualquer lugar.
+                            </p>
                             <div className="flex items-center gap-2">
-                                <input readOnly value="https://belaflow.app/studio-jacilene-felix" className="flex-1 bg-white border border-gray-300 rounded-md px-3 py-2 text-sm text-slate-700 outline-none select-all font-medium" />
-                                <button onClick={() => { navigator.clipboard.writeText("https://belaflow.app/studio-jacilene-felix"); showToast("Link copiado com sucesso!", "success"); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2">
-                                    <Copy size={16}/> Copiar
+                                <input 
+                                    readOnly 
+                                    value="https://belaflow.app/studio-jacilene-felix" 
+                                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-500 select-all font-bold" 
+                                />
+                                <button 
+                                    onClick={() => { 
+                                        navigator.clipboard.writeText("https://belaflow.app/studio-jacilene-felix"); 
+                                        showToast("Link copiado com sucesso!", "success"); 
+                                    }}
+                                    className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg text-sm font-black flex items-center gap-2 transition-all active:scale-95 shadow-sm"
+                                >
+                                    <Copy size={18}/> Copiar
                                 </button>
                             </div>
                         </div>
