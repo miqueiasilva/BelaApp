@@ -5,7 +5,7 @@ import {
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     Maximize2, LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, AlertTriangle,
     Ban, ShoppingBag, Plus, Filter, Users, User as UserIcon, ZoomIn, Clock as ClockIcon,
-    ChevronFirst, ChevronLast, GripVertical
+    ChevronFirst, ChevronLast, GripVertical, DollarSign
 } from 'lucide-react';
 import { format, addDays, addMinutes, startOfWeek, endOfWeek, parseISO, isSameDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -95,6 +95,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
     const [timeSlot, setTimeSlot] = useState(30);
     const [viewMode, setViewMode] = useState<ViewMode>('profissional');
     const [calendarMode, setCalendarMode] = useState<'Dia' | 'Semana'>('Dia');
+    const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
 
     // Modals & Popovers
     const [modalState, setModalState] = useState<{ type: 'appointment' | 'block' | 'sale'; data: any } | null>(null);
@@ -103,6 +104,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
 
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
+    const viewMenuRef = useRef<HTMLDivElement>(null);
     const isMounted = useRef(true);
 
     const refreshCalendar = useCallback(async () => {
@@ -143,6 +145,14 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
             }
         };
         fetchResources();
+
+        const handleClickOutside = (event: MouseEvent) => {
+            if (viewMenuRef.current && !viewMenuRef.current.contains(event.target as Node)) {
+                setIsViewMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
     useEffect(() => { if (resources.length > 0) refreshCalendar(); }, [resources, currentDate, refreshCalendar]);
@@ -173,7 +183,6 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
         setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
     };
 
-    // --- Colunm Reordering Logic (Native D&D) ---
     const handleColumnDragStart = (e: React.DragEvent, id: number) => {
         e.dataTransfer.setData('columnId', id.toString());
     };
@@ -264,6 +273,12 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
         </div>
     );
 
+    const viewOptions = [
+        { id: 'profissional', label: 'Por Profissional', icon: Users },
+        { id: 'andamento', label: 'Por Andamento', icon: ClockIcon },
+        { id: 'pagamento', label: 'Por Pagamento', icon: DollarSign }
+    ];
+
     return (
         <div className="flex h-full bg-white font-sans text-left overflow-hidden relative">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -283,7 +298,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
             <div className="flex-1 flex flex-col overflow-hidden">
                 {/* Restoration of Header BelaFlow Style */}
                 <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between z-40 shadow-sm">
-                    {/* Left: Navigation */}
+                    {/* Left: Navigation & View Dropdown */}
                     <div className="flex items-center gap-4">
                         <button onClick={() => setCurrentDate(new Date())} className="text-[10px] font-black uppercase tracking-widest px-3 py-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-colors">Hoje</button>
                         <div className="flex items-center bg-slate-50 rounded-xl border border-slate-100 p-0.5">
@@ -300,39 +315,55 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                             </div>
                             <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-1.5 hover:bg-white hover:text-orange-500 rounded-lg text-slate-400"><ChevronRight size={18} /></button>
                         </div>
+
+                        {/* NEW: View Mode Dropdown */}
+                        <div className="relative" ref={viewMenuRef}>
+                            <button 
+                                onClick={() => setIsViewMenuOpen(!isViewMenuOpen)}
+                                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-sm transition-all"
+                            >
+                                <span>Visualizar: <span className="text-orange-500">{viewOptions.find(o => o.id === viewMode)?.label.split(' ')[1]}</span></span>
+                                <ChevronDown size={14} className={`text-slate-400 transition-transform ${isViewMenuOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {isViewMenuOpen && (
+                                <div className="absolute left-0 mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                    <div className="px-4 py-3 bg-slate-50 border-b">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Modo de Visualização</p>
+                                    </div>
+                                    <div className="p-1">
+                                        {viewOptions.map((opt) => (
+                                            <button
+                                                key={opt.id}
+                                                onClick={() => { setViewMode(opt.id as ViewMode); setIsViewMenuOpen(false); }}
+                                                className={`w-full flex items-center justify-between px-3 py-2.5 text-sm font-bold rounded-xl transition-all ${
+                                                    viewMode === opt.id 
+                                                    ? 'bg-orange-50 text-orange-600' 
+                                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <opt.icon size={16} className={viewMode === opt.id ? 'text-orange-500' : 'text-slate-400'} />
+                                                    {opt.label}
+                                                </div>
+                                                {viewMode === opt.id && <Check size={16} />}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
-                    {/* Right: Tabs & Action */}
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center bg-slate-100 p-1 rounded-xl">
-                            {[
-                                { id: 'profissional', icon: Users, label: 'Equipe' },
-                                { id: 'andamento', icon: PlayCircle, label: 'Andamento' },
-                                { id: 'pagamento', icon: CreditCard, label: 'Pagamento' }
-                            ].map(tab => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setViewMode(tab.id as ViewMode)}
-                                    className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
-                                        viewMode === tab.id 
-                                        ? 'bg-white text-orange-600 shadow-sm' 
-                                        : 'text-slate-400 hover:text-slate-600'
-                                    }`}
-                                >
-                                    <tab.icon size={14} /> {tab.label}
-                                </button>
-                            ))}
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                            <button onClick={refreshCalendar} className={`p-2.5 rounded-xl border border-slate-200 text-slate-400 hover:text-orange-500 hover:bg-orange-50 transition-all ${isLoadingData ? 'animate-spin text-orange-500 border-orange-200' : ''}`}><RefreshCw size={18}/></button>
-                            <button 
-                                onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })}
-                                className="bg-orange-500 hover:bg-orange-600 text-white font-black px-6 py-2.5 rounded-xl shadow-lg shadow-orange-100 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest"
-                            >
-                                <Plus size={18} /> Novo Agendamento
-                            </button>
-                        </div>
+                    {/* Right: Actions */}
+                    <div className="flex items-center gap-3">
+                        <button onClick={refreshCalendar} className={`p-2.5 rounded-xl border border-slate-200 text-slate-400 hover:text-orange-500 hover:bg-orange-50 transition-all ${isLoadingData ? 'animate-spin text-orange-500 border-orange-200' : ''}`}><RefreshCw size={18}/></button>
+                        <button 
+                            onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })}
+                            className="bg-orange-500 hover:bg-orange-600 text-white font-black px-6 py-2.5 rounded-xl shadow-lg shadow-orange-100 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest"
+                        >
+                            <Plus size={18} /> Novo Agendamento
+                        </button>
                     </div>
                 </header>
 
@@ -440,7 +471,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 />
             )}
 
-            {/* Modals Core with onSuccess call */}
+            {/* Modals Core */}
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={async (app) => {
                 const payload = { client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), status: app.status, notes: app.notas, origem: 'interno' };
                 if (app.id) await supabase.from('appointments').update(payload).eq('id', app.id); else await supabase.from('appointments').insert([payload]);
