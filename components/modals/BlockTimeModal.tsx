@@ -57,6 +57,7 @@ const BlockTimeModal: React.FC<BlockTimeModalProps> = ({ professional, startTime
         const { error } = await supabase.from('appointments').insert([payload]);
         if (error) throw error;
 
+        // Avisa o componente pai sobre o sucesso antes de fechar
         if (onSuccess) onSuccess();
         onClose();
     } catch (err: any) {

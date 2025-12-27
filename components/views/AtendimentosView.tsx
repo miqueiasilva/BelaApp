@@ -5,7 +5,7 @@ import {
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     Maximize2, LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, AlertTriangle,
     Ban, ShoppingBag, Plus, Filter, Users, User as UserIcon, ZoomIn, Clock as ClockIcon,
-    ChevronFirst, ChevronLast, GripVertical, DollarSign, Share2, Bell, Copy, CheckCircle2
+    ChevronFirst, ChevronLast, GripVertical, DollarSign, Share2, Bell, Copy, CheckCircle2, Link as LinkIcon
 } from 'lucide-react';
 import { format, addDays, addMinutes, startOfWeek, endOfWeek, parseISO, isSameDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -88,7 +88,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
     const [visibleProfIds, setVisibleProfIds] = useState<number[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
     
-    // UI Engine State
+    // UI States
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isAutoWidth, setIsAutoWidth] = useState(true);
     const [colWidth, setColWidth] = useState(240);
@@ -96,7 +96,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
     const [viewMode, setViewMode] = useState<ViewMode>('profissional');
     const [calendarMode, setCalendarMode] = useState<'Dia' | 'Semana' | 'Mês' | 'Lista' | 'Fila de Espera'>('Dia');
     
-    // Menu States
+    // Menu & Modal States
     const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
     const [isPeriodMenuOpen, setIsPeriodMenuOpen] = useState(false);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -195,24 +195,6 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
         setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
     };
 
-    const handleColumnDragStart = (e: React.DragEvent, id: number) => {
-        e.dataTransfer.setData('columnId', id.toString());
-    };
-
-    const handleColumnDrop = (e: React.DragEvent, targetId: number) => {
-        const sourceId = parseInt(e.dataTransfer.getData('columnId'));
-        if (sourceId === targetId) return;
-
-        const newVisibleIds = [...visibleProfIds];
-        const sourceIdx = newVisibleIds.indexOf(sourceId);
-        const targetIdx = newVisibleIds.indexOf(targetId);
-        
-        newVisibleIds.splice(sourceIdx, 1);
-        newVisibleIds.splice(targetIdx, 0, sourceId);
-        
-        setVisibleProfIds(newVisibleIds);
-    };
-
     const handleAppointmentDrop = async (e: React.DragEvent, professional: LegacyProfessional) => {
         e.preventDefault();
         const data = e.dataTransfer.getData('application/json');
@@ -235,6 +217,14 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
             refreshCalendar();
         } catch (err) { showToast("Erro ao mover", 'error'); }
     };
+
+    const viewOptions = [
+        { id: 'profissional', label: 'Por Profissional', icon: Users },
+        { id: 'andamento', label: 'Por Andamento', icon: ClockIcon },
+        { id: 'pagamento', label: 'Por Pagamento', icon: DollarSign }
+    ];
+
+    const periodOptions = ['Dia', 'Semana', 'Mês', 'Lista', 'Fila de Espera'];
 
     const SidebarContent = () => (
         <div className="flex flex-col h-full bg-white p-6 gap-8 overflow-y-auto border-r border-slate-200">
@@ -285,14 +275,6 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
         </div>
     );
 
-    const viewOptions = [
-        { id: 'profissional', label: 'Por Profissional', icon: Users },
-        { id: 'andamento', label: 'Por Andamento', icon: ClockIcon },
-        { id: 'pagamento', label: 'Por Pagamento', icon: DollarSign }
-    ];
-
-    const periodOptions = ['Dia', 'Semana', 'Mês', 'Lista', 'Fila de Espera'];
-
     return (
         <div className="flex h-full bg-white font-sans text-left overflow-hidden relative">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -312,7 +294,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
             <div className="flex-1 flex flex-col overflow-hidden">
                 {/* Header Estilo Salão99 */}
                 <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between z-40 shadow-sm">
-                    {/* Left: Navigation & View Mode */}
+                    {/* Left: Navigation */}
                     <div className="flex items-center gap-2">
                         <button 
                             onClick={() => setCurrentDate(new Date())} 
@@ -362,12 +344,12 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                         </div>
                     </div>
 
-                    {/* Right: Tools & Actions */}
+                    {/* Right: Tools */}
                     <div className="flex items-center gap-1">
                         <button 
                             onClick={() => setIsShareModalOpen(true)}
                             className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors" 
-                            title="Compartilhar"
+                            title="Compartilhar Link da Agenda"
                         >
                             <Share2 size={20} />
                         </button>
@@ -389,14 +371,14 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                                         <button onClick={() => setIsNotificationsOpen(false)} className="text-slate-400"><X size={16}/></button>
                                     </div>
                                     <div className="max-h-96 overflow-y-auto">
-                                        {[1, 2, 3].map(n => (
+                                        {[1].map(n => (
                                             <div key={n} className="p-4 border-b hover:bg-slate-50 cursor-pointer transition-colors">
                                                 <div className="flex justify-between items-start mb-1">
-                                                    <span className="text-[10px] font-black text-rose-500 uppercase">Cancelamento</span>
-                                                    <span className="text-[10px] text-slate-400">Há 5min</span>
+                                                    <span className="text-[10px] font-black text-blue-500 uppercase">Novo Agendamento Online</span>
+                                                    <span className="text-[10px] text-slate-400">Há pouco</span>
                                                 </div>
-                                                <p className="text-xs font-bold text-slate-800">Geise Cristina cancelou Buço</p>
-                                                <p className="text-[10px] text-slate-400 mt-1">Sáb, 27/Dez às 10:05 com Graziela</p>
+                                                <p className="text-xs font-bold text-slate-800">Maria Oliveira marcou Sobrancelha</p>
+                                                <p className="text-[10px] text-slate-400 mt-1">Ter, 27/Mai às 14:00 com Jaciene</p>
                                             </div>
                                         ))}
                                     </div>
@@ -413,7 +395,6 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                             <RefreshCw size={20}/>
                         </button>
 
-                        {/* Period Dropdown */}
                         <div className="relative ml-2" ref={periodMenuRef}>
                             <button 
                                 onClick={() => setIsPeriodMenuOpen(!isPeriodMenuOpen)}
@@ -449,20 +430,13 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
 
                 <div className="flex-1 overflow-auto bg-white custom-scrollbar relative">
                     <div className="min-w-fit">
-                        {/* Cabeçalho da Coluna */}
+                        {/* Headers */}
                         <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${filteredProfessionals.length}, ${isAutoWidth ? `minmax(200px, 1fr)` : `${colWidth}px`})` }}>
                             <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-20 min-w-[60px] flex items-center justify-center">
                                 <Maximize2 size={16} className="text-slate-300" />
                             </div>
                             {filteredProfessionals.map((prof) => (
-                                <div 
-                                    key={prof.id} 
-                                    draggable
-                                    onDragStart={(e) => handleColumnDragStart(e, prof.id)}
-                                    onDragOver={(e) => e.preventDefault()}
-                                    onDrop={(e) => handleColumnDrop(e, prof.id)}
-                                    className="flex items-center gap-3 px-6 py-2 border-r border-slate-100 h-20 bg-white group cursor-grab active:cursor-grabbing hover:bg-slate-50 transition-colors"
-                                >
+                                <div key={prof.id} className="flex items-center gap-3 px-6 py-2 border-r border-slate-100 h-20 bg-white group hover:bg-slate-50 transition-colors">
                                     <GripVertical size={14} className="text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity" />
                                     <img src={prof.avatarUrl} alt="" className="w-10 h-10 rounded-full border-2 border-orange-100 shadow-sm object-cover" />
                                     <div className="overflow-hidden">
@@ -473,9 +447,9 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                             ))}
                         </div>
 
-                        {/* Grid Body */}
+                        {/* Grid */}
                         <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${filteredProfessionals.length}, ${isAutoWidth ? `minmax(200px, 1fr)` : `${colWidth}px`})` }}>
-                            <div className="sticky left-0 z-20 bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
+                            <div className="sticky left-0 z-20 bg-white border-r border-slate-200 min-w-[60px]">
                                 {timeSlotsLabels.map(time => (
                                     <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed bg-white">
                                         <span>{time}</span>
@@ -529,22 +503,33 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
 
             {/* MODAL COMPARTILHAR AGENDAMENTO */}
             {isShareModalOpen && (
-                <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-                        <header className="p-6 flex justify-between items-center border-b">
+                <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-all">
+                    <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+                        <header className="p-6 flex justify-between items-center border-b border-slate-50">
                             <h3 className="text-xl font-black text-slate-800">Compartilhar agenda</h3>
-                            <button onClick={() => setIsShareModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X size={24}/></button>
+                            <button onClick={() => setIsShareModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
+                                <X size={24}/>
+                            </button>
                         </header>
                         <div className="p-8">
-                            <p className="text-slate-500 text-sm mb-6 leading-relaxed font-medium">Compartilhe o link da agenda do seu negócio para seus clientes marcarem horários online.</p>
-                            <div className="flex items-center gap-2 p-1.5 bg-slate-50 border rounded-xl mb-4 group-focus-within:border-orange-500 transition-colors">
+                            <p className="text-slate-500 text-sm mb-6 leading-relaxed font-medium">
+                                Compartilhe o link da agenda do seu negócio para seus clientes marcarem horários online de qualquer lugar.
+                            </p>
+                            <div className="flex items-center gap-2 p-2 bg-slate-50 border-2 border-slate-100 rounded-2xl mb-4 focus-within:border-orange-200 transition-all">
                                 <div className="p-2.5 text-slate-400"><LinkIcon size={20} /></div>
-                                <input readOnly value="https://belaflow.app/studio-jacilene-felix" className="flex-1 bg-transparent border-none text-sm font-bold text-slate-700 outline-none" />
+                                <input 
+                                    readOnly 
+                                    value="https://belaflow.app/studio-jacilene-felix" 
+                                    className="flex-1 bg-transparent border-none text-sm font-bold text-slate-700 outline-none select-all" 
+                                />
                                 <button 
-                                    onClick={() => { navigator.clipboard.writeText("https://belaflow.app/studio-jacilene-felix"); showToast("Link copiado!", "success"); }}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-black flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-100"
+                                    onClick={() => { 
+                                        navigator.clipboard.writeText("https://belaflow.app/studio-jacilene-felix"); 
+                                        showToast("Link copiado com sucesso!", "success"); 
+                                    }}
+                                    className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-orange-100"
                                 >
-                                    <Copy size={16}/> Copiar
+                                    <Copy size={18}/> Copiar
                                 </button>
                             </div>
                         </div>
@@ -576,23 +561,31 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 />
             )}
 
-            {/* Modals Core */}
-            {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSuccess={() => {
-                showToast("Agenda atualizada com sucesso!", "success"); 
-                refreshCalendar();
-            }} />}
+            {/* Modals Core com Refresh Automático */}
+            {modalState?.type === 'appointment' && (
+                <AppointmentModal 
+                    appointment={modalState.data} 
+                    onClose={() => setModalState(null)} 
+                    onSuccess={async () => {
+                        await refreshCalendar();
+                        showToast("Agendamento salvo com sucesso!", "success");
+                    }} 
+                />
+            )}
 
-            {modalState?.type === 'block' && <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSuccess={() => {
-                showToast("Horário bloqueado!", "info"); 
-                refreshCalendar();
-            }} />}
+            {modalState?.type === 'block' && (
+                <BlockTimeModal 
+                    professional={modalState.data.professional} 
+                    startTime={modalState.data.start} 
+                    onClose={() => setModalState(null)} 
+                    onSuccess={async () => {
+                        await refreshCalendar();
+                        showToast("Horário bloqueado na agenda!", "info");
+                    }} 
+                />
+            )}
         </div>
     );
 };
-
-// Ícone de Link para o modal
-const LinkIcon = ({ size }: { size: number }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
-);
 
 export default AtendimentosView;

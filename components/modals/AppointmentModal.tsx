@@ -173,6 +173,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
         if (result.error) throw result.error;
         
+        // Dispara callback de sucesso ANTES de fechar para que o pai já inicie o fetch
         if (onSuccess) onSuccess();
         onClose();
         
