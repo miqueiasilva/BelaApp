@@ -30,9 +30,12 @@ const SelectionModal: React.FC<SelectionModalProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const filteredItems = useMemo(() =>
-    items.filter(item =>
-      item.name.toLowerCase().includes(searchTerm.toLowerCase())
-    ), [items, searchTerm]);
+    items.filter(item => {
+      // FIX: Safe Navigation e fallbacks para evitar crash com valores nulos do banco
+      const name = item?.name || '';
+      const term = searchTerm || '';
+      return name.toLowerCase().includes(term.toLowerCase());
+    }), [items, searchTerm]);
 
   // Use useEffect to focus input safely after mount
   useEffect(() => {

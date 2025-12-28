@@ -1,12 +1,13 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { LegacyAppointment, Client, LegacyProfessional, LegacyService } from '../../types';
-import { clients as initialClients, services as serviceMap, professionals } from '../../data/mockData';
+import { clients as initialClients, professionals } from '../../data/mockData';
 import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, Edit2 } from 'lucide-react';
 import { format, addMinutes } from 'date-fns';
 import SelectionModal from './SelectionModal';
 import ClientModal from './ClientModal';
-
-const services = Object.values(serviceMap);
+import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface AppointmentModalProps {
   appointment: LegacyAppointment | Partial<LegacyAppointment> | null;
@@ -15,6 +16,12 @@ interface AppointmentModalProps {
 }
 
 const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClose, onSave }) => {
+  const { user } = useAuth();
+  
+  // State for database services
+  const [dbServices, setDbServices] = useState<LegacyService[]>([]);
+  const [loadingServices, setLoadingServices] = useState(false);
+
   // Initialize state with appointment data or defaults
   const [formData, setFormData] = useState<Partial<LegacyAppointment>>({
     status: 'agendado',
@@ -45,6 +52,47 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   // New state for email validation
   const [clientEmail, setClientEmail] = useState('');
   const [emailError, setEmailError] = useState('');
+
+  // --- Fetch Services from Supabase ---
+  const fetchServices = async () => {
+    setLoadingServices(true);
+    try {
+      // Query obrigatória conforme instrução: ativos e opcionalmente vinculados ao usuário
+      // Nota: Como no schema atual 'services' parece ser global, filtramos por 'ativo'
+      // Se houver RLS ou coluna user_id, o .eq('user_id', user.id) garante isolamento
+      let query = supabase
+        .from('services')
+        .select('*')
+        .eq('ativo', true);
+      
+      // Adiciona filtro de usuário apenas se a coluna existir/for necessária (seguindo instrução técnica)
+      // query = query.eq('user_id', user?.id); 
+
+      const { data, error: sbError } = await query.order('nome');
+
+      if (sbError) throw sbError;
+
+      if (data) {
+        const mapped: LegacyService[] = data.map((s: any) => ({
+          id: s.id,
+          name: s.nome || 'Serviço sem nome',
+          duration: s.duracao_min || 30,
+          price: s.preco || 0,
+          color: s.cor_hex || '#3b82f6',
+          category: s.categoria
+        }));
+        setDbServices(mapped);
+      }
+    } catch (e: any) {
+      console.error("Erro ao carregar serviços:", e.message);
+    } finally {
+      setLoadingServices(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchServices();
+  }, []);
 
   // Reset form data when appointment prop changes
   useEffect(() => {
@@ -211,9 +259,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     }
   };
   
-  // FIX: Use setTimeout(0) instead of requestAnimationFrame.
-  // This pushes the state update (and component unmount) to the end of the event loop,
-  // ensuring the click event bubble phase is completely finished.
   const handleSelectClient = (client: Client) => {
     setTimeout(() => {
         setFormData(prev => ({ ...prev, client }));
@@ -291,7 +336,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             </div>
           </div>
 
-          {/* Email Field (New) */}
+          {/* Email Field */}
           {formData.client && (
             <div className="space-y-1 animate-in slide-in-from-top-2">
                 <label className="text-xs font-bold text-slate-500 uppercase">E-mail de Contato</label>
@@ -390,17 +435,17 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
              {/* Add Button */}
              <button 
                 onClick={() => setSelectionModal('service')}
-                className="w-full py-2 border border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
+                disabled={loadingServices}
+                className="w-full py-2 border border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
              >
-                <PlusCircle size={16} />
-                Adicionar Serviço
+                {loadingServices ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlusCircle size={16} />}
+                {loadingServices ? 'Carregando Catálogo...' : 'Adicionar Serviço'}
              </button>
           </div>
 
           {/* Stats: Price and Duration (Editable) */}
           <div className="flex items-center gap-4">
               <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 focus-within:border-orange-300 focus-within:ring-2 focus-within:ring-orange-100 transition-all shadow-sm">
-                  {/* FIX: Removed misplaced Send button icon that was causing a "Cannot find name 'Send'" error and was UI-incorrect in the modal form. */}
                   <div className="p-1.5 bg-green-50 rounded text-green-600">
                     <DollarSign className="w-4 h-4" />
                   </div>
@@ -514,16 +559,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             }
             items={
                 selectionModal === 'client' ? clientItemsForSelection :
-                selectionModal === 'service' ? services :
+                selectionModal === 'service' ? dbServices :
                 professionals // From mockData
             }
             onClose={() => setSelectionModal(null)}
             onSelect={
                 selectionModal === 'client' ? (item) => handleSelectClient(localClients.find(c => c.id === item.id)!) :
-                selectionModal === 'service' ? (item) => handleAddService(services.find(s=>s.id === item.id)!) :
+                selectionModal === 'service' ? (item) => handleAddService(dbServices.find(s=>s.id === item.id)!) :
                 (item) => handleSelectProfessional(professionals.find(p => p.id === item.id)!)
             }
-            // Pass the onNew handler only for Clients
             onNew={selectionModal === 'client' ? handleOpenNewClientModal : undefined}
             searchPlaceholder={
                 selectionModal === 'client' ? 'Buscar Cliente...' :
