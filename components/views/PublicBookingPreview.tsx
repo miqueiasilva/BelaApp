@@ -1,105 +1,491 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     ChevronLeft, Check, Star, Search, Image as ImageIcon, 
-    ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, User, Mail
+    ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
+    User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
+    CheckCircle2, ArrowRight, UserCircle2, X
 } from 'lucide-react';
-import { format, addDays, isSameDay } from 'date-fns';
+import { 
+    format, addDays, isSameDay, startOfDay, addMinutes, 
+    isAfter, isBefore, getDay, parseISO 
+} from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
-import { services } from '../../data/mockData';
+import ToggleSwitch from '../shared/ToggleSwitch';
+import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
 
-// Fallbacks para quando o estúdio não configurou branding
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1350&q=80";
 const DEFAULT_LOGO = "https://ui-avatars.com/api/?name=BelaFlow&background=random";
+
+const ServiceItem = ({ service, isSelected, onToggle }: any) => (
+    <div 
+        onClick={() => onToggle(service)}
+        className={`p-4 flex justify-between items-center border-b border-slate-50 last:border-0 cursor-pointer transition-all active:scale-[0.98] ${isSelected ? 'bg-orange-50/50' : 'hover:bg-slate-50'}`}
+    >
+        <div className="flex-1 pr-4">
+            <h4 className="font-bold text-slate-800 text-sm">{service.name}</h4>
+            <div className="flex items-center gap-3 mt-1">
+                <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">
+                    <Clock size={10} /> {service.duracao_min} min
+                </span>
+                <span className="text-orange-600 font-black text-sm">
+                    R$ {service.preco.toFixed(2)}
+                </span>
+            </div>
+        </div>
+        <button 
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                isSelected 
+                ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' 
+                : 'border-2 border-slate-100 text-slate-300'
+            }`}
+        >
+            {isSelected ? <Check size={20} /> : <Plus size={20} />}
+        </button>
+    </div>
+);
+
+const AccordionCategory = ({ category, services, selectedIds, onToggleService }: any) => {
+    const [isOpen, setIsOpen] = useState(true);
+    const selectedCount = services.filter((s: any) => selectedIds.includes(s.id)).length;
+
+    return (
+        <div className="mb-4 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <button 
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full p-5 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors"
+            >
+                <div className="flex items-center gap-3">
+                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">{category}</h3>
+                    {selectedCount > 0 && (
+                        <span className="bg-orange-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+                            {selectedCount}
+                        </span>
+                    )}
+                </div>
+                {isOpen ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
+            </button>
+            
+            {isOpen && (
+                <div className="animate-in slide-in-from-top-2 duration-300">
+                    {services.map((s: any) => (
+                        <ServiceItem 
+                            key={s.id} 
+                            service={s} 
+                            isSelected={selectedIds.includes(s.id)}
+                            onToggle={onToggleService}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const Plus = ({ size }: { size: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+);
 
 const PublicBookingPreview: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [studio, setStudio] = useState<any>(null);
-    const [step, setStep] = useState('service');
+    const [services, setServices] = useState<any[]>([]);
+    const [professionals, setProfessionals] = useState<any[]>([]);
+    
+    // UI State
+    const [selectedServices, setSelectedServices] = useState<any[]>([]);
+    const [isBookingOpen, setIsBookingOpen] = useState(false);
+    const [isClientAppsOpen, setIsClientAppsOpen] = useState(false);
+    const [bookingStep, setBookingStep] = useState(1); 
 
-    // Busca dados reais do estúdio
+    // Appointment Choices
+    const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
+    const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
+    const [selectedTime, setSelectedTime] = useState<string | null>(null);
+    const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+    const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+
+    const weekdayMap: Record<number, string> = {
+        0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'
+    };
+
+    // --- Data Fetching ---
     useEffect(() => {
-        const fetchStudio = async () => {
+        const loadPageData = async () => {
+            setLoading(true);
             try {
-                const { data, error } = await supabase.from('studio_settings').select('*').maybeSingle();
-                if (data) setStudio(data);
+                const { data: studioData } = await supabase.from('studio_settings').select('*').maybeSingle();
+                if (studioData) setStudio(studioData);
+
+                const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
+                if (servicesData) setServices(servicesData);
+
+                const { data: profsData } = await supabase.from('professionals').select('*').eq('active', true).order('order_index');
+                if (profsData) setProfessionals(profsData);
             } catch (e) {
-                console.error("Erro ao carregar página pública", e);
+                console.error("Erro ao carregar dados públicos", e);
             } finally {
                 setLoading(false);
             }
         };
-        fetchStudio();
+        loadPageData();
+    }, []);
+
+    // --- Slot Generation Logic ---
+    const generateAvailableSlots = async (date: Date, professional: any) => {
+        if (!studio || selectedServices.length === 0) return;
+        setIsLoadingSlots(true);
+        setSelectedTime(null);
+
+        try {
+            const dayKey = weekdayMap[getDay(date)];
+            const businessHours = studio.business_hours?.[dayKey];
+
+            if (!businessHours || !businessHours.active) {
+                setAvailableSlots([]);
+                return;
+            }
+
+            const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
+            
+            // 1. Busca agendamentos do dia para este profissional
+            const { data: busyAppointments } = await supabase
+                .from('appointments')
+                .select('date, duration')
+                .eq('resource_id', professional?.id)
+                .neq('status', 'cancelado')
+                .gte('date', startOfDay(date).toISOString())
+                .lte('date', addDays(startOfDay(date), 1).toISOString());
+
+            const slots: string[] = [];
+            
+            // FIX: Replaced date-fns parse with manual hours/minutes extraction to resolve "no exported member 'parse'" error.
+            const [startH, startM] = businessHours.start.split(':').map(Number);
+            const [endH, endM] = businessHours.end.split(':').map(Number);
+            
+            let currentPointer = new Date(date);
+            currentPointer.setHours(startH, startM, 0, 0);
+            
+            const endLimit = new Date(date);
+            endLimit.setHours(endH, endM, 0, 0);
+            
+            const now = new Date();
+
+            while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
+                // Regra 1: Não mostrar horários passados se for hoje
+                if (isSameDay(date, now) && isBefore(currentPointer, now)) {
+                    currentPointer = addMinutes(currentPointer, 15);
+                    continue;
+                }
+
+                // Regra 2: Verificar colisão com agendamentos existentes
+                const hasOverlap = busyAppointments?.some(app => {
+                    const appStart = parseISO(app.date);
+                    const appEnd = addMinutes(appStart, app.duration);
+                    const slotStart = currentPointer;
+                    const slotEnd = addMinutes(currentPointer, totalDuration);
+                    return (slotStart < appEnd) && (slotEnd > appStart);
+                });
+
+                if (!hasOverlap) {
+                    slots.push(format(currentPointer, 'HH:mm'));
+                }
+
+                currentPointer = addMinutes(currentPointer, 15); // Passo de 15min para maior flexibilidade
+            }
+
+            setAvailableSlots(slots);
+        } catch (e) {
+            console.error("Erro ao gerar slots", e);
+        } finally {
+            setIsLoadingSlots(false);
+        }
+    };
+
+    useEffect(() => {
+        if (bookingStep === 2 && selectedDate) {
+            generateAvailableSlots(selectedDate, selectedProfessional);
+        }
+    }, [selectedDate, selectedProfessional, bookingStep]);
+
+    // --- Logical Grouping ---
+    const servicesByCategory = useMemo(() => {
+        const groups: Record<string, any[]> = {};
+        services.forEach(s => {
+            const cat = s.categoria || 'Outros';
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push(s);
+        });
+        return groups;
+    }, [services]);
+
+    const totalPrice = useMemo(() => {
+        return selectedServices.reduce((acc, s) => acc + s.preco, 0);
+    }, [selectedServices]);
+
+    // --- Handlers ---
+    const toggleService = (service: any) => {
+        setSelectedServices(prev => {
+            const isAlreadySelected = prev.find(s => s.id === service.id);
+            if (isAlreadySelected) return prev.filter(s => s.id !== service.id);
+            return [...prev, service];
+        });
+    };
+
+    const nextDays = useMemo(() => {
+        return Array.from({ length: 14 }).map((_, i) => addDays(new Date(), i));
     }, []);
 
     if (loading) return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
             <Loader2 className="animate-spin text-orange-500 w-10 h-10 mb-4" />
-            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Abrindo agenda online...</p>
+            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Acessando BelaFlow...</p>
         </div>
     );
 
     return (
-        <div className="min-h-screen bg-[#F8F9FA] pb-32 font-sans relative">
+        <div className="min-h-screen bg-slate-50 font-sans relative pb-40">
             
-            {/* 1. Camada de Visualização - HEADER DINÂMICO */}
-            {step === 'service' && (
-                <div className="w-full h-56 md:h-72 relative overflow-hidden bg-slate-900 animate-in fade-in duration-700">
-                    <img 
-                        src={studio?.cover_image_url || DEFAULT_COVER} 
-                        className="w-full h-full object-cover opacity-60"
-                        alt="Capa do Estúdio"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
-                    <div className="absolute bottom-6 left-6 right-6">
-                        <div className="max-w-md mx-auto flex items-center gap-4">
-                            {/* Logo Dinâmica */}
-                            <div className="relative">
-                                <img 
-                                    src={studio?.logo_image_url || DEFAULT_LOGO} 
-                                    className="w-20 h-20 rounded-2xl border-4 border-white shadow-2xl object-cover bg-white" 
-                                    alt="Logo" 
-                                />
-                                <div className="absolute -bottom-1 -right-1 bg-green-500 w-4 h-4 rounded-full border-2 border-white"></div>
-                            </div>
-                            <div>
-                                <h1 className="text-2xl font-black text-white leading-tight drop-shadow-md">
-                                    {studio?.studio_name || "Bela Studio"}
-                                </h1>
-                                <div className="flex items-center gap-2 text-slate-200 text-xs mt-1">
-                                    <MapPin size={12} className="text-orange-400" />
-                                    <span className="truncate max-w-[200px]">{studio?.address || "Endereço não informado"}</span>
-                                </div>
-                            </div>
+            {/* HEADER */}
+            <div className="relative h-48 md:h-64 bg-slate-900">
+                <img 
+                    src={studio?.cover_image_url || DEFAULT_COVER} 
+                    className="w-full h-full object-cover opacity-50"
+                    alt="Banner"
+                />
+                <button 
+                    onClick={() => setIsClientAppsOpen(true)}
+                    className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl"
+                >
+                    <UserCircle2 size={20} />
+                    <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Meus Agendamentos</span>
+                </button>
+            </div>
+
+            <div className="max-w-xl mx-auto px-6 -mt-16 relative z-10">
+                <div className="bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 flex flex-col items-center text-center">
+                    <div className="w-24 h-24 rounded-3xl bg-white border-4 border-white shadow-xl -mt-20 overflow-hidden mb-4">
+                        <img src={studio?.logo_image_url || DEFAULT_LOGO} className="w-full h-full object-cover" alt="Logo" />
+                    </div>
+                    <h1 className="text-2xl font-black text-slate-800 leading-tight">
+                        {studio?.studio_name || "Seu Estúdio"}
+                    </h1>
+                    <div className="flex items-center gap-3 mt-2 text-slate-400">
+                        <div className="flex items-center gap-1 text-amber-400 font-bold">
+                            <Star size={14} fill="currentColor" /> 5.0
                         </div>
+                        <span className="text-slate-200">|</span>
+                        <div className="flex items-center gap-1 text-xs font-medium">
+                            <MapPin size={14} className="text-orange-500" /> 
+                            {studio?.address || "Endereço não informado"}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-8 space-y-2">
+                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-2">Escolha os serviços</h2>
+                    {Object.entries(servicesByCategory).map(([cat, items]) => (
+                        <AccordionCategory 
+                            key={cat}
+                            category={cat}
+                            services={items}
+                            selectedIds={selectedServices.map(s => s.id)}
+                            onToggleService={toggleService}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            {selectedServices.length > 0 && (
+                <div className="fixed bottom-0 left-0 right-0 p-6 z-40 bg-gradient-to-t from-white via-white to-white/80 backdrop-blur-md border-t border-slate-100 animate-in slide-in-from-bottom-full duration-500">
+                    <div className="max-w-xl mx-auto flex items-center justify-between gap-6">
+                        <div className="flex-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                {selectedServices.length} selecionados
+                            </p>
+                            <p className="text-xl font-black text-slate-800">Total R$ {totalPrice.toFixed(2)}</p>
+                        </div>
+                        <button 
+                            onClick={() => { setIsBookingOpen(true); setBookingStep(1); }}
+                            className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-orange-100 flex items-center gap-2 transition-all active:scale-95"
+                        >
+                            Continuar <ArrowRight size={20} />
+                        </button>
                     </div>
                 </div>
             )}
 
-            {/* Conteúdo da página segue o layout de reserva... */}
-            <div className="bg-white p-4 shadow-sm sticky top-0 z-20">
-                <div className="max-w-md mx-auto flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                        <div className="flex text-amber-400"><Star size={14} fill="currentColor"/> 5.0</div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Avaliações</span>
-                    </div>
-                    <button className="p-2 text-slate-400 hover:text-orange-500"><Share2 size={18}/></button>
-                </div>
-            </div>
+            {/* MODAL DE AGENDAMENTO */}
+            {isBookingOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+                        <header className="p-6 border-b border-slate-50 flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                {bookingStep > 1 && (
+                                    <button onClick={() => setBookingStep(prev => prev - 1)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:bg-slate-200">
+                                        <ChevronLeft size={20} />
+                                    </button>
+                                )}
+                                <div>
+                                    <h3 className="font-black text-slate-800">
+                                        {bookingStep === 1 && "Escolha o Profissional"}
+                                        {bookingStep === 2 && "Data e Horário"}
+                                        {bookingStep === 3 && "Confirmar Reserva"}
+                                    </h3>
+                                    <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Passo {bookingStep} de 3</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400"><X size={24}/></button>
+                        </header>
 
-            <div className="max-w-md mx-auto p-4 text-center mt-10">
-                <h3 className="font-bold text-slate-800">Selecione o serviço desejado</h3>
-                <p className="text-sm text-slate-500 mt-2">Escolha abaixo para ver os horários disponíveis.</p>
-                {/* Lista de serviços simulada para o exemplo */}
-                <div className="mt-8 space-y-3">
-                    {Object.values(services).slice(0, 4).map(s => (
-                        <div key={s.id} className="p-4 bg-white rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
-                            <span className="font-bold text-slate-700">{s.name}</span>
-                            <button className="bg-orange-500 text-white px-4 py-2 rounded-xl text-xs font-black">Agendar</button>
-                        </div>
-                    ))}
+                        <main className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50/30">
+                            
+                            {bookingStep === 1 && (
+                                <div className="space-y-4">
+                                    {professionals.map(p => (
+                                        <button 
+                                            key={p.id}
+                                            onClick={() => { setSelectedProfessional(p); setBookingStep(2); }}
+                                            className={`w-full p-5 flex items-center gap-4 border-2 rounded-3xl transition-all text-left bg-white ${selectedProfessional?.id === p.id ? 'border-orange-500 bg-orange-50/30' : 'border-slate-100 hover:border-orange-200'}`}
+                                        >
+                                            <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md">
+                                                <img src={p.photo_url || DEFAULT_LOGO} className="w-full h-full object-cover" alt={p.name} />
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-slate-800 text-base">{p.name}</p>
+                                                <p className="text-xs text-slate-400 mt-1 font-medium">{p.role}</p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {bookingStep === 2 && (
+                                <div className="space-y-8">
+                                    {/* Mini Calendário Horizontal */}
+                                    <div className="space-y-4">
+                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Selecione o Dia</h4>
+                                        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
+                                            {nextDays.map((date) => {
+                                                const isClosed = !studio.business_hours?.[weekdayMap[getDay(date)]]?.active;
+                                                const isSelected = isSameDay(date, selectedDate);
+                                                return (
+                                                    <button
+                                                        key={date.toISOString()}
+                                                        disabled={isClosed}
+                                                        onClick={() => setSelectedDate(date)}
+                                                        className={`flex-shrink-0 w-16 h-20 rounded-2xl flex flex-col items-center justify-center transition-all border-2 ${
+                                                            isSelected ? 'bg-orange-500 border-orange-500 text-white shadow-lg shadow-orange-100 scale-105' : 
+                                                            isClosed ? 'bg-slate-100 border-transparent opacity-40 grayscale cursor-not-allowed' : 
+                                                            'bg-white border-slate-100 text-slate-600 hover:border-orange-200'
+                                                        }`}
+                                                    >
+                                                        <span className="text-[10px] font-black uppercase">{format(date, 'EEE', { locale: pt })}</span>
+                                                        <span className="text-xl font-black">{format(date, 'dd')}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Horários */}
+                                    <div className="space-y-4">
+                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Horários Disponíveis</h4>
+                                        {isLoadingSlots ? (
+                                            <div className="py-10 text-center text-slate-400 flex flex-col items-center">
+                                                <Loader2 className="animate-spin mb-2" />
+                                                <p className="text-xs font-bold">Consultando agenda...</p>
+                                            </div>
+                                        ) : availableSlots.length > 0 ? (
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {availableSlots.map(time => (
+                                                    <button
+                                                        key={time}
+                                                        onClick={() => setSelectedTime(time)}
+                                                        className={`py-3 rounded-xl text-sm font-black border-2 transition-all ${
+                                                            selectedTime === time 
+                                                            ? 'bg-slate-800 border-slate-800 text-white shadow-lg' 
+                                                            : 'bg-white border-slate-100 text-slate-600 hover:border-orange-300'
+                                                        }`}
+                                                    >
+                                                        {time}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="p-8 bg-slate-100/50 rounded-3xl border border-dashed border-slate-200 text-center">
+                                                <Clock className="mx-auto text-slate-300 mb-2" size={32} />
+                                                <p className="text-sm font-bold text-slate-400 leading-tight">Nenhum horário livre para<br/>os serviços selecionados neste dia.</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {selectedTime && (
+                                        <button 
+                                            onClick={() => setBookingStep(3)}
+                                            className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 animate-in slide-in-from-bottom-2"
+                                        >
+                                            Continuar <ArrowRight size={20} />
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {bookingStep === 3 && (
+                                <div className="space-y-6">
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                                        <div className="flex items-center gap-4 pb-4 border-b border-slate-50">
+                                            <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600">
+                                                <Calendar size={24} />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Seu Horário</p>
+                                                <p className="text-base font-black text-slate-800">{format(selectedDate, "dd 'de' MMMM", { locale: pt })} às {selectedTime}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            {selectedServices.map(s => (
+                                                <div key={s.id} className="flex justify-between items-center text-sm font-bold text-slate-600">
+                                                    <span>{s.name}</span>
+                                                    <span>R$ {s.preco.toFixed(2)}</span>
+                                                </div>
+                                            ))}
+                                            <div className="pt-3 border-t border-slate-50 flex justify-between items-center">
+                                                <span className="text-xs font-black uppercase text-slate-400">Total</span>
+                                                <span className="text-xl font-black text-orange-600">R$ {totalPrice.toFixed(2)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Seu Nome Completo</label>
+                                            <input className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 font-bold shadow-sm" placeholder="Como devemos te chamar?" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">WhatsApp para Lembrete</label>
+                                            <input className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 font-bold shadow-sm" placeholder="(00) 00000-0000" />
+                                        </div>
+                                    </div>
+                                    
+                                    <button className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-3xl font-black shadow-xl shadow-green-100 flex items-center justify-center gap-3 transition-all active:scale-95">
+                                        <CheckCircle2 size={24} />
+                                        Finalizar Agendamento
+                                    </button>
+                                </div>
+                            )}
+                        </main>
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {isClientAppsOpen && (
+                <ClientAppointmentsModal onClose={() => setIsClientAppsOpen(false)} />
+            )}
         </div>
     );
 };
