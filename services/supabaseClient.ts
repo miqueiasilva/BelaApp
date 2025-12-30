@@ -1,8 +1,29 @@
+
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Helper to safely get env vars from various sources
+// Helper para timeout obrigatório de 10s em todas as requisições (Anti-Hang)
+const fetchWithTimeout = async (url: string, options: any = {}) => {
+  const timeout = 10000; // 10 segundos
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error: any) {
+    clearTimeout(id);
+    if (error.name === 'AbortError') {
+      throw new Error("Timeout: O servidor demorou muito para responder. Verifique sua conexão.");
+    }
+    throw error;
+  }
+};
+
 const getEnvVar = (key: string): string | null => {
-  // 1. Try Vite's import.meta.env
   try {
     // @ts-ignore
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
@@ -10,8 +31,6 @@ const getEnvVar = (key: string): string | null => {
       return import.meta.env[key];
     }
   } catch (e) {}
-
-  // 2. Try window.__ENV__ (common in docker/preview builds)
   try {
     // @ts-ignore
     if (typeof window !== 'undefined' && window.__ENV__ && window.__ENV__[key]) {
@@ -19,18 +38,14 @@ const getEnvVar = (key: string): string | null => {
       return window.__ENV__[key];
     }
   } catch (e) {}
-
-  // 3. Try LocalStorage (User override)
   try {
     if (typeof localStorage !== 'undefined') {
       return localStorage.getItem(key);
     }
   } catch (e) {}
-
   return null;
 };
 
-// HARDCODED FALLBACKS FOR HOTFIX (Ensures app works even if .env doesn't load immediately)
 const FALLBACK_URL = "https://rxtwmwrgcilmsldtqdfe.supabase.co";
 const FALLBACK_KEY = "sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x";
 
@@ -39,14 +54,16 @@ const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY') || FALLBACK_KEY;
 
 export const isConfigured = !!(supabaseUrl && supabaseAnonKey);
 
-// We export a client if configured, otherwise null (cast as Client to satisfy TS imports downstream)
-// The EnvGate component prevents usage of this null client.
 export const supabase = (isConfigured 
   ? createClient(supabaseUrl!, supabaseAnonKey!, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
+      },
+      global: {
+        // INJEÇÃO DE SEGURANÇA: Timeout global em todas as chamadas de rede
+        fetch: fetchWithTimeout
       }
     }) 
   : null) as unknown as SupabaseClient;
@@ -59,15 +76,6 @@ export const saveSupabaseConfig = (url: string, key: string) => {
   }
 };
 
-export const clearSupabaseConfig = () => {
-    if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem('VITE_SUPABASE_URL');
-        localStorage.removeItem('VITE_SUPABASE_ANON_KEY');
-        window.location.reload();
-    }
-}
-
-// Helper to check connection status
 export async function testConnection() {
     if (!isConfigured || !supabase) return false;
     try {

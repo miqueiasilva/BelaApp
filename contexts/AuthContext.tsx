@@ -1,8 +1,8 @@
+
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 
-// Extended User type to include role/papel
 export type AppUser = SupabaseUser & {
   papel?: string;
   nome?: string;
@@ -26,13 +26,21 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Busca perfil com proteção contra travamento (Timeout de 7s para o perfil especificamente)
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
+    const profilePromise = supabase
+      .from('profiles')
+      .select('full_name, papel, avatar_url')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("Profile Timeout")), 7000)
+    );
+
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('full_name, papel, avatar_url')
-        .eq('id', authUser.id)
-        .maybeSingle();
+      // Race entre o banco e um timeout de 7 segundos
+      const { data, error }: any = await Promise.race([profilePromise, timeoutPromise]);
 
       if (error || !data) {
         return {
@@ -50,7 +58,12 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         avatar_url: data.avatar_url || authUser.user_metadata?.avatar_url
       };
     } catch (e) {
-      return { ...authUser, papel: 'admin', nome: 'Usuário' };
+      console.warn("AuthContext: Perfil demorou muito ou falhou. Usando dados básicos do JWT.");
+      return { 
+        ...authUser, 
+        papel: (authUser as any).papel || 'admin', 
+        nome: authUser.user_metadata?.full_name || 'Usuário' 
+      };
     }
   };
 
@@ -58,32 +71,35 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     let mounted = true;
 
     const getInitialSession = async () => {
+      setLoading(true);
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          // FIX: Se o refresh token falhar, limpa a sessão para evitar erro persistente
-          if (error.message.includes('Refresh Token Not Found') || error.message.includes('refresh_token_not_found')) {
-             console.warn("Sessão inválida detectada, limpando armazenamento...");
-             await supabase.auth.signOut();
-             if (mounted) setUser(null);
+          console.error("AuthContext: Erro ao recuperar sessão inicial:", error.message);
+          // Se o erro for de token inválido, limpa tudo para não travar
+          if (error.message.toLowerCase().includes('refresh_token')) {
+            await supabase.auth.signOut();
+            if (mounted) setUser(null);
           }
-          throw error;
+          return;
         }
 
         if (session?.user && mounted) {
           const appUser = await fetchProfile(session.user);
           setUser(appUser);
         }
-      } catch (error) {
-        console.error("Erro na inicialização da sessão:", error);
+      } catch (err) {
+        console.error("AuthContext: Erro crítico na inicialização:", err);
       } finally {
+        // GARANTIA ABSOLUTA: O loading sempre termina, aconteça o que acontecer
         if (mounted) setLoading(false);
       }
     };
 
     getInitialSession();
 
+    // Listener de mudanças de estado
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         const appUser = await fetchProfile(session.user);
@@ -92,6 +108,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         if (mounted) setUser(null);
       }
       
+      // Se houve um evento de logout ou erro, garante o fim do loading
       if (mounted) setLoading(false);
     });
 
@@ -109,18 +126,14 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     return await supabase.auth.signUp({ 
         email, 
         password,
-        options: {
-            data: { full_name: name }
-        }
+        options: { data: { full_name: name } }
     });
   };
 
   const signInWithGoogle = async () => {
     return await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/`,
-      },
+      options: { redirectTo: `${window.location.origin}/` },
     });
   };
 
@@ -135,8 +148,15 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
+    try {
+        setLoading(true);
+        await supabase.auth.signOut();
+    } finally {
+        setUser(null);
+        setLoading(false);
+        localStorage.clear();
+        sessionStorage.clear();
+    }
   };
 
   const value = useMemo(() => ({
