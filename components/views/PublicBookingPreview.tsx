@@ -1,11 +1,4 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-    ChevronLeft, Check, Star, Search, Image as ImageIcon, 
-    ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
-    User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
-    CheckCircle2, ArrowRight, UserCircle2, X
-} from 'lucide-react';
 import { 
     format, addDays, isSameDay, startOfDay, addMinutes, 
     isAfter, isBefore, getDay, parseISO, subDays 
@@ -14,6 +7,13 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+    ChevronLeft, Check, Star, Search, Image as ImageIcon, 
+    ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
+    User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
+    CheckCircle2, ArrowRight, UserCircle2, X
+} from 'lucide-react';
 
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1350&q=80";
 const DEFAULT_LOGO = "https://ui-avatars.com/api/?name=BelaFlow&background=random";
@@ -136,7 +136,7 @@ const PublicBookingPreview: React.FC = () => {
                 const sixtyDaysAgo = subDays(new Date(), 60).toISOString();
                 const { data: recentApps } = await supabase
                     .from('appointments')
-                    .select('service_name') // Usando nome para simplicidade de mapeamento
+                    .select('service_name') 
                     .gte('date', sixtyDaysAgo)
                     .in('status', ['concluido', 'agendado', 'confirmado', 'confirmado_whatsapp']);
 
@@ -146,7 +146,6 @@ const PublicBookingPreview: React.FC = () => {
                         counts[app.service_name] = (counts[app.service_name] || 0) + 1;
                     });
 
-                    // Ordena por frequência e pega os Top IDs
                     const sortedNames = Object.entries(counts)
                         .sort(([, a], [, b]) => b - a)
                         .slice(0, 5)
@@ -207,11 +206,14 @@ const PublicBookingPreview: React.FC = () => {
             const now = new Date();
 
             while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
+                // Regra 1: Não mostrar horários passados se for hoje
+                // AJUSTADO: Usando 30 minutos de intervalo para conferência
                 if (isSameDay(date, now) && isBefore(currentPointer, now)) {
-                    currentPointer = addMinutes(currentPointer, 15);
+                    currentPointer = addMinutes(currentPointer, 30);
                     continue;
                 }
 
+                // Regra 2: Verificar colisão com agendamentos existentes
                 const hasOverlap = busyAppointments?.some(app => {
                     const appStart = parseISO(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
@@ -224,7 +226,8 @@ const PublicBookingPreview: React.FC = () => {
                     slots.push(format(currentPointer, 'HH:mm'));
                 }
 
-                currentPointer = addMinutes(currentPointer, 15); 
+                // AJUSTADO: Incremento de 30 minutos conforme solicitado
+                currentPointer = addMinutes(currentPointer, 30); 
             }
 
             setAvailableSlots(slots);
@@ -245,12 +248,10 @@ const PublicBookingPreview: React.FC = () => {
     const servicesByCategory = useMemo(() => {
         const groups: Record<string, any[]> = {};
         
-        // 1. Criar grupo de Populares (Ranking Smart)
         if (popularServiceIds.length >= 3) {
             groups['⭐ Mais Populares'] = services.filter(s => popularServiceIds.includes(s.id));
         }
 
-        // 2. Agrupar por categorias normais
         services.forEach(s => {
             const cat = s.categoria || 'Outros';
             if (!groups[cat]) groups[cat] = [];
@@ -332,7 +333,7 @@ const PublicBookingPreview: React.FC = () => {
                             services={items}
                             selectedIds={selectedServices.map(s => s.id)}
                             onToggleService={toggleService}
-                            defaultOpen={cat === '⭐ Mais Populares'} // REGRA: Abre autom. os mais populares
+                            defaultOpen={cat === '⭐ Mais Populares'} 
                         />
                     ))}
                 </div>
