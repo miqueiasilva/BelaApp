@@ -76,6 +76,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     fetchServices();
   }, []);
 
+  // REGRA: Serviços filtrados pelas competências do profissional
+  const filteredServicesToSelect = useMemo(() => {
+    const profSkills = (formData.professional as any)?.services_enabled;
+    if (!formData.professional || !profSkills || profSkills.length === 0) {
+      return dbServices; // Se não tem profissional, mostra todos (ou poderia bloquear)
+    }
+    return dbServices.filter(s => profSkills.includes(s.id));
+  }, [dbServices, formData.professional]);
+
   useEffect(() => {
       setFormData({
           status: 'agendado',
@@ -217,6 +226,12 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handleSelectProfessional = (professional: LegacyProfessional) => {
+    // REGRA: Se o profissional mudar, resetamos os serviços selecionados para evitar inconsistência
+    if (formData.professional?.id !== professional.id) {
+        setSelectedServices([]);
+        setManualPrice(0);
+        setManualDuration(0);
+    }
     setFormData(prev => ({ ...prev, professional }));
     setSelectionModal(null);
   };
@@ -381,8 +396,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
         {selectionModal === 'service' && (
           <SelectionModal
-            title="Selecione o Serviço"
-            items={dbServices}
+            title={formData.professional ? `Serviços de ${formData.professional.name}` : "Selecione o Serviço"}
+            items={filteredServicesToSelect}
             onClose={() => setSelectionModal(null)}
             onSelect={(item) => handleAddService(dbServices.find(s=>s.id === item.id)!)}
             searchPlaceholder="Buscar Serviço..."

@@ -174,7 +174,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         try {
             const { data, error } = await supabase
                 .from('professionals')
-                .select('id, name, photo_url, role, order_index')
+                .select('id, name, photo_url, role, order_index, services_enabled') // REGRA: Agora buscamos as competências
                 .order('order_index', { ascending: true });
 
             if (error) throw error;
@@ -184,7 +184,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role,
-                    order_index: p.order_index
+                    order_index: p.order_index,
+                    services_enabled: p.services_enabled || [] // Mapeado para o objeto do profissional
                 }));
                 setResources(mapped);
             }
