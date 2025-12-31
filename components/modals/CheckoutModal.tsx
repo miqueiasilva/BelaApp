@@ -37,18 +37,18 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const handleFinalize = async () => {
         setIsLoading(true);
         try {
-            // 1. Mapeamento para o Banco de Dados (Colunas em Português)
+            // FIX: Mapeamento corrigido para o padrão de colunas em Inglês do Supabase
             const financialUpdate = {
-                valor: appointment.price,
-                descricao: `${appointment.service_name} - ${appointment.client_name}`,
-                tipo: 'receita',
-                categoria: 'servico',
-                forma_pagamento: selectedMethod,
-                data: new Date().toISOString(),
-                agendamento_id: appointment.id
+                amount: appointment.price,
+                description: `${appointment.service_name} - ${appointment.client_name}`,
+                type: 'income',
+                category: 'servico',
+                payment_method: selectedMethod,
+                date: new Date().toISOString(),
+                appointment_id: appointment.id
             };
 
-            // 2. Transação Atômica: Atualiza Agendamento + Cria Lançamento Financeiro
+            // Transação Atômica: Atualiza Agendamento + Cria Lançamento Financeiro
             const [apptResult, finResult] = await Promise.all([
                 supabase
                     .from('appointments')
@@ -64,7 +64,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
             setToast({ message: "Venda Registrada com Sucesso! 💰", type: 'success' });
             
-            // Delay curto para o usuário ver o feedback antes de fechar
             setTimeout(() => {
                 onSuccess();
                 onClose();
