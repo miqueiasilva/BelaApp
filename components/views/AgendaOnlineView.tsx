@@ -168,6 +168,11 @@ const AgendaOnlineView: React.FC = () => {
 
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
+    // Link real de acesso público baseado na rota atual do navegador
+    const realLink = useMemo(() => {
+        return window.location.origin + "/#/public-preview";
+    }, []);
+
     const fetchAnalytics = async () => {
         setIsRefreshing(true);
         try {
@@ -262,7 +267,7 @@ const AgendaOnlineView: React.FC = () => {
         try {
             const payload = {
                 online_booking_active: config.isActive,
-                min_scheduling_notice: parseFloat(config.min_scheduling_notice), // Alterado para parseFloat para aceitar 0.5
+                min_scheduling_notice: parseFloat(config.min_scheduling_notice), 
                 max_scheduling_window: parseInt(config.max_scheduling_window),
                 cancellation_notice: parseInt(config.cancellation_notice),
                 cancellation_policy: config.cancellation_policy,
@@ -282,6 +287,16 @@ const AgendaOnlineView: React.FC = () => {
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const handleCopyLink = () => {
+        navigator.clipboard.writeText(realLink);
+        showToast('Link copiado!');
+    };
+
+    const handleShareWhatsApp = () => {
+        const text = `Olá! Agende seu horário no ${config.studioName || 'nosso estúdio'} através do link: ${realLink}`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
     };
 
     if (isLoading) return <div className="h-full flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest text-[10px]"><Loader2 className="animate-spin text-orange-500 mr-2" /> Carregando Painel...</div>;
@@ -405,11 +420,11 @@ const AgendaOnlineView: React.FC = () => {
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Endereço de Acesso (URL)</label>
                                     <div className="flex flex-col sm:flex-row gap-2">
                                         <div className="flex-1 flex items-center px-5 py-4 bg-slate-100 border border-slate-200 rounded-2xl text-slate-500 font-bold text-sm overflow-hidden truncate">
-                                            {window.location.host}/bela/{config.slug || 'seu-estudio'}
+                                            {realLink}
                                         </div>
                                         <div className="flex gap-2">
-                                            <button onClick={() => { navigator.clipboard.writeText(`${window.location.host}/bela/${config.slug}`); showToast('Copiado!'); }} className="p-4 bg-white border border-slate-300 rounded-2xl hover:bg-slate-50 text-slate-600 transition-all shadow-sm"><Copy size={20}/></button>
-                                            <button className="p-4 bg-green-500 text-white rounded-2xl hover:bg-green-600 transition-all shadow-lg shadow-green-100"><Share2 size={20}/></button>
+                                            <button onClick={handleCopyLink} className="p-4 bg-white border border-slate-300 rounded-2xl hover:bg-slate-50 text-slate-600 transition-all shadow-sm"><Copy size={20}/></button>
+                                            <button onClick={handleShareWhatsApp} className="p-4 bg-green-500 text-white rounded-2xl hover:bg-green-600 transition-all shadow-lg shadow-green-100"><Share2 size={20}/></button>
                                         </div>
                                     </div>
                                 </div>
