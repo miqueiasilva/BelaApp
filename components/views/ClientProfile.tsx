@@ -164,7 +164,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const fileInputRef = useRef<HTMLInputElement>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
     
-    // States
+    // States: Anamnese
     const [anamnesis, setAnamnesis] = useState<any>({
         has_allergy: false,
         allergy_details: '',
@@ -179,30 +179,30 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
     const [photos, setPhotos] = useState<any[]>([]);
 
-    // Modelo de Estado Local Sincronizado
+    // --- Modelo de Estado Sincronizado com as Colunas do Banco (Português) ---
     const [formData, setFormData] = useState<any>({
         id: null,
-        full_name: '',
-        nickname: '',
-        phone: '',
+        nome: '',
+        apelido: '',
+        telefone: '',
         email: '',
         instagram: '',
-        birth_date: '',
+        nascimento: '',
         cpf: '',
         rg: '',
-        gender: '',
-        profession: '',
-        postal_code: '',
-        address: '',
-        number: '',
-        complement: '',
-        neighborhood: '',
-        city: '',
-        state: '',
+        sexo: '',
+        profissao: '',
+        cep: '',
+        endereco: '',
+        numero: '',
+        complemento: '',
+        bairro: '',
+        cidade: '',
+        estado: '',
         photo_url: null,
         online_booking_enabled: true,
-        how_found: 'Instagram',
-        notes: ''
+        origem: 'Instagram',
+        observacoes: ''
     });
 
     useEffect(() => {
@@ -212,37 +212,37 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             fetchPhotos();
             fetchTemplates();
         } else {
-            setFormData(prev => ({ ...prev, full_name: client.nome || '' }));
+            setFormData(prev => ({ ...prev, nome: client.nome || '' }));
         }
     }, [client.id]);
 
     const refreshClientData = async () => {
         if (!client.id) return;
-        const { data } = await supabase.from('clients').select('*').eq('id', client.id).single();
+        const { data, error } = await supabase.from('clients').select('*').eq('id', client.id).single();
         if (data) {
             setFormData({
                 id: data.id,
-                full_name: data.full_name || '',
-                nickname: data.nickname || '',
-                phone: data.phone || '',
+                nome: data.nome || data.full_name || '',
+                apelido: data.apelido || data.nickname || '',
+                telefone: data.telefone || data.whatsapp || data.phone || '',
                 email: data.email || '',
                 instagram: data.instagram || '',
-                birth_date: data.birth_date || '',
+                nascimento: data.nascimento || data.birth_date || '',
                 cpf: data.cpf || '',
                 rg: data.rg || '',
-                gender: data.gender || '',
-                profession: data.profession || '',
-                postal_code: data.postal_code || '',
-                address: data.address || '',
-                number: data.number || '',
-                complement: data.complement || '',
-                neighborhood: data.neighborhood || '',
-                city: data.city || '',
-                state: data.state || '',
+                sexo: data.sexo || data.gender || '',
+                profissao: data.profissao || data.profession || '',
+                cep: data.cep || data.postal_code || '',
+                endereco: data.endereco || data.address || '',
+                numero: data.numero || data.number || '',
+                complemento: data.complemento || data.complement || '',
+                bairro: data.bairro || data.neighborhood || '',
+                cidade: data.cidade || data.city || '',
+                estado: data.estado || data.state || '',
                 photo_url: data.photo_url || null,
                 online_booking_enabled: data.online_booking_enabled ?? true,
-                how_found: data.how_found || 'Instagram',
-                notes: data.notes || ''
+                origem: data.origem || data.how_found || 'Instagram',
+                observacoes: data.observacoes || data.notes || ''
             });
         }
     };
@@ -250,7 +250,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     // Busca automática de CEP
     useEffect(() => {
         const fetchAddress = async () => {
-            const cleanCep = formData.postal_code?.replace(/\D/g, '');
+            const cleanCep = formData.cep?.replace(/\D/g, '');
             if (cleanCep?.length === 8) {
                 try {
                     const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
@@ -258,17 +258,17 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     if (!data.erro) {
                         setFormData((prev: any) => ({
                             ...prev,
-                            address: data.logradouro,
-                            neighborhood: data.bairro,
-                            city: data.localidade,
-                            state: data.uf
+                            endereco: data.logradouro,
+                            bairro: data.bairro,
+                            cidade: data.localidade,
+                            estado: data.uf
                         }));
                     }
                 } catch (e) { console.error("Erro CEP"); }
             }
         };
         fetchAddress();
-    }, [formData.postal_code]);
+    }, [formData.cep]);
 
     const fetchAnamnesis = async () => {
         const { data } = await supabase.from('client_anamnesis').select('*').eq('client_id', client.id).maybeSingle();
@@ -331,35 +331,36 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     };
 
     const handleSave = async () => {
-        if (!formData.full_name) {
+        if (!formData.nome) {
             setToast({ message: "Nome é obrigatório.", type: 'error' });
             return;
         }
 
         setIsSaving(true);
         try {
-            // Normalização: Strings vazias em campos de data/número devem ser null
+            // --- Mapeamento Frontend -> Banco de Dados (Schema Exato em Português) ---
             const payload = {
-                full_name: formData.full_name,
-                nickname: formData.nickname || null,
-                phone: formData.phone || null,
+                nome: formData.nome,
+                apelido: formData.apelido || null,
+                telefone: formData.telefone || null,
                 email: formData.email || null,
                 instagram: formData.instagram || null,
-                birth_date: formData.birth_date || null,
+                nascimento: formData.nascimento || null,
                 cpf: formData.cpf || null,
                 rg: formData.rg || null,
-                gender: formData.gender || null,
-                profession: formData.profession || null,
-                postal_code: formData.postal_code || null,
-                address: formData.address || null,
-                number: formData.number || null,
-                complement: formData.complement || null,
-                neighborhood: formData.neighborhood || null,
-                city: formData.city || null,
-                state: formData.state || null,
-                how_found: formData.how_found || 'Outros',
-                notes: formData.notes || null,
-                online_booking_enabled: formData.online_booking_enabled
+                sexo: formData.sexo || null,
+                profissao: formData.profissao || null,
+                cep: formData.cep || null,
+                endereco: formData.endereco || null,
+                numero: formData.numero || null,
+                complemento: formData.complemento || null,
+                bairro: formData.bairro || null,
+                cidade: formData.cidade || null,
+                estado: formData.estado || null,
+                origem: formData.origem || 'Outros',
+                observacoes: formData.observacoes || null,
+                online_booking_enabled: formData.online_booking_enabled,
+                photo_url: formData.photo_url
             };
 
             const { error } = await supabase
@@ -375,9 +376,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             
         } catch (err: any) {
             console.error("DB Save Error:", err);
-            // Debug detalhado no toast para o desenvolvedor e usuário
+            // Debug detalhado conforme solicitado para identificar colunas faltantes ou tipos inválidos
             setToast({ 
-                message: `Erro: ${err.message || err.details || "Verifique as permissões de acesso."}`, 
+                message: `Erro ao persistir: ${err.message || "Erro desconhecido"}. Detalhes: ${err.details || "Verifique restrições de banco."}`, 
                 type: 'error' 
             });
         } finally {
@@ -420,14 +421,14 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 <div className="flex items-center gap-5">
                     <div className="relative group">
                         <div className={`w-20 h-20 rounded-[24px] flex items-center justify-center text-2xl font-black border-4 border-white shadow-xl overflow-hidden transition-all ${isEditing ? 'cursor-pointer ring-2 ring-orange-100' : ''} ${formData.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}`}>
-                            {formData.photo_url ? <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" /> : formData.full_name?.charAt(0) || '?'}
+                            {formData.photo_url ? <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" /> : formData.nome?.charAt(0) || '?'}
                         </div>
                     </div>
 
                     <div className="flex-1">
-                        <h2 className="text-2xl font-black text-slate-800 leading-tight">{formData.full_name || 'Novo Cliente'}</h2>
+                        <h2 className="text-2xl font-black text-slate-800 leading-tight">{formData.nome || 'Novo Cliente'}</h2>
                         <div className="flex items-center gap-3 mt-1">
-                            <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-200">{formData.how_found}</span>
+                            <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-200">{formData.origem}</span>
                             {anamnesis.has_allergy && <span className="text-[10px] font-black uppercase text-rose-500 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100">⚠️ Alérgica</span>}
                         </div>
                     </div>
@@ -449,7 +450,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                              
                              <Card title="Contato e Redes Sociais" icon={<Smartphone size={18} />}>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <EditField label="WhatsApp / Celular" name="phone" value={formData.phone} onChange={handleInputChange} disabled={!isEditing} placeholder="(00) 00000-0000" icon={Phone} />
+                                    <EditField label="WhatsApp / Celular" name="telefone" value={formData.telefone} onChange={handleInputChange} disabled={!isEditing} placeholder="(00) 00000-0000" icon={Phone} />
                                     <EditField label="E-mail Principal" name="email" value={formData.email} onChange={handleInputChange} disabled={!isEditing} placeholder="cliente@email.com" icon={Mail} />
                                     <EditField label="Instagram" name="instagram" value={formData.instagram} onChange={handleInputChange} disabled={!isEditing} placeholder="@usuario" icon={Instagram} />
                                 </div>
@@ -457,28 +458,28 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
                              <Card title="Endereço e Localização" icon={<MapPin size={18} />}>
                                 <div className="grid grid-cols-2 md:grid-cols-6 gap-6">
-                                    <EditField label="CEP" name="postal_code" value={formData.postal_code} onChange={handleInputChange} disabled={!isEditing} placeholder="00000-000" icon={Hash} span="col-span-2" />
-                                    <EditField label="Logradouro" name="address" value={formData.address} onChange={handleInputChange} disabled={!isEditing} placeholder="Rua, Av..." icon={Navigation} span="col-span-3" />
-                                    <EditField label="Número" name="number" value={formData.number} onChange={handleInputChange} disabled={!isEditing} placeholder="123" span="col-span-1" />
-                                    <EditField label="Complemento" name="complement" value={formData.complement} onChange={handleInputChange} disabled={!isEditing} placeholder="Apto, Bloco..." span="col-span-2" />
-                                    <EditField label="Bairro" name="neighborhood" value={formData.neighborhood} onChange={handleInputChange} disabled={!isEditing} placeholder="Bairro" span="col-span-2" />
-                                    <EditField label="Cidade" name="city" value={formData.city} onChange={handleInputChange} disabled={!isEditing} placeholder="Cidade" span="col-span-2" />
-                                    <EditField label="Estado" name="state" value={formData.state} onChange={handleInputChange} disabled={!isEditing} placeholder="UF" span="col-span-2" />
+                                    <EditField label="CEP" name="cep" value={formData.cep} onChange={handleInputChange} disabled={!isEditing} placeholder="00000-000" icon={Hash} span="col-span-2" />
+                                    <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} disabled={!isEditing} placeholder="Rua, Av..." icon={Navigation} span="col-span-3" />
+                                    <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} disabled={!isEditing} placeholder="123" span="col-span-1" />
+                                    <EditField label="Complemento" name="complemento" value={formData.complemento} onChange={handleInputChange} disabled={!isEditing} placeholder="Apto, Bloco..." span="col-span-2" />
+                                    <EditField label="Bairro" name="bairro" value={formData.bairro} onChange={handleInputChange} disabled={!isEditing} placeholder="Bairro" span="col-span-2" />
+                                    <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} disabled={!isEditing} placeholder="Cidade" span="col-span-2" />
+                                    <EditField label="Estado" name="estado" value={formData.estado} onChange={handleInputChange} disabled={!isEditing} placeholder="UF" span="col-span-2" />
                                 </div>
                              </Card>
 
                              <Card title="Perfil do Cliente" icon={<User size={18} />}>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                    <EditField label="Nome Completo" name="full_name" value={formData.full_name} onChange={handleInputChange} disabled={!isEditing} icon={User} span="md:col-span-2" />
-                                    <EditField label="Apelido" name="nickname" value={formData.nickname} onChange={handleInputChange} disabled={!isEditing} icon={Smile} />
+                                    <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} disabled={!isEditing} icon={User} span="md:col-span-2" />
+                                    <EditField label="Apelido" name="apelido" value={formData.apelido} onChange={handleInputChange} disabled={!isEditing} icon={Smile} />
                                     <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} disabled={!isEditing} placeholder="000.000.000-00" icon={CreditCard} />
-                                    <EditField label="Data de Nascimento" name="birth_date" type="date" value={formData.birth_date} onChange={handleInputChange} disabled={!isEditing} icon={Calendar} />
+                                    <EditField label="Data de Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} disabled={!isEditing} icon={Calendar} />
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Sexo</label>
                                         <select 
-                                            name="gender" 
-                                            value={formData.gender} 
-                                            onChange={(e) => setFormData({ ...formData, gender: e.target.value })} 
+                                            name="sexo" 
+                                            value={formData.sexo} 
+                                            onChange={(e) => setFormData({ ...formData, sexo: e.target.value })} 
                                             disabled={!isEditing} 
                                             className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 disabled:opacity-60"
                                         >
@@ -489,13 +490,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             <option value="Não informado">Não informar</option>
                                         </select>
                                     </div>
-                                    <EditField label="Profissão" name="profession" value={formData.profession} onChange={handleInputChange} disabled={!isEditing} icon={Briefcase} />
+                                    <EditField label="Profissão" name="profissao" value={formData.profissao} onChange={handleInputChange} disabled={!isEditing} icon={Briefcase} />
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Como nos conheceu?</label>
                                         <select 
-                                            name="how_found" 
-                                            value={formData.how_found} 
-                                            onChange={(e) => setFormData({ ...formData, how_found: e.target.value })} 
+                                            name="origem" 
+                                            value={formData.origem} 
+                                            onChange={(e) => setFormData({ ...formData, origem: e.target.value })} 
                                             disabled={!isEditing} 
                                             className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 disabled:opacity-60"
                                         >
@@ -514,8 +515,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Anotações Internas</label>
                                     <textarea 
-                                        name="notes"
-                                        value={formData.notes}
+                                        name="observacoes"
+                                        value={formData.observacoes}
                                         onChange={handleInputChange}
                                         disabled={!isEditing}
                                         className="w-full bg-white border border-slate-200 rounded-2xl p-4 min-h-[120px] outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-medium text-slate-600 resize-none shadow-sm disabled:opacity-60"
