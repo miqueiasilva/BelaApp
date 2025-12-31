@@ -23,7 +23,7 @@ interface ClientProfileProps {
     onSave: (client: any) => Promise<void>;
 }
 
-// --- Componente Interno: Assinatura Digital Refinada (Estilo Caneta Esferográfica) ---
+// --- Componente Interno: Assinatura Digital Refinada ---
 const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSaving: boolean }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
@@ -36,18 +36,16 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSa
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         
-        // Ajuste de DPI para evitar serrilhado
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
         ctx.scale(dpr, dpr);
 
-        // Configurações Globais da "Caneta Esferográfica"
-        ctx.strokeStyle = '#000080'; // Azul Marinho Profissional
+        ctx.strokeStyle = '#000080'; 
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        ctx.lineWidth = 0.8; // Base inicial fina
+        ctx.lineWidth = 0.8; 
     }, []);
 
     const getPos = (e: any) => {
@@ -56,10 +54,7 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSa
         const rect = canvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        return {
-            x: clientX - rect.left,
-            y: clientY - rect.top
-        };
+        return { x: clientX - rect.left, y: clientY - rect.top };
     };
 
     const startDrawing = (e: any) => {
@@ -67,7 +62,6 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSa
         lastPos.current = pos;
         setIsDrawing(true);
         setIsEmpty(false);
-        
         const ctx = canvasRef.current?.getContext('2d');
         if (ctx) {
             ctx.beginPath();
@@ -80,24 +74,13 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSa
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (!ctx || !canvas) return;
-
         const pos = getPos(e);
-        
-        // --- Algoritmo de Caneta Inteligente ---
-        // Calcula a velocidade do traço (distância entre pontos)
         const dist = Math.sqrt(Math.pow(pos.x - lastPos.current.x, 2) + Math.pow(pos.y - lastPos.current.y, 2));
-        
-        // Determina a largura alvo (mais rápido = mais fino)
-        // minWidth: 0.5 | maxWidth: 1.8
         const targetWidth = Math.max(0.5, Math.min(1.8, 4 / (dist + 1)));
-        
-        // Suavização Bézier via Velocity Filter (0.85)
         const velocityFilterWeight = 0.85;
         ctx.lineWidth = (ctx.lineWidth * velocityFilterWeight) + (targetWidth * (1 - velocityFilterWeight));
-        
         ctx.lineTo(pos.x, pos.y);
         ctx.stroke();
-        
         lastPos.current = pos;
     };
 
@@ -111,7 +94,7 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSa
 
     const handleConfirm = () => {
         if (isEmpty) {
-            alert("Por favor, assine no campo indicado antes de confirmar.");
+            alert("Por favor, assine antes de confirmar.");
             return;
         }
         canvasRef.current?.toBlob((blob) => {
@@ -122,9 +105,7 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSa
     return (
         <div className="space-y-3">
             <div className="relative border-2 border-slate-200 rounded-3xl bg-white overflow-hidden h-56 touch-none shadow-inner group">
-                {/* Linha Guia Visual */}
                 <div className="absolute bottom-14 left-10 right-10 h-px bg-slate-100 pointer-events-none"></div>
-                
                 <canvas 
                     ref={canvasRef}
                     className="w-full h-full cursor-crosshair relative z-10"
@@ -185,7 +166,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const fileInputRef = useRef<HTMLInputElement>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
     
-    // Anamnese States
+    // States
     const [anamnesis, setAnamnesis] = useState<any>({
         has_allergy: false,
         allergy_details: '',
@@ -198,40 +179,75 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     });
     const [templates, setTemplates] = useState<any[]>([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-
     const [photos, setPhotos] = useState<any[]>([]);
 
     const [formData, setFormData] = useState<any>({
-        nome: client.nome || '',
-        apelido: client.apelido || '',
-        whatsapp: client.whatsapp || '',
-        email: client.email || '',
-        instagram: client.instagram || '',
-        nascimento: client.nascimento || '',
-        cpf: client.cpf || '',
-        rg: client.rg || '',
-        sexo: client.sexo || '',
-        profissao: client.profissao || '',
-        cep: client.cep || '',
-        endereco: client.endereco || '',
-        numero: client.numero || '',
-        bairro: client.bairro || '',
-        cidade: client.cidade || '',
-        estado: client.estado || '',
-        photo_url: client.photo_url || null,
-        online_booking_enabled: client.online_booking_enabled ?? true,
-        origem: client.origem || 'Instagram',
-        notas_gerais: (client as any).notas_gerais || '',
-        id: client.id || null
+        nome: '',
+        apelido: '',
+        whatsapp: '',
+        email: '',
+        instagram: '',
+        nascimento: '',
+        cpf: '',
+        rg: '',
+        sexo: '',
+        profissao: '',
+        cep: '',
+        endereco: '',
+        numero: '',
+        complemento: '',
+        bairro: '',
+        cidade: '',
+        estado: '',
+        photo_url: null,
+        online_booking_enabled: true,
+        origem: 'Instagram',
+        notas_gerais: '',
+        id: null
     });
 
     useEffect(() => {
         if (client.id) {
+            refreshClientData();
             fetchAnamnesis();
             fetchPhotos();
             fetchTemplates();
+        } else {
+            // Se for novo cliente, usa os dados iniciais passados
+            setFormData(prev => ({ ...prev, ...client }));
         }
     }, [client.id]);
+
+    const refreshClientData = async () => {
+        if (!client.id) return;
+        const { data, error } = await supabase.from('clients').select('*').eq('id', client.id).single();
+        if (data) {
+            setFormData({
+                nome: data.full_name || data.nome || '',
+                apelido: data.nickname || data.apelido || '',
+                whatsapp: data.phone || data.whatsapp || '',
+                email: data.email || '',
+                instagram: data.instagram || '',
+                nascimento: data.birth_date || data.nascimento || '',
+                cpf: data.cpf || '',
+                rg: data.rg || '',
+                sexo: data.gender || data.sexo || '',
+                profissao: data.profession || data.profissao || '',
+                cep: data.postal_code || data.cep || '',
+                endereco: data.address || data.endereco || '',
+                numero: data.number || data.numero || '',
+                complemento: data.complement || data.complemento || '',
+                bairro: data.neighborhood || data.bairro || '',
+                cidade: data.city || data.cidade || '',
+                estado: data.state || data.estado || '',
+                photo_url: data.photo_url || null,
+                online_booking_enabled: data.online_booking_enabled ?? true,
+                origem: data.how_found || data.origem || 'Instagram',
+                notas_gerais: data.notes || data.notas_gerais || '',
+                id: data.id
+            });
+        }
+    };
 
     // Busca automática de CEP
     useEffect(() => {
@@ -290,6 +306,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         setFormData((prev: any) => ({ ...prev, [name]: value }));
     };
 
+    // Handler específico para Selects (contorna problemas de persistência)
+    const handleSelectChange = (name: string, value: string) => {
+        setFormData((prev: any) => ({ ...prev, [name]: value }));
+    };
+
     const handleSaveAnamnesis = async () => {
         setIsSaving(true);
         const payload = { ...anamnesis, client_id: client.id };
@@ -303,59 +324,17 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (!client.id) return;
         setIsSaving(true);
         try {
-            // 1. Upload para o bucket 'signatures'
             const fileName = `sig_${client.id}_${Date.now()}.png`;
-            const { error: uploadError } = await supabase.storage
-                .from('signatures')
-                .upload(fileName, blob, { contentType: 'image/png' });
-
+            const { error: uploadError } = await supabase.storage.from('signatures').upload(fileName, blob, { contentType: 'image/png' });
             if (uploadError) throw uploadError;
-
-            // 2. Pegar URL Pública
-            const { data: { publicUrl } } = supabase.storage
-                .from('signatures')
-                .getPublicUrl(fileName);
-
-            // 3. Atualizar Tabela de Anamnese
+            const { data: { publicUrl } } = supabase.storage.from('signatures').getPublicUrl(fileName);
             const timestamp = new Date().toISOString();
-            const { error: dbError } = await supabase
-                .from('client_anamnesis')
-                .update({ 
-                    signature_url: publicUrl,
-                    signed_at: timestamp
-                })
-                .eq('client_id', client.id);
-
-            if (dbError) throw dbError;
-
-            // 4. Update Local State & UI
+            await supabase.from('client_anamnesis').update({ signature_url: publicUrl, signed_at: timestamp }).eq('client_id', client.id);
             setAnamnesis(prev => ({ ...prev, signature_url: publicUrl, signed_at: timestamp }));
-            setToast({ message: "Assinatura legal vinculada com sucesso! ✅", type: 'success' });
-
+            setToast({ message: "Assinatura vinculada!", type: 'success' });
         } catch (e: any) {
-            console.error("Signature save error:", e);
-            setToast({ message: "Erro ao processar assinatura.", type: 'error' });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setIsUploading(true);
-        try {
-            const fileName = `avatar_${formData.id || 'new'}_${Date.now()}`;
-            const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, file);
-            if (uploadError) throw uploadError;
-            const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
-            setFormData((prev: any) => ({ ...prev, photo_url: publicUrl }));
-            setToast({ message: "Foto carregada!", type: 'success' });
-        } catch(e) {
-            setToast({ message: "Erro no upload da foto.", type: 'error' });
-        } finally {
-            setIsUploading(false);
-        }
+            setToast({ message: "Erro na assinatura.", type: 'error' });
+        } finally { setIsSaving(false); }
     };
 
     const handleSave = async () => {
@@ -366,14 +345,44 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
         setIsSaving(true);
         try {
-            const payload = { ...formData };
-            if (isNew) delete payload.id;
+            // Mapeamento Frontend -> Banco de Dados (Reforçado)
+            const mappedPayload = {
+                full_name: formData.nome,
+                nickname: formData.apelido,
+                phone: formData.whatsapp,
+                email: formData.email,
+                instagram: formData.instagram,
+                birth_date: formData.nascimento || null, // Garante NULL para strings vazias em date columns
+                cpf: formData.cpf,
+                rg: formData.rg,
+                gender: formData.sexo, // "sexo" no state -> "gender" no banco
+                profession: formData.profissao,
+                postal_code: formData.cep,
+                address: formData.endereco,
+                number: formData.numero,
+                complement: formData.complemento,
+                neighborhood: formData.bairro,
+                city: formData.cidade,
+                state: formData.estado,
+                how_found: formData.origem, // "origem" no state -> "how_found" no banco
+                notes: formData.notas_gerais,
+                online_booking_enabled: formData.online_booking_enabled,
+                photo_url: formData.photo_url
+            };
 
-            // Chamar função de salvamento do pai (ClientesView) que já tem a lógica do Supabase
-            await onSave(payload);
+            const { error } = await supabase
+                .from('clients')
+                .update(mappedPayload)
+                .eq('id', formData.id);
+
+            if (error) throw error;
             
             setToast({ message: "Dados atualizados com sucesso! ✅", type: 'success' });
             setIsEditing(false);
+            
+            // Força a atualização local para garantir sincronia
+            await refreshClientData();
+            
         } catch (err: any) {
             console.error("Erro ao salvar perfil:", err);
             setToast({ message: "Erro ao persistir dados no banco.", type: 'error' });
@@ -407,7 +416,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     className="px-6 py-2.5 bg-orange-600 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95 disabled:opacity-70"
                                 >
                                     {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                                    {isSaving ? 'Salvando...' : (isNew ? 'Criar Cliente' : 'Salvar Alterações')}
+                                    {isSaving ? 'Gravando...' : (isNew ? 'Criar Cliente' : 'Salvar Alterações')}
                                 </button>
                             </div>
                         )}
@@ -416,19 +425,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
                 <div className="flex items-center gap-5">
                     <div className="relative group">
-                        <div 
-                            onClick={() => isEditing && fileInputRef.current?.click()}
-                            className={`w-20 h-20 rounded-[24px] flex items-center justify-center text-2xl font-black border-4 border-white shadow-xl overflow-hidden transition-all ${isEditing ? 'cursor-pointer hover:brightness-90 ring-2 ring-orange-100' : ''} ${formData.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}`}
-                        >
-                            {isUploading ? <Loader2 className="animate-spin text-orange-500" /> : formData.photo_url ? <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" /> : formData.nome?.charAt(0) || '?'}
+                        <div className={`w-20 h-20 rounded-[24px] flex items-center justify-center text-2xl font-black border-4 border-white shadow-xl overflow-hidden transition-all ${isEditing ? 'cursor-pointer ring-2 ring-orange-100' : ''} ${formData.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}`}>
+                            {formData.photo_url ? <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" /> : formData.nome?.charAt(0) || '?'}
                         </div>
-                        <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarUpload} />
-                        
-                        {anamnesis.has_allergy && (
-                            <div className="absolute -top-1 -right-1 bg-rose-500 text-white p-1 rounded-full border-2 border-white shadow-sm animate-pulse">
-                                <AlertCircle size={14} />
-                            </div>
-                        )}
                     </div>
 
                     <div className="flex-1">
@@ -446,7 +445,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 <button onClick={() => setActiveTab('geral')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'geral' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Dados</button>
                 <button onClick={() => setActiveTab('anamnese')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'anamnese' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Anamnese</button>
                 <button onClick={() => setActiveTab('fotos')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'fotos' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Galeria</button>
-                <button onClick={() => setActiveTab('historico')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'historico' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Histórico</button>
             </nav>
 
             <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50">
@@ -455,7 +453,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     {activeTab === 'geral' && (
                         <div className="space-y-6 animate-in fade-in duration-500">
                              
-                             {/* SEÇÃO: CONTATO */}
                              <Card title="Contato e Redes Sociais" icon={<Smartphone size={18} />}>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <EditField label="WhatsApp / Celular" name="whatsapp" value={formData.whatsapp} onChange={handleInputChange} disabled={!isEditing} placeholder="(00) 00000-0000" icon={Phone} />
@@ -464,70 +461,82 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 </div>
                              </Card>
 
-                             {/* SEÇÃO: ENDEREÇO COMPLETO */}
                              <Card title="Endereço e Localização" icon={<MapPin size={18} />}>
                                 <div className="grid grid-cols-2 md:grid-cols-6 gap-6">
                                     <EditField label="CEP" name="cep" value={formData.cep} onChange={handleInputChange} disabled={!isEditing} placeholder="00000-000" icon={Hash} span="col-span-2" />
                                     <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} disabled={!isEditing} placeholder="Rua, Av..." icon={Navigation} span="col-span-3" />
                                     <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} disabled={!isEditing} placeholder="123" span="col-span-1" />
+                                    <EditField label="Complemento" name="complemento" value={formData.complemento} onChange={handleInputChange} disabled={!isEditing} placeholder="Apto, Bloco..." span="col-span-2" />
                                     <EditField label="Bairro" name="bairro" value={formData.bairro} onChange={handleInputChange} disabled={!isEditing} placeholder="Bairro" span="col-span-2" />
                                     <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} disabled={!isEditing} placeholder="Cidade" span="col-span-2" />
                                     <EditField label="Estado" name="estado" value={formData.estado} onChange={handleInputChange} disabled={!isEditing} placeholder="UF" span="col-span-2" />
                                 </div>
                              </Card>
 
-                             {/* SEÇÃO: DADOS PESSOAIS */}
                              <Card title="Perfil do Cliente" icon={<User size={18} />}>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                                     <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} disabled={!isEditing} icon={User} span="md:col-span-2" />
-                                    <EditField label="Como Gosta de ser Chamada" name="apelido" value={formData.apelido} onChange={handleInputChange} disabled={!isEditing} icon={Smile} />
+                                    <EditField label="Apelido" name="apelido" value={formData.apelido} onChange={handleInputChange} disabled={!isEditing} icon={Smile} />
                                     <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} disabled={!isEditing} placeholder="000.000.000-00" icon={CreditCard} />
                                     <EditField label="Data de Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} disabled={!isEditing} icon={Calendar} />
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Sexo</label>
-                                        <select name="sexo" value={formData.sexo} onChange={handleInputChange} disabled={!isEditing} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 disabled:opacity-60">
+                                        <select 
+                                            name="sexo" 
+                                            value={formData.sexo} 
+                                            onChange={(e) => handleSelectChange('sexo', e.target.value)} 
+                                            disabled={!isEditing} 
+                                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 disabled:opacity-60"
+                                        >
                                             <option value="">Selecione</option>
                                             <option value="Feminino">Feminino</option>
                                             <option value="Masculino">Masculino</option>
+                                            <option value="Outro">Outro</option>
                                             <option value="Não informado">Não informar</option>
                                         </select>
                                     </div>
                                     <EditField label="Profissão" name="profissao" value={formData.profissao} onChange={handleInputChange} disabled={!isEditing} icon={Briefcase} />
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Como nos conheceu?</label>
-                                        <select name="origem" value={formData.origem} onChange={handleInputChange} disabled={!isEditing} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 disabled:opacity-60">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Origem</label>
+                                        <select 
+                                            name="origem" 
+                                            value={formData.origem} 
+                                            onChange={(e) => handleSelectChange('origem', e.target.value)} 
+                                            disabled={!isEditing} 
+                                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 disabled:opacity-60"
+                                        >
                                             <option value="Instagram">Instagram</option>
                                             <option value="Indicação">Indicação</option>
                                             <option value="Passagem">Passagem</option>
                                             <option value="Google">Google / Maps</option>
+                                            <option value="Facebook">Facebook</option>
+                                            <option value="TikTok">TikTok</option>
                                             <option value="Outros">Outros</option>
                                         </select>
                                     </div>
                                 </div>
                              </Card>
 
-                             {/* SEÇÃO: ANOTAÇÕES */}
                              <Card title="Observações Gerais" icon={<FileText size={18} />}>
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Anotações Internas Estratégicas</label>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Anotações Internas</label>
                                     <textarea 
                                         name="notas_gerais"
                                         value={formData.notas_gerais}
                                         onChange={handleInputChange}
                                         disabled={!isEditing}
                                         className="w-full bg-white border border-slate-200 rounded-2xl p-4 min-h-[120px] outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-medium text-slate-600 resize-none shadow-sm disabled:opacity-60"
-                                        placeholder="Ex: Prefere tons pastéis, tem sensibilidade nos cílios, gosta de conversar sobre viagens..."
+                                        placeholder="Ex: Prefere tons pastéis, tem sensibilidade nos cílios..."
                                     />
                                 </div>
                              </Card>
 
-                             {/* BOTÃO DE SALVAR NO RODAPÉ DA ABA */}
                              {isEditing && (
                                 <div className="flex justify-end pt-4">
                                     <button 
                                         onClick={handleSave} 
                                         disabled={isSaving}
-                                        className="px-10 py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 shadow-xl transition-all active:scale-95 flex items-center gap-3 disabled:opacity-70"
+                                        className="px-10 py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 shadow-xl transition-all active:scale-95 disabled:opacity-70 flex items-center gap-3"
                                     >
                                         {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
                                         {isSaving ? 'Sincronizando...' : 'Salvar Todos os Dados'}
@@ -542,9 +551,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                             <Card title="Ficha de Saúde Estética" icon={<Activity size={18} />}>
                                 <div className="space-y-8">
                                     {[
-                                        { key: 'has_allergy', label: 'Possui Alguma Alergia?', hasDetails: true, detailKey: 'allergy_details', placeholder: 'Cite substâncias (ex: Glúten, Henna, Ácidos)...' },
+                                        { key: 'has_allergy', label: 'Possui Alguma Alergia?', hasDetails: true, detailKey: 'allergy_details', placeholder: 'Cite substâncias...' },
                                         { key: 'is_pregnant', label: 'Está Gestante ou Lactante?', hasDetails: false },
-                                        { key: 'uses_meds', label: 'Usa Medicamentos Contínuos?', hasDetails: true, detailKey: 'meds_details', placeholder: 'Quais medicamentos?' }
+                                        { key: 'uses_meds', label: 'Usa Medicamentos Contínuos?', hasDetails: true, detailKey: 'meds_details', placeholder: 'Quais?' }
                                     ].map(q => (
                                         <div key={q.key} className="space-y-4 border-b border-slate-50 pb-6 last:border-0">
                                             <div className="flex items-center justify-between">
@@ -583,23 +592,19 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" size={16} />
                                                 </div>
                                             </div>
-                                            <button 
-                                                onClick={handleLoadTemplate}
-                                                disabled={!selectedTemplateId}
-                                                className="w-full sm:w-auto px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
-                                            >
+                                            <button onClick={handleLoadTemplate} disabled={!selectedTemplateId} className="w-full sm:w-auto px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50">
                                                 <FilePlus size={16} /> Inserir Modelo
                                             </button>
                                         </div>
 
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Observações Clínicas / Histórico</label>
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Observações Clínicas</label>
                                             <textarea 
                                                 value={anamnesis.clinical_notes}
                                                 onChange={(e) => setAnamnesis({...anamnesis, clinical_notes: e.target.value})}
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-orange-100"
                                                 rows={8}
-                                                placeholder="Anotações internas sobre a pele ou reações anteriores..."
+                                                placeholder="Anotações internas..."
                                             />
                                         </div>
                                     </div>
@@ -610,7 +615,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                                 <PenTool size={14}/> Assinatura do Termo de Ciência
                                             </h4>
                                             {anamnesis.signed_at && (
-                                                <span className="text-[9px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded-lg font-black uppercase tracking-wider border border-emerald-100">
+                                                <span className="text-[9px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded-lg font-black uppercase border border-emerald-100">
                                                     Assinado em {format(parseISO(anamnesis.signed_at), 'dd/MM/yy HH:mm')}
                                                 </span>
                                             )}
@@ -619,18 +624,10 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         {anamnesis.signature_url ? (
                                             <div className="relative group bg-slate-50 rounded-3xl border-2 border-slate-100 p-4 h-56 flex items-center justify-center overflow-hidden">
                                                 <img src={anamnesis.signature_url} className="max-h-full max-w-full object-contain mix-blend-multiply" alt="Assinatura" />
-                                                <button 
-                                                    onClick={() => setAnamnesis({...anamnesis, signature_url: null, signed_at: null})}
-                                                    className="absolute top-4 right-4 p-2 bg-white text-rose-500 rounded-xl shadow-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 text-[10px] font-bold uppercase"
-                                                >
-                                                    <Trash2 size={14} /> Refazer
-                                                </button>
+                                                <button onClick={() => setAnamnesis({...anamnesis, signature_url: null, signed_at: null})} className="absolute top-4 right-4 p-2 bg-white text-rose-500 rounded-xl shadow-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 text-[10px] font-bold uppercase"><Trash2 size={14} /> Refazer</button>
                                             </div>
                                         ) : (
-                                            <SignaturePad 
-                                                onSave={handleSaveSignature} 
-                                                isSaving={isSaving} 
-                                            />
+                                            <SignaturePad onSave={handleSaveSignature} isSaving={isSaving} />
                                         )}
                                     </div>
                                     
@@ -646,22 +643,17 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     {activeTab === 'fotos' && (
                         <div className="space-y-6 animate-in fade-in duration-500">
                             <header className="flex justify-between items-center">
-                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">Timeline de Evolução</h3>
-                                <button 
-                                    onClick={() => photoInputRef.current?.click()}
-                                    className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-orange-600 flex items-center gap-2 shadow-sm hover:bg-orange-50 transition-all"
-                                >
-                                    <Plus size={16} /> Adicionar Foto
-                                </button>
+                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">Galeria de Evolução</h3>
+                                <button onClick={() => photoInputRef.current?.click()} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-orange-600 flex items-center gap-2 shadow-sm hover:bg-orange-50 transition-all"><Plus size={16} /> Adicionar Foto</button>
                                 <input type="file" ref={photoInputRef} className="hidden" accept="image/*" onChange={async (e) => {
                                     const file = e.target.files?.[0];
-                                    if (!file || !client.id) return;
+                                    if (!file || !formData.id) return;
                                     setIsUploading(true);
                                     try {
-                                        const fileName = `evolution_${client.id}_${Date.now()}.jpg`;
+                                        const fileName = `evo_${formData.id}_${Date.now()}.jpg`;
                                         await supabase.storage.from('client-evolution').upload(fileName, file);
                                         const { data: { publicUrl } } = supabase.storage.from('client-evolution').getPublicUrl(fileName);
-                                        await supabase.from('client_photos').insert([{ client_id: client.id, url: publicUrl, type: 'depois' }]);
+                                        await supabase.from('client_photos').insert([{ client_id: formData.id, url: publicUrl, type: 'depois' }]);
                                         fetchPhotos();
                                         setToast({ message: "Foto adicionada!", type: 'success' });
                                     } finally { setIsUploading(false); }
@@ -671,7 +663,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                             {photos.length === 0 ? (
                                 <div className="bg-white rounded-[32px] p-20 text-center border-2 border-dashed border-slate-100">
                                     <ImageIcon size={48} className="mx-auto text-slate-100 mb-4" />
-                                    <p className="text-slate-400 font-bold text-sm">Nenhuma foto registrada para este cliente.</p>
+                                    <p className="text-slate-400 font-bold text-sm">Sem fotos registradas.</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -688,11 +680,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                                     }
                                                 }} className="p-2 bg-white text-rose-500 rounded-xl shadow-lg hover:bg-rose-50"><Trash2 size={14}/></button>
                                             </div>
-                                            <div className="absolute top-3 right-3">
-                                                <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase ${photo.type === 'antes' ? 'bg-slate-800 text-white' : 'bg-emerald-500 text-white'}`}>
-                                                    {photo.type}
-                                                </span>
-                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -702,7 +689,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 </div>
             </main>
 
-            {/* LIGHTBOX ZOOM */}
             {zoomImage && (
                 <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300">
                     <button onClick={() => setZoomImage(null)} className="absolute top-6 right-6 p-3 bg-white/10 text-white rounded-full hover:bg-white/20"><X size={32}/></button>
