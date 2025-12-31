@@ -1,6 +1,4 @@
 
-export type UserRole = 'admin' | 'gestor' | 'recepcao' | 'profissional';
-
 export type ViewState = 
   | 'dashboard' 
   | 'agenda' 
@@ -19,6 +17,8 @@ export type ViewState =
   | 'public_preview' 
   | 'equipe';
 
+export type UserRole = 'admin' | 'gestor' | 'recepcao' | 'profissional';
+
 export type AppointmentStatus = 
   | 'confirmado' 
   | 'confirmado_whatsapp' 
@@ -33,19 +33,23 @@ export type AppointmentStatus =
 
 export type TransactionType = 'receita' | 'despesa' | 'income' | 'expense';
 
-export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro' | 'transferencia' | 'boleto';
-
 export type TransactionCategory = string;
+
+export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro' | 'transferencia' | 'boleto';
 
 export interface Client {
   id?: number;
   nome: string;
-  apelido?: string;
   whatsapp?: string;
   telefone?: string;
   email?: string;
-  instagram?: string;
   nascimento?: string;
+  tags?: string[];
+  consent: boolean;
+  photo_url?: string | null;
+  origem?: string;
+  apelido?: string;
+  instagram?: string;
   cpf?: string;
   rg?: string;
   sexo?: string;
@@ -57,20 +61,8 @@ export interface Client {
   bairro?: string;
   cidade?: string;
   estado?: string;
-  photo_url?: string | null;
   online_booking_enabled?: boolean;
-  origem?: string;
   observacoes?: string;
-  consent: boolean;
-  tags?: string[];
-  postal_code?: string;
-  address?: string;
-  number?: string;
-  complement?: string;
-  neighborhood?: string;
-  city?: string;
-  state?: string;
-  birth_date?: string;
 }
 
 export interface LegacyProfessional {
@@ -80,8 +72,11 @@ export interface LegacyProfessional {
   role?: string;
   order_index?: number;
   services_enabled?: number[];
+  commission_rate?: number;
   active?: boolean;
-  photo_url?: string;
+  online_booking?: boolean;
+  permissions?: any;
+  work_schedule?: any;
 }
 
 export interface LegacyService {
@@ -91,7 +86,6 @@ export interface LegacyService {
   price: number;
   color: string;
   category?: string;
-  description?: string;
 }
 
 export interface Service {
@@ -105,6 +99,7 @@ export interface Service {
   descricao?: string;
 }
 
+// FIX: Define LegacyAppointment using types defined above to resolve "Cannot find name" errors.
 export interface LegacyAppointment {
   id: number;
   client?: Client;
@@ -114,6 +109,7 @@ export interface LegacyAppointment {
   end: Date;
   status: AppointmentStatus;
   notas?: string;
+  origem?: string; // 'link', 'interno', 'whatsapp', etc.
 }
 
 export interface FinancialTransaction {
@@ -122,7 +118,7 @@ export interface FinancialTransaction {
   amount: number;
   type: TransactionType;
   category: TransactionCategory;
-  date: Date;
+  date: Date | string;
   paymentMethod: PaymentMethod;
   status: 'pago' | 'pendente';
   professionalId?: number;
@@ -130,15 +126,36 @@ export interface FinancialTransaction {
   client_id?: number;
 }
 
+export interface ChatMessage {
+  id: string;
+  sender: 'user' | 'client' | 'system';
+  text: string;
+  timestamp: Date | string;
+  status: 'sent' | 'read' | 'delivered';
+}
+
+export interface ChatConversation {
+  id: number;
+  clientId: number;
+  clientName: string;
+  clientAvatar?: string;
+  lastMessage: string;
+  lastMessageTime: Date | string;
+  unreadCount: number;
+  messages: ChatMessage[];
+  tags?: string[];
+}
+
 export interface Product {
   id: number;
   name: string;
   sku?: string;
-  stock_quantity: number;
-  min_stock: number;
-  cost_price?: number;
   price: number;
+  cost_price?: number;
+  stock_quantity: number;
+  min_stock?: number;
   active: boolean;
+  category?: string;
 }
 
 export interface OnlineBookingConfig {
@@ -148,11 +165,11 @@ export interface OnlineBookingConfig {
   description: string;
   coverUrl?: string;
   logoUrl?: string;
-  timeIntervalMinutes?: number;
-  minAdvanceHours?: number;
-  maxFutureDays?: number;
-  cancellationPolicyHours?: number;
-  showStudioInSearch?: boolean;
+  timeIntervalMinutes: number;
+  minAdvanceHours: number;
+  maxFutureDays: number;
+  cancellationPolicyHours: number;
+  showStudioInSearch: boolean;
 }
 
 export interface Review {
@@ -177,24 +194,4 @@ export interface AnalyticsData {
     completed: number;
     whatsappClicks: number;
   };
-}
-
-export interface ChatMessage {
-  id: string;
-  sender: 'user' | 'client' | 'system';
-  text: string;
-  timestamp: Date;
-  status: 'sent' | 'read';
-}
-
-export interface ChatConversation {
-  id: number;
-  clientId: number;
-  clientName: string;
-  clientAvatar?: string;
-  lastMessage: string;
-  lastMessageTime: Date;
-  unreadCount: number;
-  messages: ChatMessage[];
-  tags?: string[];
 }

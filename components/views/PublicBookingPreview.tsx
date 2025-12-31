@@ -239,29 +239,44 @@ const PublicBookingPreview: React.FC = () => {
         }
     }, [selectedDate, selectedProfessional, bookingStep]);
 
-    const handleFinishBooking = async () => {
+    // --- FUNCIONALIDADE: Find or Create Client (Data Integrity) ---
+    const handleSubmitBooking = async () => {
         if (!clientName || !clientPhone || !selectedTime) return;
         setIsFinalizing(true);
 
         try {
-            const cleanedPhone = clientPhone.replace(/\D/g, '');
+            // 1. Sanitização rigorosa do telefone (Apenas dígitos)
+            const cleanPhone = clientPhone.replace(/\D/g, '');
             
-            // 1. Verificar se cliente já existe
-            const { data: existingClient } = await supabase
+            if (cleanPhone.length < 10) {
+                throw new Error("Por favor, informe um WhatsApp válido com DDD.");
+            }
+
+            // 2. Busca (Check): Verificar existência para evitar duplicidade
+            const { data: existingClient, error: findError } = await supabase
                 .from('clients')
-                .select('id')
-                .eq('whatsapp', cleanedPhone)
+                .select('id, nome')
+                .eq('whatsapp', cleanPhone)
                 .maybeSingle();
 
-            let clientId = existingClient?.id;
+            if (findError) throw findError;
 
-            // 2. Se não existir, criar cliente
-            if (!clientId) {
+            let clientId: number;
+
+            // 3. Decisão: Find or Create
+            if (existingClient) {
+                clientId = existingClient.id;
+                // Opcional: Atualizar nome se for diferente (mantém cadastro atualizado)
+                if (existingClient.nome !== clientName) {
+                    await supabase.from('clients').update({ nome: clientName }).eq('id', clientId);
+                }
+            } else {
+                // Cadastro de Novo Cliente
                 const { data: newClient, error: clientErr } = await supabase
                     .from('clients')
                     .insert([{ 
                         nome: clientName, 
-                        whatsapp: cleanedPhone, 
+                        whatsapp: cleanPhone, 
                         consent: true, 
                         origem: 'Link Público' 
                     }])
@@ -272,7 +287,7 @@ const PublicBookingPreview: React.FC = () => {
                 clientId = newClient.id;
             }
 
-            // 3. Criar agendamento
+            // 4. Preparação do Agendamento
             const [h, m] = selectedTime.split(':').map(Number);
             const appointmentDate = new Date(selectedDate);
             appointmentDate.setHours(h, m, 0, 0);
@@ -281,12 +296,13 @@ const PublicBookingPreview: React.FC = () => {
             const totalValue = selectedServices.reduce((acc, s) => acc + s.preco, 0);
             const serviceNames = selectedServices.map(s => s.name).join(' + ');
 
+            // 5. Persistência do Agendamento vinculado ao ID único
             const { error: apptErr } = await supabase
                 .from('appointments')
                 .insert([{
                     client_id: clientId,
                     client_name: clientName,
-                    client_whatsapp: cleanedPhone,
+                    client_whatsapp: cleanPhone,
                     resource_id: selectedProfessional.id,
                     professional_name: selectedProfessional.name,
                     service_name: serviceNames,
@@ -301,7 +317,7 @@ const PublicBookingPreview: React.FC = () => {
 
             setBookingSuccess(true);
         } catch (e: any) {
-            alert(`Erro ao finalizar agendamento: ${e.message}`);
+            alert(`Falha na integridade dos dados: ${e.message}`);
         } finally {
             setIsFinalizing(false);
         }
@@ -597,7 +613,7 @@ const PublicBookingPreview: React.FC = () => {
                                             </div>
                                             
                                             <button 
-                                                onClick={handleFinishBooking}
+                                                onClick={handleSubmitBooking}
                                                 disabled={isFinalizing || !clientName || clientPhone.length < 10}
                                                 className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-3xl font-black shadow-xl shadow-green-100 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50"
                                             >

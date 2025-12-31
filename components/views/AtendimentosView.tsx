@@ -5,7 +5,8 @@ import {
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
     LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
-    AlertTriangle, ArrowRight, CalendarDays
+    AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
+    CheckCircle2, Scissors
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -23,6 +24,21 @@ const START_HOUR = 8;
 const END_HOUR = 20; 
 const SLOT_PX_HEIGHT = 80; 
 const CARD_TOP_OFFSET = 10; 
+
+// --- HELPER: ICONE DE STATUS ---
+const StatusIndicator = ({ status }: { status: AppointmentStatus }) => {
+    switch (status) {
+        case 'agendado': return <Clock size={12} className="text-slate-400" />;
+        case 'confirmado':
+        case 'confirmado_whatsapp': return <ThumbsUp size={12} className="text-blue-500" />;
+        case 'chegou': return <MapPin size={12} className="text-purple-500" />;
+        case 'em_atendimento': return <Scissors size={12} className="text-indigo-600" />;
+        case 'concluido': return <CheckCircle2 size={12} className="text-emerald-600" />;
+        case 'faltou':
+        case 'cancelado': return <Ban size={12} className="text-rose-500" />;
+        default: return null;
+    }
+};
 
 // --- COMPONENTE INTERNO: MODAL DE CONFLITO ---
 const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) => {
@@ -85,7 +101,7 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
 };
 
 const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
-    const baseClasses = "absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer z-10 hover:brightness-95 transition-all overflow-hidden flex flex-col";
+    const baseClasses = "absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer z-10 hover:brightness-95 transition-all overflow-hidden flex flex-col group/card";
     
     if (viewMode === 'pagamento') {
         const isPaid = app.status === 'concluido'; 
@@ -270,7 +286,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         end: new Date(start.getTime() + dur * 60000),
                         status: row.status as AppointmentStatus,
                         notas: row.notes || '',
-                        client: { id: 0, nome: row.client_name || 'Cliente', consent: true },
+                        origem: row.origem || 'interno',
+                        client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
                         professional: resources.find(p => p.id === Number(row.resource_id)) || { id: 0, name: row.professional_name, avatarUrl: '' },
                         service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : '#3b82f6' }
                     } as LegacyAppointment;
@@ -331,7 +348,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             const payload = {
                 client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name,
                 service_name: app.service.name, value: app.service.price, duration: app.service.duration,
-                date: app.start.toISOString(), status: app.status, notes: app.notas, origem: 'interno'
+                date: app.start.toISOString(), status: app.status, notes: app.notas, origem: app.origem || 'interno'
             };
 
             if (app.id && appointments.some(a => a.id === app.id)) {
@@ -618,14 +635,36 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                             className={getCardStyle(app, viewMode)}
                                             style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: app.service.color }}
                                         >
+                                            {/* ORIGIN INDICATOR */}
+                                            <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100 transition-opacity">
+                                                {app.origem === 'link' ? (
+                                                    <Globe size={10} className="text-orange-500" title="Agendado pelo Site" />
+                                                ) : (
+                                                    <User size={10} className="text-slate-400" title="Agendado Manualmente" />
+                                                )}
+                                            </div>
+
                                             <div className="flex items-center gap-1 overflow-hidden">
                                                 <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
-                                                {isVeryShort && <span className="font-bold text-slate-900 text-[10px] truncate leading-none flex-1">{app.client?.nome || 'Bloqueado'}</span>}
+                                                {isVeryShort && (
+                                                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                                                        <StatusIndicator status={app.status} />
+                                                        <span className="font-bold text-slate-900 text-[10px] truncate leading-none">{app.client?.nome || 'Bloqueado'}</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                            {!isVeryShort && <p className="font-bold text-slate-900 text-[11px] truncate leading-tight mt-0.5">{app.client?.nome || 'Bloqueado'}</p>}
-                                            {!isShort && <p className="text-[10px] font-medium text-slate-600 truncate leading-tight">{app.service.name}</p>}
+                                            
+                                            {!isVeryShort && (
+                                                <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                                                    <StatusIndicator status={app.status} />
+                                                    <p className="font-bold text-slate-900 text-[11px] truncate leading-tight flex-1">{app.client?.nome || 'Bloqueado'}</p>
+                                                </div>
+                                            )}
+
+                                            {!isShort && <p className="text-[10px] font-medium text-slate-600 truncate leading-tight mt-0.5">{app.service.name}</p>}
+                                            
                                             {viewMode === 'pagamento' && app.status === 'concluido' && (
-                                                <div className="absolute top-1 right-1 text-emerald-600"><Check size={12} /></div>
+                                                <div className="absolute bottom-1 right-1 text-emerald-600"><Check size={12} /></div>
                                             )}
                                         </div>
                                     );
@@ -637,6 +676,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </div>
 
+            {/* Restante dos modais mantido igual */}
             {isConfigModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
@@ -731,30 +771,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     onClose={() => setActiveAppointmentDetail(null)} 
                     onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
                     onDelete={async (id) => { 
-                        // REGRAS DE SEGURANÇA NA EXCLUSÃO
                         const app = appointments.find(a => a.id === id);
                         const isLocked = ['concluido'].includes(app?.status?.toLowerCase() || '');
-                        
                         if (isLocked) {
                             setToast({ message: 'Agendamentos concluídos não podem ser excluídos diretamente.', type: 'error' });
                             return;
                         }
-
                         if (!window.confirm("Deseja realmente excluir este agendamento?")) return;
-
                         try {
                             const { error } = await supabase.from('appointments').delete().eq('id', id);
-                            
                             if (error) {
-                                console.error("Falha ao excluir:", error);
-                                setToast({ message: 'Erro: Este agendamento possui faturamento vinculado!', type: 'error' });
+                                setToast({ message: 'Erro ao excluir agendamento.', type: 'error' });
                             } else {
                                 setAppointments(prev => prev.filter(p => p.id !== id));
                                 setActiveAppointmentDetail(null);
-                                setToast({ message: 'Agendamento removido com sucesso.', type: 'info' });
+                                setToast({ message: 'Agendamento removido.', type: 'info' });
                             }
                         } catch (err) {
-                            setToast({ message: 'Erro de conexão ao tentar excluir.', type: 'error' });
+                            setToast({ message: 'Erro de conexão.', type: 'error' });
                         }
                     }} 
                     onUpdateStatus={handleUpdateStatus} 
@@ -786,7 +820,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 />
             )}
 
-            {/* MODAL DE ALERTA DE CONFLITO */}
             {pendingConflict && (
                 <ConflictAlertModal 
                     newApp={pendingConflict.newApp}
