@@ -6,7 +6,8 @@ import {
     Plus, CheckCircle, MapPin, Tag, Smartphone, MessageCircle,
     CreditCard, Briefcase, Home, Map, Hash, Info, Settings, 
     Camera, Loader2, FileText, Activity, AlertCircle, Maximize2,
-    Trash2, PenTool, Eraser, Check, Image as ImageIcon
+    Trash2, PenTool, Eraser, Check, Image as ImageIcon, Instagram,
+    Navigation, Smile
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -102,7 +103,7 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
 
 const ReadField = ({ label, value, icon: Icon, span = "col-span-1" }: any) => (
     <div className={`flex items-start gap-3 py-3 border-b border-slate-50 last:border-0 group ${span}`}>
-        <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-orange-50 group-hover:text-orange-500 transition-colors flex-shrink-0 flex-shrink-0 mt-1">
+        <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-orange-50 group-hover:text-orange-500 transition-colors flex-shrink-0 mt-1">
             <Icon size={16} />
         </div>
         <div className="flex-1 min-w-0">
@@ -112,17 +113,24 @@ const ReadField = ({ label, value, icon: Icon, span = "col-span-1" }: any) => (
     </div>
 );
 
-const EditField = ({ label, name, value, onChange, type = "text", placeholder, span = "col-span-1" }: any) => (
-    <div className={`space-y-1 ${span}`}>
+const EditField = ({ label, name, value, onChange, type = "text", placeholder, span = "col-span-1", icon: Icon }: any) => (
+    <div className={`space-y-1.5 ${span}`}>
         <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-wider">{label}</label>
-        <input 
-            type={type}
-            name={name}
-            value={value || ''}
-            onChange={onChange}
-            placeholder={placeholder}
-            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all"
-        />
+        <div className="relative group">
+            {Icon && (
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors">
+                    <Icon size={16} />
+                </div>
+            )}
+            <input 
+                type={type}
+                name={name}
+                value={value || ''}
+                onChange={onChange}
+                placeholder={placeholder}
+                className={`w-full bg-white border border-slate-200 rounded-xl py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all shadow-sm ${Icon ? 'pl-11 pr-4' : 'px-4'}`}
+            />
+        </div>
     </div>
 );
 
@@ -135,7 +143,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const fileInputRef = useRef<HTMLInputElement>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
     
-    // --- State: Prontuário (Anamnese) ---
     const [anamnesis, setAnamnesis] = useState<any>({
         has_allergy: false,
         allergy_details: '',
@@ -153,6 +160,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         apelido: (client as any).apelido || '',
         whatsapp: client.whatsapp || '',
         email: client.email || '',
+        instagram: (client as any).instagram || '',
         nascimento: client.nascimento || '',
         cpf: (client as any).cpf || '',
         rg: (client as any).rg || '',
@@ -167,10 +175,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         photo_url: (client as any).photo_url || null,
         online_booking_enabled: (client as any).online_booking_enabled ?? true,
         origem: (client as any).origem || 'Instagram',
-        id: client.id || null,
-        total_appointments: (client as any).total_appointments || 0,
-        avg_ticket: (client as any).avg_ticket || 0,
-        balance: (client as any).balance || 0
+        notas_gerais: (client as any).notas_gerais || '',
+        id: client.id || null
     });
 
     useEffect(() => {
@@ -179,6 +185,29 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             fetchPhotos();
         }
     }, [client.id]);
+
+    // Busca automática de CEP
+    useEffect(() => {
+        const fetchAddress = async () => {
+            const cleanCep = formData.cep?.replace(/\D/g, '');
+            if (cleanCep?.length === 8) {
+                try {
+                    const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+                    const data = await res.json();
+                    if (!data.erro) {
+                        setFormData((prev: any) => ({
+                            ...prev,
+                            endereco: data.logradouro,
+                            bairro: data.bairro,
+                            cidade: data.localidade,
+                            estado: data.uf
+                        }));
+                    }
+                } catch (e) { console.error("Erro ao buscar CEP"); }
+            }
+        };
+        fetchAddress();
+    }, [formData.cep]);
 
     const fetchAnamnesis = async () => {
         const { data } = await supabase.from('client_anamnesis').select('*').eq('client_id', client.id).maybeSingle();
@@ -259,8 +288,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     </button>
                     <div className="flex gap-2">
                         {!isEditing ? (
-                            <button onClick={() => setIsEditing(true)} className="p-2.5 bg-slate-50 text-slate-600 rounded-xl hover:bg-orange-50 hover:text-orange-600 transition-all border border-slate-100 shadow-sm">
-                                <Edit2 size={20} />
+                            <button onClick={() => setIsEditing(true)} className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2">
+                                <Edit2 size={18} /> Editar Perfil
                             </button>
                         ) : (
                             <div className="flex gap-2">
@@ -309,55 +338,82 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             </nav>
 
             <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50">
-                <div className="max-w-4xl mx-auto space-y-6 pb-20">
+                <div className="max-w-5xl mx-auto space-y-6 pb-24">
                     
                     {activeTab === 'geral' && (
                         <div className="space-y-6 animate-in fade-in duration-500">
-                             <Card title="Informações Pessoais" icon={<User size={18} />}>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2">
-                                    {!isEditing ? (
-                                        <>
-                                            <ReadField label="Nome Completo" value={formData.nome} icon={User} span="col-span-full md:col-span-2" />
-                                            <ReadField label="Apelido" value={formData.apelido} icon={MessageCircle} />
-                                            <ReadField label="CPF" value={formData.cpf} icon={CreditCard} />
-                                            <ReadField label="Nascimento" value={formData.nascimento ? `${formData.nascimento} (${clientAge} anos)` : null} icon={Calendar} />
-                                            <ReadField label="Sexo" value={formData.sexo} icon={User} />
-                                        </>
-                                    ) : (
-                                        <>
-                                            <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} placeholder="Ex: Maria Souza" span="col-span-full md:col-span-2" />
-                                            <EditField label="Apelido" name="apelido" value={formData.apelido} onChange={handleInputChange} placeholder="Como gosta" />
-                                            <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} placeholder="000.000.000-00" />
-                                            <EditField label="Data Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} />
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Sexo</label>
-                                                <select name="sexo" value={formData.sexo} onChange={handleInputChange} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none">
-                                                    <option value="">Selecione</option>
-                                                    <option value="Feminino">Feminino</option>
-                                                    <option value="Masculino">Masculino</option>
-                                                </select>
-                                            </div>
-                                        </>
-                                    )}
+                             
+                             {/* SEÇÃO: CONTATO */}
+                             <Card title="Contato e Redes Sociais" icon={<Smartphone size={18} />}>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <EditField label="WhatsApp / Celular" name="whatsapp" value={formData.whatsapp} onChange={handleInputChange} placeholder="(00) 00000-0000" icon={Phone} />
+                                    <EditField label="E-mail Principal" name="email" value={formData.email} onChange={handleInputChange} placeholder="cliente@email.com" icon={Mail} />
+                                    <EditField label="Instagram" name="instagram" value={formData.instagram} onChange={handleInputChange} placeholder="@usuario" icon={Instagram} />
                                 </div>
-                            </Card>
-                            <Card title="Endereço" icon={<Home size={18} />}>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2">
-                                    {!isEditing ? (
-                                        <>
-                                            <ReadField label="Logradouro" value={formData.endereco} icon={Map} span="col-span-full md:col-span-3" />
-                                            <ReadField label="Número" value={formData.numero} icon={Hash} />
-                                            <ReadField label="Cidade" value={formData.cidade} icon={Map} />
-                                        </>
-                                    ) : (
-                                        <>
-                                            <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} span="col-span-full md:col-span-3" />
-                                            <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} />
-                                            <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} />
-                                        </>
-                                    )}
+                             </Card>
+
+                             {/* SEÇÃO: ENDEREÇO COMPLETO */}
+                             <Card title="Endereço e Localização" icon={<MapPin size={18} />}>
+                                <div className="grid grid-cols-2 md:grid-cols-6 gap-6">
+                                    <EditField label="CEP" name="cep" value={formData.cep} onChange={handleInputChange} placeholder="00000-000" icon={Hash} span="col-span-2" />
+                                    <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} placeholder="Rua, Av..." icon={Navigation} span="col-span-3" />
+                                    <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} placeholder="123" span="col-span-1" />
+                                    <EditField label="Bairro" name="bairro" value={formData.bairro} onChange={handleInputChange} placeholder="Bairro" span="col-span-2" />
+                                    <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} placeholder="Cidade" span="col-span-2" />
+                                    <EditField label="Estado" name="estado" value={formData.estado} onChange={handleInputChange} placeholder="UF" span="col-span-2" />
                                 </div>
-                            </Card>
+                             </Card>
+
+                             {/* SEÇÃO: DADOS PESSOAIS */}
+                             <Card title="Perfil do Cliente" icon={<User size={18} />}>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} icon={User} span="md:col-span-2" />
+                                    <EditField label="Como Gosta de ser Chamada" name="apelido" value={formData.apelido} onChange={handleInputChange} icon={Smile} />
+                                    <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} placeholder="000.000.000-00" icon={CreditCard} />
+                                    <EditField label="Data de Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} icon={Calendar} />
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Sexo</label>
+                                        <select name="sexo" value={formData.sexo} onChange={handleInputChange} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50">
+                                            <option value="">Selecione</option>
+                                            <option value="Feminino">Feminino</option>
+                                            <option value="Masculino">Masculino</option>
+                                            <option value="Não informado">Não informar</option>
+                                        </select>
+                                    </div>
+                                    <EditField label="Profissão" name="profissao" value={formData.profissao} onChange={handleInputChange} icon={Briefcase} />
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Como nos conheceu?</label>
+                                        <select name="origem" value={formData.origem} onChange={handleInputChange} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50">
+                                            <option value="Instagram">Instagram</option>
+                                            <option value="Indicação">Indicação</option>
+                                            <option value="Passagem">Passagem</option>
+                                            <option value="Google">Google / Maps</option>
+                                            <option value="Outros">Outros</option>
+                                        </select>
+                                    </div>
+                                </div>
+                             </Card>
+
+                             {/* SEÇÃO: ANOTAÇÕES */}
+                             <Card title="Observações Gerais" icon={<FileText size={18} />}>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Anotações Internas Estratégicas</label>
+                                    <textarea 
+                                        name="notas_gerais"
+                                        value={formData.notas_gerais}
+                                        onChange={handleInputChange}
+                                        className="w-full bg-white border border-slate-200 rounded-2xl p-4 min-h-[120px] outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-medium text-slate-600 resize-none shadow-sm"
+                                        placeholder="Ex: Prefere tons pastéis, tem sensibilidade nos cílios, gosta de conversar sobre viagens..."
+                                    />
+                                </div>
+                             </Card>
+
+                             {/* BOTÃO DE SALVAR NO RODAPÉ DA ABA */}
+                             <div className="flex justify-end pt-4">
+                                <button onClick={handleSave} className="px-10 py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 shadow-xl transition-all active:scale-95 flex items-center gap-3">
+                                    <Save size={20} /> Salvar Todos os Dados
+                                </button>
+                             </div>
                         </div>
                     )}
 
@@ -442,7 +498,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                                 <button className="p-2 bg-white text-rose-500 rounded-xl shadow-lg hover:bg-rose-50"><Trash2 size={14}/></button>
                                             </div>
                                             <div className="absolute top-3 right-3">
-                                                <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase ${photo.type === 'antes' ? 'bg-slate-800 text-white' : 'bg-emerald-500 text-white'}`}>
+                                                <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase ${photo.type === 'antes' ? 'bg-slate-800 text-white' : 'bg-emerald-50 text-white'}`}>
                                                     {photo.type}
                                                 </span>
                                             </div>
