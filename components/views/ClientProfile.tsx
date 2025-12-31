@@ -23,10 +23,11 @@ interface ClientProfileProps {
     onSave: (client: any) => Promise<void>;
 }
 
-// --- Componente Interno: Assinatura Digital Refinada ---
-const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
+// --- Componente Interno: Assinatura Digital Refinada (Estilo Caneta Esferográfica) ---
+const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSaving: boolean }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
+    const [isEmpty, setIsEmpty] = useState(true);
     const lastPos = useRef({ x: 0, y: 0 });
 
     useEffect(() => {
@@ -35,10 +36,18 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         
-        ctx.strokeStyle = '#000080'; 
+        // Ajuste de DPI para evitar serrilhado
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+
+        // Configurações Globais da "Caneta Esferográfica"
+        ctx.strokeStyle = '#000080'; // Azul Marinho Profissional
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        ctx.lineWidth = 1.2;
+        ctx.lineWidth = 0.8; // Base inicial fina
     }, []);
 
     const getPos = (e: any) => {
@@ -47,13 +56,18 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
         const rect = canvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        return { x: clientX - rect.left, y: clientY - rect.top };
+        return {
+            x: clientX - rect.left,
+            y: clientY - rect.top
+        };
     };
 
     const startDrawing = (e: any) => {
         const pos = getPos(e);
         lastPos.current = pos;
         setIsDrawing(true);
+        setIsEmpty(false);
+        
         const ctx = canvasRef.current?.getContext('2d');
         if (ctx) {
             ctx.beginPath();
@@ -66,12 +80,24 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (!ctx || !canvas) return;
+
         const pos = getPos(e);
+        
+        // --- Algoritmo de Caneta Inteligente ---
+        // Calcula a velocidade do traço (distância entre pontos)
         const dist = Math.sqrt(Math.pow(pos.x - lastPos.current.x, 2) + Math.pow(pos.y - lastPos.current.y, 2));
-        const newWidth = Math.max(0.5, Math.min(2.5, 5 / (dist + 1)));
-        ctx.lineWidth = (ctx.lineWidth * 0.3) + (newWidth * 0.7);
+        
+        // Determina a largura alvo (mais rápido = mais fino)
+        // minWidth: 0.5 | maxWidth: 1.8
+        const targetWidth = Math.max(0.5, Math.min(1.8, 4 / (dist + 1)));
+        
+        // Suavização Bézier via Velocity Filter (0.85)
+        const velocityFilterWeight = 0.85;
+        ctx.lineWidth = (ctx.lineWidth * velocityFilterWeight) + (targetWidth * (1 - velocityFilterWeight));
+        
         ctx.lineTo(pos.x, pos.y);
         ctx.stroke();
+        
         lastPos.current = pos;
     };
 
@@ -80,9 +106,14 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         ctx?.clearRect(0, 0, canvas.width, canvas.height);
+        setIsEmpty(true);
     };
 
     const handleConfirm = () => {
+        if (isEmpty) {
+            alert("Por favor, assine no campo indicado antes de confirmar.");
+            return;
+        }
         canvasRef.current?.toBlob((blob) => {
             if (blob) onSave(blob);
         }, 'image/png');
@@ -90,12 +121,12 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
 
     return (
         <div className="space-y-3">
-            <div className="relative border-2 border-slate-200 rounded-3xl bg-white overflow-hidden h-48 touch-none shadow-inner">
-                <div className="absolute bottom-12 left-8 right-8 h-px bg-slate-100 pointer-events-none"></div>
+            <div className="relative border-2 border-slate-200 rounded-3xl bg-white overflow-hidden h-56 touch-none shadow-inner group">
+                {/* Linha Guia Visual */}
+                <div className="absolute bottom-14 left-10 right-10 h-px bg-slate-100 pointer-events-none"></div>
+                
                 <canvas 
                     ref={canvasRef}
-                    width={600}
-                    height={200}
                     className="w-full h-full cursor-crosshair relative z-10"
                     onMouseDown={startDrawing}
                     onMouseMove={draw}
@@ -105,11 +136,16 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
                     onTouchMove={(e) => { e.preventDefault(); draw(e); }}
                     onTouchEnd={() => setIsDrawing(false)}
                 />
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-none text-[9px] font-black text-slate-300 uppercase tracking-[0.3em] z-0">Assinatura Digital BelaFlow</div>
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-none text-[8px] font-black text-slate-300 uppercase tracking-[0.4em] z-0">
+                    Documento Assinado Digitalmente via BelaFlow
+                </div>
             </div>
             <div className="flex gap-2">
-                <button onClick={clear} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors"><Eraser size={14}/> Limpar</button>
-                <button onClick={handleConfirm} className="flex-1 py-3 bg-orange-500 text-white rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-orange-600 shadow-lg shadow-orange-100 transition-all active:scale-95"><Check size={14}/> Confirmar Assinatura</button>
+                <button onClick={clear} disabled={isSaving} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors disabled:opacity-50"><Eraser size={14}/> Limpar</button>
+                <button onClick={handleConfirm} disabled={isSaving || isEmpty} className="flex-1 py-3 bg-orange-500 text-white rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-orange-600 shadow-lg shadow-orange-100 transition-all active:scale-95 disabled:opacity-50">
+                    {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14}/>}
+                    {isSaving ? 'Salvando...' : 'Confirmar Assinatura'}
+                </button>
             </div>
         </div>
     );
@@ -157,7 +193,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         uses_meds: false,
         meds_details: '',
         clinical_notes: '',
-        signed_at: null
+        signed_at: null,
+        signature_url: null
     });
     const [templates, setTemplates] = useState<any[]>([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
@@ -260,6 +297,47 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         setIsSaving(false);
         if (!error) setToast({ message: "Anamnese salva com sucesso!", type: 'success' });
         else setToast({ message: "Erro ao salvar anamnese.", type: 'error' });
+    };
+
+    const handleSaveSignature = async (blob: Blob) => {
+        if (!client.id) return;
+        setIsSaving(true);
+        try {
+            // 1. Upload para o bucket 'signatures'
+            const fileName = `sig_${client.id}_${Date.now()}.png`;
+            const { error: uploadError } = await supabase.storage
+                .from('signatures')
+                .upload(fileName, blob, { contentType: 'image/png' });
+
+            if (uploadError) throw uploadError;
+
+            // 2. Pegar URL Pública
+            const { data: { publicUrl } } = supabase.storage
+                .from('signatures')
+                .getPublicUrl(fileName);
+
+            // 3. Atualizar Tabela de Anamnese
+            const timestamp = new Date().toISOString();
+            const { error: dbError } = await supabase
+                .from('client_anamnesis')
+                .update({ 
+                    signature_url: publicUrl,
+                    signed_at: timestamp
+                })
+                .eq('client_id', client.id);
+
+            if (dbError) throw dbError;
+
+            // 4. Update Local State & UI
+            setAnamnesis(prev => ({ ...prev, signature_url: publicUrl, signed_at: timestamp }));
+            setToast({ message: "Assinatura legal vinculada com sucesso! ✅", type: 'success' });
+
+        } catch (e: any) {
+            console.error("Signature save error:", e);
+            setToast({ message: "Erro ao processar assinatura.", type: 'error' });
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -527,8 +605,33 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     </div>
 
                                     <div className="pt-6 border-t border-slate-100">
-                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><PenTool size={14}/> Assinatura do Termo de Ciência</h4>
-                                        <SignaturePad onSave={(blob) => setToast({ message: "Assinatura capturada!", type: 'info' })} />
+                                        <div className="flex justify-between items-end mb-4">
+                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                                <PenTool size={14}/> Assinatura do Termo de Ciência
+                                            </h4>
+                                            {anamnesis.signed_at && (
+                                                <span className="text-[9px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded-lg font-black uppercase tracking-wider border border-emerald-100">
+                                                    Assinado em {format(parseISO(anamnesis.signed_at), 'dd/MM/yy HH:mm')}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {anamnesis.signature_url ? (
+                                            <div className="relative group bg-slate-50 rounded-3xl border-2 border-slate-100 p-4 h-56 flex items-center justify-center overflow-hidden">
+                                                <img src={anamnesis.signature_url} className="max-h-full max-w-full object-contain mix-blend-multiply" alt="Assinatura" />
+                                                <button 
+                                                    onClick={() => setAnamnesis({...anamnesis, signature_url: null, signed_at: null})}
+                                                    className="absolute top-4 right-4 p-2 bg-white text-rose-500 rounded-xl shadow-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 text-[10px] font-bold uppercase"
+                                                >
+                                                    <Trash2 size={14} /> Refazer
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <SignaturePad 
+                                                onSave={handleSaveSignature} 
+                                                isSaving={isSaving} 
+                                            />
+                                        )}
                                     </div>
                                     
                                     <button onClick={handleSaveAnamnesis} disabled={isSaving} className="w-full py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70">
