@@ -11,25 +11,33 @@ interface ProductModalProps {
 
 const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave }) => {
     const [formData, setFormData] = useState<Partial<Product>>({
-        nome: '',
+        name: '',
         sku: '',
-        qtd: 0,
-        custo: 0,
-        preco: 0,
-        ativo: true
+        stock_quantity: 0,
+        cost_price: 0,
+        price: 0,
+        active: true
     });
 
     useEffect(() => {
         if (product) {
-            setFormData(product);
+            setFormData({
+                ...product,
+                name: product.name || '',
+                sku: product.sku || '',
+                stock_quantity: product.stock_quantity || 0,
+                cost_price: product.cost_price || 0,
+                price: product.price || 0,
+                active: product.active ?? true
+            });
         } else {
             setFormData({
-                nome: '',
+                name: '',
                 sku: '',
-                qtd: 0,
-                custo: 0,
-                preco: 0,
-                ativo: true
+                stock_quantity: 0,
+                cost_price: 0,
+                price: 0,
+                active: true
             });
         }
     }, [product]);
@@ -38,17 +46,17 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
         e.preventDefault();
         onSave({
             id: product?.id || Date.now(),
-            nome: formData.nome || 'Novo Produto',
+            name: formData.name || 'Novo Produto',
             sku: formData.sku,
-            qtd: Number(formData.qtd),
-            custo: Number(formData.custo),
-            preco: Number(formData.preco),
-            ativo: formData.ativo ?? true
-        });
+            stock_quantity: Number(formData.stock_quantity),
+            cost_price: Number(formData.cost_price),
+            price: Number(formData.price),
+            active: formData.active ?? true
+        } as Product);
     };
 
-    const profitMargin = formData.preco && formData.custo 
-        ? ((formData.preco - formData.custo) / formData.preco * 100).toFixed(1) 
+    const profitMargin = formData.price && formData.cost_price 
+        ? (((formData.price - formData.cost_price) / formData.price) * 100).toFixed(1) 
         : '0.0';
 
     return (
@@ -57,7 +65,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                 <header className="p-5 border-b bg-slate-50 flex justify-between items-center">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg">
                         <Package className="w-5 h-5 text-purple-500" />
-                        {product ? 'Editar Produto' : 'Novo Produto'}
+                        {product?.id ? 'Editar Produto' : 'Novo Produto'}
                     </h3>
                     <button onClick={onClose}><X className="w-5 h-5 text-slate-400 hover:text-slate-600" /></button>
                 </header>
@@ -68,8 +76,8 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nome do Produto</label>
                             <input 
                                 required
-                                value={formData.nome}
-                                onChange={e => setFormData({...formData, nome: e.target.value})}
+                                value={formData.name}
+                                onChange={e => setFormData({...formData, name: e.target.value})}
                                 className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 outline-none"
                                 placeholder="Ex: Shampoo Hidratante"
                             />
@@ -94,8 +102,8 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                                     type="number"
                                     step="0.01"
                                     required
-                                    value={formData.custo}
-                                    onChange={e => setFormData({...formData, custo: Number(e.target.value)})}
+                                    value={formData.cost_price}
+                                    onChange={e => setFormData({...formData, cost_price: Number(e.target.value)})}
                                     className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-2 focus:ring-2 focus:ring-purple-500 outline-none"
                                 />
                             </div>
@@ -108,8 +116,8 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                                     type="number"
                                     step="0.01"
                                     required
-                                    value={formData.preco}
-                                    onChange={e => setFormData({...formData, preco: Number(e.target.value)})}
+                                    value={formData.price}
+                                    onChange={e => setFormData({...formData, price: Number(e.target.value)})}
                                     className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-2 focus:ring-2 focus:ring-purple-500 outline-none font-bold text-slate-700"
                                 />
                             </div>
@@ -126,26 +134,26 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Estoque Atual</label>
                             <div className="flex items-center gap-2">
-                                <button type="button" onClick={() => setFormData(prev => ({...prev, qtd: Math.max(0, (prev.qtd || 0) - 1)}))} className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold">-</button>
+                                <button type="button" onClick={() => setFormData(prev => ({...prev, stock_quantity: Math.max(0, (prev.stock_quantity || 0) - 1)}))} className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold">-</button>
                                 <input 
                                     type="number"
                                     required
-                                    value={formData.qtd}
-                                    onChange={e => setFormData({...formData, qtd: Number(e.target.value)})}
+                                    value={formData.stock_quantity}
+                                    onChange={e => setFormData({...formData, stock_quantity: Number(e.target.value)})}
                                     className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-center focus:ring-2 focus:ring-purple-500 outline-none"
                                 />
-                                <button type="button" onClick={() => setFormData(prev => ({...prev, qtd: (prev.qtd || 0) + 1}))} className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold">+</button>
+                                <button type="button" onClick={() => setFormData(prev => ({...prev, stock_quantity: (prev.stock_quantity || 0) + 1}))} className="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold">+</button>
                             </div>
                         </div>
                         <div className="flex items-center gap-3 pt-6">
                             <input 
                                 type="checkbox" 
-                                id="ativo"
-                                checked={formData.ativo}
-                                onChange={e => setFormData({...formData, ativo: e.target.checked})}
+                                id="active"
+                                checked={formData.active}
+                                onChange={e => setFormData({...formData, active: e.target.checked})}
                                 className="w-5 h-5 text-purple-600 rounded border-slate-300 focus:ring-purple-500"
                             />
-                            <label htmlFor="ativo" className="text-sm font-medium text-slate-700">Produto Ativo para Venda</label>
+                            <label htmlFor="active" className="text-sm font-medium text-slate-700">Produto Ativo para Venda</label>
                         </div>
                     </div>
 

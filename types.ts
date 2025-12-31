@@ -135,12 +135,12 @@ export interface Commission {
 
 export interface Product {
   id: number;
-  nome: string;
+  name: string;
   sku?: string;
-  qtd: number;
-  custo?: number;
-  preco: number;
-  ativo: boolean;
+  stock_quantity: number;
+  cost_price?: number;
+  price: number;
+  active: boolean;
 }
 
 export interface Order {

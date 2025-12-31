@@ -9,7 +9,7 @@ import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import ProductModal from '../modals/ProductModal';
 import Toast, { ToastType } from '../shared/Toast';
-import Card from '../shared/Card';
+import { Product } from '../../types';
 
 // Modal de Ajuste Rápido de Estoque (Auditável)
 const AdjustStockModal = ({ product, onClose, onSave, isSaving }: any) => {
@@ -75,7 +75,7 @@ const AdjustStockModal = ({ product, onClose, onSave, isSaving }: any) => {
 
 const ProdutosView: React.FC = () => {
     const { user } = useAuth();
-    const [products, setProducts] = useState<any[]>([]);
+    const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
@@ -83,8 +83,8 @@ const ProdutosView: React.FC = () => {
     
     // Modal States
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isAdjusting, setIsAdjusting] = useState<any | null>(null);
-    const [editingProduct, setEditingProduct] = useState<any | null>(null);
+    const [isAdjusting, setIsAdjusting] = useState<Product | null>(null);
+    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
@@ -115,17 +115,30 @@ const ProdutosView: React.FC = () => {
 
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
-    const handleSaveProduct = async (product: any) => {
+    const handleSaveProduct = async (productData: Product) => {
         setIsSaving(true);
         try {
-            const isEditing = !!product.id;
-            const { error } = isEditing 
-                ? await supabase.from('products').update(product).eq('id', product.id)
-                : await supabase.from('products').insert([product]);
+            // Mapeamento correto e conversão de tipos para o Supabase
+            const payload = {
+                name: productData.name,
+                sku: productData.sku || null,
+                price: parseFloat(productData.price.toString()),
+                cost_price: productData.cost_price ? parseFloat(productData.cost_price.toString()) : 0,
+                stock_quantity: parseInt(productData.stock_quantity.toString(), 10),
+                active: Boolean(productData.active)
+            };
+
+            const isEditing = !!productData.id && productData.id > 1000000000; // Mock ID check or real UUID
+            // If the ID is a real existing ID from DB
+            const isRealEdit = productData.id && products.some(p => p.id === productData.id);
+
+            const { error } = isRealEdit 
+                ? await supabase.from('products').update(payload).eq('id', productData.id)
+                : await supabase.from('products').insert([payload]);
 
             if (error) throw error;
             
-            showToast(isEditing ? 'Produto atualizado!' : 'Produto cadastrado!');
+            showToast(isRealEdit ? 'Produto atualizado!' : 'Produto cadastrado!');
             setIsModalOpen(false);
             fetchProducts();
         } catch (e: any) {
@@ -189,7 +202,10 @@ const ProdutosView: React.FC = () => {
             const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                                   p.sku?.toLowerCase().includes(searchTerm.toLowerCase());
             
-            if (filterStatus === 'baixo_estoque') return matchesSearch && p.stock_quantity <= (p.min_stock || 5);
+            // Usando min_stock dinâmico se existir no banco ou fallback para 5
+            const minStock = (p as any).min_stock || 5;
+            
+            if (filterStatus === 'baixo_estoque') return matchesSearch && p.stock_quantity <= minStock;
             if (filterStatus === 'ativos') return matchesSearch && p.active;
             return matchesSearch;
         });
@@ -198,7 +214,7 @@ const ProdutosView: React.FC = () => {
     const stats = useMemo(() => {
         return {
             totalItems: products.length,
-            lowStock: products.filter(p => p.stock_quantity <= (p.min_stock || 5)).length,
+            lowStock: products.filter(p => p.stock_quantity <= ((p as any).min_stock || 5)).length,
             totalValue: products.reduce((acc, p) => acc + (Number(p.cost_price) || 0) * p.stock_quantity, 0)
         };
     }, [products]);
@@ -218,7 +234,6 @@ const ProdutosView: React.FC = () => {
                 </div>
                 
                 <div className="flex gap-2">
-                    {/* // FIX: Added missing RefreshCw icon import from lucide-react. */}
                     <button onClick={fetchProducts} className="p-3 bg-slate-100 text-slate-500 rounded-2xl hover:bg-slate-200 transition-all"><RefreshCw size={20}/></button>
                     <button 
                         onClick={() => { setEditingProduct(null); setIsModalOpen(true); }}
@@ -309,13 +324,13 @@ const ProdutosView: React.FC = () => {
                             </thead>
                             <tbody className="divide-y divide-slate-50">
                                 {filteredProducts.map(p => {
-                                    const isLow = p.stock_quantity <= (p.min_stock || 5);
+                                    const isLow = p.stock_quantity <= ((p as any).min_stock || 5);
                                     return (
                                         <tr key={p.id} className="hover:bg-slate-50/50 group transition-colors">
                                             <td className="px-6 py-4">
                                                 <div className="flex flex-col">
                                                     <span className="font-bold text-slate-700 group-hover:text-purple-600 transition-colors">{p.name}</span>
-                                                    <span className="text-[10px] text-slate-400 font-bold uppercase">{p.category || 'Geral'}</span>
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase">{(p as any).category || 'Geral'}</span>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 text-slate-500 font-mono text-xs">{p.sku || '-'}</td>

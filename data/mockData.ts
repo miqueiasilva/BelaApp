@@ -228,12 +228,13 @@ export const mockConversations: ChatConversation[] = [
 ];
 
 // --- Mock Products ---
+// FIX: Updated mockProducts to use property names that match the Product interface (name, price, cost_price, stock_quantity, active).
 export const mockProducts: Product[] = [
-    { id: 101, nome: 'Shampoo Hidratante 300ml', preco: 85.00, custo: 35.00, qtd: 12, ativo: true, sku: 'SH-300' },
-    { id: 102, nome: 'Condicionador Reparador', preco: 92.00, custo: 40.00, qtd: 8, ativo: true, sku: 'CD-REP' },
-    { id: 103, nome: 'Óleo Reparador de Pontas', preco: 45.00, custo: 15.00, qtd: 25, ativo: true, sku: 'OL-RP' },
-    { id: 104, nome: 'Máscara de Nutrição', preco: 120.00, custo: 55.00, qtd: 3, ativo: true, sku: 'MS-NUT' },
-    { id: 105, nome: 'Kit Manicure Descartável', preco: 5.00, custo: 1.50, qtd: 150, ativo: true, sku: 'KT-MAN' },
-    { id: 106, nome: 'Esmalte Importado Vermelho', preco: 35.00, custo: 12.00, qtd: 15, ativo: true, sku: 'ES-VRM' },
-    { id: 107, nome: 'Cílios Fio a Fio (Caixa)', preco: 0, custo: 25.00, qtd: 4, ativo: false, sku: 'CX-CIL' }, // Uso interno
+    { id: 101, name: 'Shampoo Hidratante 300ml', price: 85.00, cost_price: 35.00, stock_quantity: 12, active: true, sku: 'SH-300' },
+    { id: 102, name: 'Condicionador Reparador', price: 92.00, cost_price: 40.00, stock_quantity: 8, active: true, sku: 'CD-REP' },
+    { id: 103, name: 'Óleo Reparador de Pontas', price: 45.00, cost_price: 15.00, stock_quantity: 25, active: true, sku: 'OL-RP' },
+    { id: 104, name: 'Máscara de Nutrição', price: 120.00, cost_price: 55.00, stock_quantity: 3, active: true, sku: 'MS-NUT' },
+    { id: 105, name: 'Kit Manicure Descartável', price: 5.00, cost_price: 1.50, stock_quantity: 150, active: true, sku: 'KT-MAN' },
+    { id: 106, name: 'Esmalte Importado Vermelho', price: 35.00, cost_price: 12.00, stock_quantity: 15, active: true, sku: 'ES-VRM' },
+    { id: 107, name: 'Cílios Fio a Fio (Caixa)', price: 0, cost_price: 25.00, stock_quantity: 4, active: false, sku: 'CX-CIL' }, // Uso interno
 ];
