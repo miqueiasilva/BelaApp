@@ -117,8 +117,25 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const signInWithGoogle = async () => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/` } });
   const resetPassword = async (email: string) => supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
   const updatePassword = async (newPassword: string) => supabase.auth.updateUser({ password: newPassword });
+  
+  // FIX: Logout Fail-Safe Robusto
   const signOut = async () => {
-    try { setLoading(true); await supabase.auth.signOut(); } finally { setUser(null); setLoading(false); localStorage.clear(); }
+    try {
+      setLoading(true);
+      // Tenta desconectar graciosamente no servidor
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("AuthContext: Erro crítico ao desconectar do servidor:", error);
+    } finally {
+      // ACONTEÇA O QUE ACONTECER: Limpa estado local e memória
+      setUser(null);
+      localStorage.clear();
+      sessionStorage.clear();
+      setLoading(false);
+      
+      // Redirecionamento nuclear para garantir que o app reinicie no estado de login
+      window.location.href = '/'; 
+    }
   };
 
   const value = useMemo(() => ({ user, loading, signIn, signUp, signInWithGoogle, resetPassword, updatePassword, signOut }), [user, loading]);

@@ -22,7 +22,7 @@ interface MenuItem {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = '' }) => {
-    const { user } = useAuth();
+    const { user, signOut } = useAuth();
     const userRole = (user?.papel as UserRole) || 'profissional';
 
     // 1. Definição Semântica de todos os itens do sistema
@@ -65,13 +65,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     const handleLogout = async () => {
         const confirmLogout = window.confirm("Deseja realmente sair do sistema?");
         if (!confirmLogout) return;
-        try {
-            await supabase.auth.signOut();
-        } finally {
-            localStorage.clear();
-            sessionStorage.clear();
-            window.location.href = '/'; 
-        }
+        
+        // Utiliza a função robusta do contexto
+        await signOut();
     };
 
     const renderItem = (item: MenuItem) => {
