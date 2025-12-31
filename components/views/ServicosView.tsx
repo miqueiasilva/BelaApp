@@ -45,7 +45,6 @@ const ServicosView: React.FC = () => {
         setError(null);
 
         try {
-            // FIX: Seleção explícita de colunas para evitar crash por colunas inexistentes (como comissao_percentual)
             const { data, error: sbError } = await supabase
                 .from('services')
                 .select('id, nome, duracao_min, preco, cor_hex, ativo, categoria, descricao')
@@ -83,15 +82,12 @@ const ServicosView: React.FC = () => {
 
     // --- Derived Data ---
     const categories = useMemo(() => {
-        // Proteção contra nulos na categoria
         const cats = services.map(s => (s as any).categoria || 'Geral');
-        // FIX: Explicitly cast Array.from result to string[] to resolve the "Property 'localeCompare' does not exist on type 'unknown'" error.
         return (Array.from(new Set(cats)) as string[]).sort((a, b) => a.localeCompare(b));
     }, [services]);
 
     const filteredServices = useMemo(() => {
         return services.filter(s => {
-            // FIX: Proteção contra null/undefined usando fallback de string vazia antes do toLowerCase()
             const name = (s.nome || '').toLowerCase();
             const term = (searchTerm || '').toLowerCase();
             const matchesSearch = name.includes(term);
@@ -168,17 +164,25 @@ const ServicosView: React.FC = () => {
         <div className="h-full flex flex-col bg-slate-50 relative font-sans overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 z-20">
-                <div className="flex items-center gap-4">
+            {/* FLOATING ACTION BUTTON (MOBILE ONLY) */}
+            <button 
+                onClick={() => { setEditingService(null); setIsModalOpen(true); }}
+                className="lg:hidden fixed bottom-8 right-6 w-16 h-16 bg-orange-500 text-white rounded-full shadow-2xl flex items-center justify-center z-50 active:scale-95 transition-transform border-4 border-white"
+            >
+                <Plus size={32} strokeWidth={3} />
+            </button>
+
+            <header className="bg-white border-b border-slate-200 px-4 py-4 lg:px-6 lg:py-4 flex flex-col lg:flex-row justify-between items-center gap-4 z-20">
+                <div className="flex items-center justify-between w-full lg:w-auto gap-4">
                     <div>
-                        <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 leading-none">
+                        <h1 className="text-lg lg:text-xl font-black text-slate-800 flex items-center gap-2 leading-none">
                             <Scissors className="text-orange-500" size={24} /> 
                             Serviços
                         </h1>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{services.length} itens no total</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{services.length} no total</span>
                     </div>
 
-                    <div className="hidden lg:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 ml-4">
+                    <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                         <button 
                             onClick={() => setViewMode('list')}
                             className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -194,8 +198,8 @@ const ServicosView: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 max-w-2xl flex items-center gap-2">
-                    <div className="relative flex-1 group">
+                <div className="w-full flex-1 max-w-2xl flex flex-col sm:flex-row items-center gap-2">
+                    <div className="relative w-full group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-orange-500 transition-colors" size={18} />
                         <input 
                             type="text" 
@@ -206,36 +210,30 @@ const ServicosView: React.FC = () => {
                         />
                     </div>
                     
-                    <div className="relative">
+                    <div className="relative w-full sm:w-auto">
                         <select 
                             value={filterCategory}
                             onChange={(e) => setFilterCategory(e.target.value)}
-                            className="appearance-none bg-slate-50 border border-slate-200 rounded-2xl pl-4 pr-10 py-2.5 text-xs font-black uppercase tracking-wider text-slate-600 focus:ring-2 focus:ring-orange-100 outline-none cursor-pointer hover:bg-white transition-all"
+                            className="w-full sm:w-48 appearance-none bg-slate-50 border border-slate-200 rounded-2xl pl-4 pr-10 py-2.5 text-xs font-black uppercase tracking-wider text-slate-600 focus:ring-2 focus:ring-orange-100 outline-none cursor-pointer hover:bg-white transition-all"
                         >
                             <option value="all">Todas Categorias</option>
                             {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                         </select>
                         <Filter size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     </div>
-                    
-                    <button className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-slate-400 hover:text-orange-500 hover:border-orange-200 transition-all shadow-sm">
-                        <SlidersHorizontal size={18} />
-                    </button>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <div className="relative group">
-                        <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all">
-                            <Download size={16} /> Exportar
-                        </button>
-                    </div>
+                <div className="hidden lg:flex items-center gap-3">
+                    <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all">
+                        <Download size={16} /> Exportar
+                    </button>
 
                     <div className="relative" ref={addMenuRef}>
                         <button 
                             onClick={() => setShowAddMenu(!showAddMenu)} 
                             className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95"
                         >
-                            <Plus size={20} /> <span className="hidden sm:inline">Novo</span>
+                            <Plus size={20} /> <span>Novo</span>
                         </button>
 
                         {showAddMenu && (
@@ -276,32 +274,33 @@ const ServicosView: React.FC = () => {
                         <span className="text-xs font-black uppercase tracking-widest">{selectedIds.length} selecionados</span>
                         <div className="w-px h-4 bg-slate-700"></div>
                         <div className="flex items-center gap-4">
-                            <button className="text-xs font-bold hover:text-orange-400 transition-colors flex items-center gap-2"><Tag size={14}/> Mudar Categoria</button>
-                            <button className="text-xs font-bold hover:text-rose-400 transition-colors flex items-center gap-2"><Trash2 size={14}/> Excluir Todos</button>
+                            <button className="text-xs font-bold hover:text-orange-400 transition-colors flex items-center gap-2"><Tag size={14}/> Mudar</button>
+                            <button className="text-xs font-bold hover:text-rose-400 transition-colors flex items-center gap-2"><Trash2 size={14}/> Excluir</button>
                         </div>
                         <button onClick={() => setSelectedIds([])} className="p-1 hover:bg-white/10 rounded-full"><X size={16}/></button>
                     </div>
                 )}
 
-                <div className="flex-1 overflow-auto p-6 scrollbar-hide">
+                <div className="flex-1 overflow-auto p-4 lg:p-6 scrollbar-hide">
                     {loading ? (
                         <div className="flex flex-col items-center justify-center h-full text-slate-400">
                             <Loader2 className="animate-spin mb-4 text-orange-500" size={48} />
-                            <p className="font-bold uppercase tracking-widest text-xs">Acessando catálogo...</p>
+                            <p className="font-bold uppercase tracking-widest text-xs">Sincronizando catálogo...</p>
                         </div>
                     ) : filteredServices.length === 0 ? (
-                        <div className="bg-white rounded-[40px] p-20 text-center border-2 border-slate-100 border-dashed max-w-2xl mx-auto my-12">
-                            <Scissors size={80} className="mx-auto text-slate-100 mb-6" />
+                        <div className="bg-white rounded-[40px] p-12 lg:p-20 text-center border-2 border-slate-100 border-dashed max-w-2xl mx-auto my-12">
+                            <Scissors size={64} className="mx-auto text-slate-100 mb-6" />
                             <h3 className="text-xl font-black text-slate-800 mb-2">Nenhum serviço encontrado</h3>
                             <p className="text-slate-400 text-sm mb-8">Refine sua busca ou cadastre um novo procedimento agora.</p>
                             <button onClick={() => setIsModalOpen(true)} className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-black shadow-lg shadow-orange-100">Começar Agora</button>
                         </div>
                     ) : viewMode === 'list' ? (
-                        <div className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm">
+                        <div className="bg-white rounded-[24px] lg:rounded-[32px] border border-slate-200 overflow-hidden shadow-sm">
+                            {/* TABLE HEAD - HIDDEN ON MOBILE */}
                             <table className="w-full text-left text-sm border-collapse">
-                                <thead>
+                                <thead className="hidden md:table-header-group">
                                     <tr className="bg-slate-50/50 border-b border-slate-100">
-                                        <th className="px-6 py-5 w-12">
+                                        <th className="px-6 py-5 w-12 text-center">
                                             <input 
                                                 type="checkbox" 
                                                 checked={selectedIds.length === filteredServices.length && filteredServices.length > 0} 
@@ -316,12 +315,13 @@ const ServicosView: React.FC = () => {
                                         <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Ações</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100">
+                                <tbody className="divide-y divide-slate-100 block md:table-row-group">
                                     {filteredServices.map(s => {
                                         const isSelected = selectedIds.includes(s.id);
                                         return (
-                                            <tr key={s.id} className={`group hover:bg-orange-50/30 transition-all ${isSelected ? 'bg-orange-50/50' : ''}`}>
-                                                <td className="px-6 py-4">
+                                            <tr key={s.id} className={`flex flex-col md:table-row group hover:bg-orange-50/30 transition-all ${isSelected ? 'bg-orange-50/50' : 'bg-white'}`}>
+                                                {/* CHECKBOX - HIDDEN ON MOBILE */}
+                                                <td className="hidden md:table-cell px-6 py-4 text-center">
                                                     <input 
                                                         type="checkbox" 
                                                         checked={isSelected}
@@ -329,32 +329,66 @@ const ServicosView: React.FC = () => {
                                                         className="w-4 h-4 rounded text-orange-500 border-slate-300 focus:ring-orange-500" 
                                                     />
                                                 </td>
-                                                <td className="px-6 py-4">
-                                                    <span className="inline-flex items-center gap-2 px-2 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-500 uppercase tracking-wider border border-slate-200">
-                                                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
-                                                        {(s as any).categoria || 'Geral'}
-                                                    </span>
+
+                                                {/* SERVICE INFO - STACKED ON MOBILE */}
+                                                <td className="px-5 py-4 md:px-6">
+                                                    <div className="flex flex-col md:hidden mb-2">
+                                                        <span className="font-black text-slate-800 text-lg leading-tight group-hover:text-orange-600 transition-colors">{s.nome}</span>
+                                                        <div className="mt-2">
+                                                            <span className="inline-flex items-center gap-2 px-2 py-0.5 bg-slate-100 rounded-lg text-[9px] font-black text-slate-500 uppercase tracking-wider border border-slate-200">
+                                                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
+                                                                {(s as any).categoria || 'Geral'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* CATEGORY - HIDDEN ON MOBILE TABLE (Shown in vertical flow above) */}
+                                                    <div className="hidden md:flex">
+                                                        <span className="inline-flex items-center gap-2 px-2 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-500 uppercase tracking-wider border border-slate-200">
+                                                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
+                                                            {(s as any).categoria || 'Geral'}
+                                                        </span>
+                                                    </div>
                                                 </td>
-                                                <td className="px-6 py-4">
+
+                                                <td className="hidden md:table-cell px-6 py-4">
                                                     <div className="flex flex-col">
                                                         <span className="font-bold text-slate-800 leading-tight group-hover:text-orange-600 transition-colors">{s.nome}</span>
-                                                        <span className="text-[10px] text-slate-400 font-medium line-clamp-1">{(s as any).descricao || 'Sem descrição cadastrada'}</span>
+                                                        <span className="text-[10px] text-slate-400 font-medium line-clamp-1">{(s as any).descricao || 'Sem descrição'}</span>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 font-mono font-bold text-slate-500 text-xs">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <Clock size={12} className="text-slate-300" />
-                                                        {formatDuration(s.duracao_min)}
+
+                                                <td className="px-5 py-2 md:px-6 md:py-4">
+                                                    <div className="flex items-center justify-between md:justify-start gap-1.5">
+                                                        <div className="flex items-center gap-1.5 text-slate-500 md:text-slate-500 font-mono font-bold text-xs">
+                                                            <Clock size={14} className="text-slate-300 md:w-3 md:h-3" />
+                                                            {formatDuration(s.duracao_min)}
+                                                        </div>
+                                                        
+                                                        {/* MOBILE PRICE - SHOWN HERE NEXT TO TIME */}
+                                                        <span className="md:hidden font-black text-slate-800 text-lg tracking-tight">R$ {s.preco.toFixed(2)}</span>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4">
+
+                                                <td className="hidden md:table-cell px-6 py-4">
                                                     <span className="font-black text-slate-800 tracking-tight">R$ {s.preco.toFixed(2)}</span>
                                                 </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button onClick={() => { setEditingService(s); setIsModalOpen(true); }} className="p-2 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all" title="Editar"><Edit2 size={16}/></button>
-                                                        <button onClick={() => handleDelete(s.id)} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Excluir"><Trash2 size={16}/></button>
-                                                        <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"><MoreVertical size={16}/></button>
+
+                                                <td className="px-5 py-4 md:px-6 text-right">
+                                                    <div className="flex items-center justify-end gap-2 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                                        <button 
+                                                            onClick={() => { setEditingService(s); setIsModalOpen(true); }} 
+                                                            className="flex-1 md:flex-none p-3 md:p-2 bg-slate-50 md:bg-transparent text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all flex items-center justify-center gap-2 border border-slate-100 md:border-transparent"
+                                                        >
+                                                            <Edit2 size={16}/> <span className="md:hidden text-xs font-bold uppercase">Editar</span>
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDelete(s.id)} 
+                                                            className="flex-1 md:flex-none p-3 md:p-2 bg-rose-50 md:bg-transparent text-rose-400 hover:text-rose-600 hover:bg-rose-100 rounded-xl transition-all flex items-center justify-center gap-2 border border-rose-100 md:border-transparent"
+                                                        >
+                                                            <Trash2 size={16}/> <span className="md:hidden text-xs font-bold uppercase">Excluir</span>
+                                                        </button>
+                                                        <button className="hidden md:block p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"><MoreVertical size={16}/></button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -364,6 +398,7 @@ const ServicosView: React.FC = () => {
                             </table>
                         </div>
                     ) : (
+                        /* KANBAN VIEW - ALREADY MODULAR */
                         <div className="flex gap-6 min-h-full items-start overflow-x-auto pb-8 scrollbar-hide">
                             {Object.entries(groupedServices).map(([cat, items]) => (
                                 <div key={cat} className="flex-shrink-0 w-80 flex flex-col max-h-full">
@@ -393,9 +428,6 @@ const ServicosView: React.FC = () => {
                                                         </div>
                                                     </div>
                                                     <span className="font-black text-slate-700 text-sm">R$ {s.preco.toFixed(2)}</span>
-                                                </div>
-                                                <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <ArrowUpRight size={14} className="text-orange-400" />
                                                 </div>
                                             </div>
                                         ))}
