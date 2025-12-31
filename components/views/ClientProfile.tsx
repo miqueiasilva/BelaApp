@@ -23,7 +23,7 @@ interface ClientProfileProps {
     onSave: (client: any) => Promise<void>;
 }
 
-// --- Componente Interno: Assinatura Digital Refinada ---
+// --- Componente Interno: Assinatura Digital ---
 const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSaving: boolean }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
@@ -166,7 +166,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const fileInputRef = useRef<HTMLInputElement>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
     
-    // States
+    // Anamnese
     const [anamnesis, setAnamnesis] = useState<any>({
         has_allergy: false,
         allergy_details: '',
@@ -181,29 +181,30 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
     const [photos, setPhotos] = useState<any[]>([]);
 
+    // Modelo de Estado Local Harmonizado com o Banco (Gender, Phone, Birth_date, etc)
     const [formData, setFormData] = useState<any>({
-        nome: '',
-        apelido: '',
-        whatsapp: '',
+        id: null,
+        full_name: '',
+        nickname: '',
+        phone: '',
         email: '',
         instagram: '',
-        nascimento: '',
+        birth_date: '',
         cpf: '',
         rg: '',
-        sexo: '',
-        profissao: '',
-        cep: '',
-        endereco: '',
-        numero: '',
-        complemento: '',
-        bairro: '',
-        cidade: '',
-        estado: '',
+        gender: '',
+        profession: '',
+        postal_code: '',
+        address: '',
+        number: '',
+        complement: '',
+        neighborhood: '',
+        city: '',
+        state: '',
         photo_url: null,
         online_booking_enabled: true,
-        origem: 'Instagram',
-        notas_gerais: '',
-        id: null
+        how_found: 'Instagram',
+        notes: ''
     });
 
     useEffect(() => {
@@ -213,38 +214,37 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             fetchPhotos();
             fetchTemplates();
         } else {
-            // Se for novo cliente, usa os dados iniciais passados
-            setFormData(prev => ({ ...prev, ...client }));
+            setFormData(prev => ({ ...prev, full_name: client.nome || '' }));
         }
     }, [client.id]);
 
     const refreshClientData = async () => {
         if (!client.id) return;
-        const { data, error } = await supabase.from('clients').select('*').eq('id', client.id).single();
+        const { data } = await supabase.from('clients').select('*').eq('id', client.id).single();
         if (data) {
             setFormData({
-                nome: data.full_name || data.nome || '',
-                apelido: data.nickname || data.apelido || '',
-                whatsapp: data.phone || data.whatsapp || '',
+                id: data.id,
+                full_name: data.full_name || data.nome || '',
+                nickname: data.nickname || data.apelido || '',
+                phone: data.phone || data.whatsapp || '',
                 email: data.email || '',
                 instagram: data.instagram || '',
-                nascimento: data.birth_date || data.nascimento || '',
+                birth_date: data.birth_date || data.nascimento || '',
                 cpf: data.cpf || '',
                 rg: data.rg || '',
-                sexo: data.gender || data.sexo || '',
-                profissao: data.profession || data.profissao || '',
-                cep: data.postal_code || data.cep || '',
-                endereco: data.address || data.endereco || '',
-                numero: data.number || data.numero || '',
-                complemento: data.complement || data.complemento || '',
-                bairro: data.neighborhood || data.bairro || '',
-                cidade: data.city || data.cidade || '',
-                estado: data.state || data.estado || '',
+                gender: data.gender || data.sexo || '',
+                profession: data.profession || data.profissao || '',
+                postal_code: data.postal_code || data.cep || '',
+                address: data.address || data.endereco || '',
+                number: data.number || data.numero || '',
+                complement: data.complement || data.complemento || '',
+                neighborhood: data.neighborhood || data.bairro || '',
+                city: data.city || data.cidade || '',
+                state: data.state || data.estado || '',
                 photo_url: data.photo_url || null,
                 online_booking_enabled: data.online_booking_enabled ?? true,
-                origem: data.how_found || data.origem || 'Instagram',
-                notas_gerais: data.notes || data.notas_gerais || '',
-                id: data.id
+                how_found: data.how_found || data.origem || 'Instagram',
+                notes: data.notes || data.notas_gerais || ''
             });
         }
     };
@@ -252,7 +252,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     // Busca automática de CEP
     useEffect(() => {
         const fetchAddress = async () => {
-            const cleanCep = formData.cep?.replace(/\D/g, '');
+            const cleanCep = formData.postal_code?.replace(/\D/g, '');
             if (cleanCep?.length === 8) {
                 try {
                     const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
@@ -260,17 +260,17 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     if (!data.erro) {
                         setFormData((prev: any) => ({
                             ...prev,
-                            endereco: data.logradouro,
-                            bairro: data.bairro,
-                            cidade: data.localidade,
-                            estado: data.uf
+                            address: data.logradouro,
+                            neighborhood: data.bairro,
+                            city: data.localidade,
+                            state: data.uf
                         }));
                     }
-                } catch (e) { console.error("Erro ao buscar CEP"); }
+                } catch (e) { console.error("Erro CEP"); }
             }
         };
         fetchAddress();
-    }, [formData.cep]);
+    }, [formData.postal_code]);
 
     const fetchAnamnesis = async () => {
         const { data } = await supabase.from('client_anamnesis').select('*').eq('client_id', client.id).maybeSingle();
@@ -306,18 +306,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         setFormData((prev: any) => ({ ...prev, [name]: value }));
     };
 
-    // Handler específico para Selects (contorna problemas de persistência)
-    const handleSelectChange = (name: string, value: string) => {
-        setFormData((prev: any) => ({ ...prev, [name]: value }));
-    };
-
     const handleSaveAnamnesis = async () => {
         setIsSaving(true);
         const payload = { ...anamnesis, client_id: client.id };
         const { error } = await supabase.from('client_anamnesis').upsert(payload);
         setIsSaving(false);
-        if (!error) setToast({ message: "Anamnese salva com sucesso!", type: 'success' });
-        else setToast({ message: "Erro ao salvar anamnese.", type: 'error' });
+        if (!error) setToast({ message: "Anamnese salva!", type: 'success' });
+        else setToast({ message: "Erro na anamnese.", type: 'error' });
     };
 
     const handleSaveSignature = async (blob: Blob) => {
@@ -338,54 +333,48 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     };
 
     const handleSave = async () => {
-        if (!formData.nome) {
-            setToast({ message: "O nome do cliente é obrigatório.", type: 'error' });
+        if (!formData.full_name) {
+            setToast({ message: "Nome é obrigatório.", type: 'error' });
             return;
         }
 
         setIsSaving(true);
         try {
-            // Mapeamento Frontend -> Banco de Dados (Reforçado)
-            const mappedPayload = {
-                full_name: formData.nome,
-                nickname: formData.apelido,
-                phone: formData.whatsapp,
-                email: formData.email,
-                instagram: formData.instagram,
-                birth_date: formData.nascimento || null, // Garante NULL para strings vazias em date columns
-                cpf: formData.cpf,
-                rg: formData.rg,
-                gender: formData.sexo, // "sexo" no state -> "gender" no banco
-                profession: formData.profissao,
-                postal_code: formData.cep,
-                address: formData.endereco,
-                number: formData.numero,
-                complement: formData.complemento,
-                neighborhood: formData.bairro,
-                city: formData.cidade,
-                state: formData.estado,
-                how_found: formData.origem, // "origem" no state -> "how_found" no banco
-                notes: formData.notas_gerais,
-                online_booking_enabled: formData.online_booking_enabled,
-                photo_url: formData.photo_url
-            };
-
             const { error } = await supabase
                 .from('clients')
-                .update(mappedPayload)
+                .update({
+                    full_name: formData.full_name,
+                    nickname: formData.nickname,
+                    phone: formData.phone,
+                    email: formData.email,
+                    instagram: formData.instagram,
+                    birth_date: formData.birth_date || null,
+                    cpf: formData.cpf,
+                    rg: formData.rg,
+                    gender: formData.gender, // Coluna exata no DB
+                    profession: formData.profession,
+                    postal_code: formData.postal_code,
+                    address: formData.address,
+                    number: formData.number,
+                    complement: formData.complement,
+                    neighborhood: formData.neighborhood,
+                    city: formData.city,
+                    state: formData.state,
+                    how_found: formData.how_found,
+                    notes: formData.notes,
+                    online_booking_enabled: formData.online_booking_enabled
+                })
                 .eq('id', formData.id);
 
             if (error) throw error;
             
             setToast({ message: "Dados atualizados com sucesso! ✅", type: 'success' });
             setIsEditing(false);
-            
-            // Força a atualização local para garantir sincronia
-            await refreshClientData();
+            await refreshClientData(); // Refresh forçado
             
         } catch (err: any) {
-            console.error("Erro ao salvar perfil:", err);
-            setToast({ message: "Erro ao persistir dados no banco.", type: 'error' });
+            console.error("Erro ao salvar:", err);
+            setToast({ message: "Erro ao persistir no banco.", type: 'error' });
         } finally {
             setIsSaving(false);
         }
@@ -416,7 +405,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     className="px-6 py-2.5 bg-orange-600 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95 disabled:opacity-70"
                                 >
                                     {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                                    {isSaving ? 'Gravando...' : (isNew ? 'Criar Cliente' : 'Salvar Alterações')}
+                                    {isSaving ? 'Sincronizando...' : (isNew ? 'Criar Cliente' : 'Salvar Dados')}
                                 </button>
                             </div>
                         )}
@@ -426,14 +415,14 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 <div className="flex items-center gap-5">
                     <div className="relative group">
                         <div className={`w-20 h-20 rounded-[24px] flex items-center justify-center text-2xl font-black border-4 border-white shadow-xl overflow-hidden transition-all ${isEditing ? 'cursor-pointer ring-2 ring-orange-100' : ''} ${formData.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}`}>
-                            {formData.photo_url ? <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" /> : formData.nome?.charAt(0) || '?'}
+                            {formData.photo_url ? <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" /> : formData.full_name?.charAt(0) || '?'}
                         </div>
                     </div>
 
                     <div className="flex-1">
-                        <h2 className="text-2xl font-black text-slate-800 leading-tight">{formData.nome || 'Novo Cliente'}</h2>
+                        <h2 className="text-2xl font-black text-slate-800 leading-tight">{formData.full_name || 'Novo Cliente'}</h2>
                         <div className="flex items-center gap-3 mt-1">
-                            <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-200">{formData.origem}</span>
+                            <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-200">{formData.how_found}</span>
                             {anamnesis.has_allergy && <span className="text-[10px] font-black uppercase text-rose-500 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100">⚠️ Alérgica</span>}
                         </div>
                     </div>
@@ -455,7 +444,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                              
                              <Card title="Contato e Redes Sociais" icon={<Smartphone size={18} />}>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <EditField label="WhatsApp / Celular" name="whatsapp" value={formData.whatsapp} onChange={handleInputChange} disabled={!isEditing} placeholder="(00) 00000-0000" icon={Phone} />
+                                    <EditField label="WhatsApp / Celular" name="phone" value={formData.phone} onChange={handleInputChange} disabled={!isEditing} placeholder="(00) 00000-0000" icon={Phone} />
                                     <EditField label="E-mail Principal" name="email" value={formData.email} onChange={handleInputChange} disabled={!isEditing} placeholder="cliente@email.com" icon={Mail} />
                                     <EditField label="Instagram" name="instagram" value={formData.instagram} onChange={handleInputChange} disabled={!isEditing} placeholder="@usuario" icon={Instagram} />
                                 </div>
@@ -463,28 +452,28 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
                              <Card title="Endereço e Localização" icon={<MapPin size={18} />}>
                                 <div className="grid grid-cols-2 md:grid-cols-6 gap-6">
-                                    <EditField label="CEP" name="cep" value={formData.cep} onChange={handleInputChange} disabled={!isEditing} placeholder="00000-000" icon={Hash} span="col-span-2" />
-                                    <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} disabled={!isEditing} placeholder="Rua, Av..." icon={Navigation} span="col-span-3" />
-                                    <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} disabled={!isEditing} placeholder="123" span="col-span-1" />
-                                    <EditField label="Complemento" name="complemento" value={formData.complemento} onChange={handleInputChange} disabled={!isEditing} placeholder="Apto, Bloco..." span="col-span-2" />
-                                    <EditField label="Bairro" name="bairro" value={formData.bairro} onChange={handleInputChange} disabled={!isEditing} placeholder="Bairro" span="col-span-2" />
-                                    <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} disabled={!isEditing} placeholder="Cidade" span="col-span-2" />
-                                    <EditField label="Estado" name="estado" value={formData.estado} onChange={handleInputChange} disabled={!isEditing} placeholder="UF" span="col-span-2" />
+                                    <EditField label="CEP" name="postal_code" value={formData.postal_code} onChange={handleInputChange} disabled={!isEditing} placeholder="00000-000" icon={Hash} span="col-span-2" />
+                                    <EditField label="Logradouro" name="address" value={formData.address} onChange={handleInputChange} disabled={!isEditing} placeholder="Rua, Av..." icon={Navigation} span="col-span-3" />
+                                    <EditField label="Número" name="number" value={formData.number} onChange={handleInputChange} disabled={!isEditing} placeholder="123" span="col-span-1" />
+                                    <EditField label="Complemento" name="complement" value={formData.complement} onChange={handleInputChange} disabled={!isEditing} placeholder="Apto, Bloco..." span="col-span-2" />
+                                    <EditField label="Bairro" name="neighborhood" value={formData.neighborhood} onChange={handleInputChange} disabled={!isEditing} placeholder="Bairro" span="col-span-2" />
+                                    <EditField label="Cidade" name="city" value={formData.city} onChange={handleInputChange} disabled={!isEditing} placeholder="Cidade" span="col-span-2" />
+                                    <EditField label="Estado" name="state" value={formData.state} onChange={handleInputChange} disabled={!isEditing} placeholder="UF" span="col-span-2" />
                                 </div>
                              </Card>
 
                              <Card title="Perfil do Cliente" icon={<User size={18} />}>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                    <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} disabled={!isEditing} icon={User} span="md:col-span-2" />
-                                    <EditField label="Apelido" name="apelido" value={formData.apelido} onChange={handleInputChange} disabled={!isEditing} icon={Smile} />
+                                    <EditField label="Nome Completo" name="full_name" value={formData.full_name} onChange={handleInputChange} disabled={!isEditing} icon={User} span="md:col-span-2" />
+                                    <EditField label="Apelido" name="nickname" value={formData.nickname} onChange={handleInputChange} disabled={!isEditing} icon={Smile} />
                                     <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} disabled={!isEditing} placeholder="000.000.000-00" icon={CreditCard} />
-                                    <EditField label="Data de Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} disabled={!isEditing} icon={Calendar} />
+                                    <EditField label="Data de Nascimento" name="birth_date" type="date" value={formData.birth_date} onChange={handleInputChange} disabled={!isEditing} icon={Calendar} />
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Sexo</label>
                                         <select 
-                                            name="sexo" 
-                                            value={formData.sexo} 
-                                            onChange={(e) => handleSelectChange('sexo', e.target.value)} 
+                                            name="gender" 
+                                            value={formData.gender} 
+                                            onChange={(e) => setFormData({ ...formData, gender: e.target.value })} 
                                             disabled={!isEditing} 
                                             className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 disabled:opacity-60"
                                         >
@@ -495,13 +484,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             <option value="Não informado">Não informar</option>
                                         </select>
                                     </div>
-                                    <EditField label="Profissão" name="profissao" value={formData.profissao} onChange={handleInputChange} disabled={!isEditing} icon={Briefcase} />
+                                    <EditField label="Profissão" name="profession" value={formData.profession} onChange={handleInputChange} disabled={!isEditing} icon={Briefcase} />
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Origem</label>
                                         <select 
-                                            name="origem" 
-                                            value={formData.origem} 
-                                            onChange={(e) => handleSelectChange('origem', e.target.value)} 
+                                            name="how_found" 
+                                            value={formData.how_found} 
+                                            onChange={(e) => setFormData({ ...formData, how_found: e.target.value })} 
                                             disabled={!isEditing} 
                                             className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 disabled:opacity-60"
                                         >
@@ -521,8 +510,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Anotações Internas</label>
                                     <textarea 
-                                        name="notas_gerais"
-                                        value={formData.notas_gerais}
+                                        name="notes"
+                                        value={formData.notes}
                                         onChange={handleInputChange}
                                         disabled={!isEditing}
                                         className="w-full bg-white border border-slate-200 rounded-2xl p-4 min-h-[120px] outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-medium text-slate-600 resize-none shadow-sm disabled:opacity-60"
@@ -539,7 +528,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         className="px-10 py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 shadow-xl transition-all active:scale-95 disabled:opacity-70 flex items-center gap-3"
                                     >
                                         {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
-                                        {isSaving ? 'Sincronizando...' : 'Salvar Todos os Dados'}
+                                        {isSaving ? 'Sincronizando...' : 'Salvar Alterações'}
                                     </button>
                                 </div>
                              )}
