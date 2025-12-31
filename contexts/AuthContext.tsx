@@ -7,6 +7,7 @@ export type AppUser = SupabaseUser & {
   papel?: string;
   nome?: string;
   avatar_url?: string;
+  permissions?: any;
 };
 
 type AuthContextType = {
@@ -26,42 +27,44 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Busca perfil com proteção contra travamento (Timeout de 7s para o perfil especificamente)
+  // Busca perfil unificado (Auth + Professionals)
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
-    const profilePromise = supabase
-      .from('profiles')
-      .select('full_name, papel, avatar_url')
-      .eq('id', authUser.id)
-      .maybeSingle();
-
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("Profile Timeout")), 7000)
-    );
-
     try {
-      // Race entre o banco e um timeout de 7 segundos
-      const { data, error }: any = await Promise.race([profilePromise, timeoutPromise]);
+      // Prioridade 1: Buscar na tabela de profissionais (onde reside o Role operacional)
+      const { data: profData } = await supabase
+        .from('professionals')
+        .select('role, photo_url, permissions, name')
+        .eq('email', authUser.email) // Link via e-mail ou auth_user_id se existir
+        .maybeSingle();
 
-      if (error || !data) {
+      if (profData) {
         return {
-            ...authUser,
-            papel: 'admin',
-            nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
-            avatar_url: authUser.user_metadata?.avatar_url
+          ...authUser,
+          papel: profData.role?.toLowerCase() || 'profissional',
+          nome: profData.name || authUser.user_metadata?.full_name,
+          avatar_url: profData.photo_url || authUser.user_metadata?.avatar_url,
+          permissions: profData.permissions
         };
       }
 
+      // Prioridade 2: Fallback para perfis genéricos (Profiles)
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('full_name, papel, avatar_url')
+        .eq('id', authUser.id)
+        .maybeSingle();
+
       return {
         ...authUser,
-        papel: data.papel || 'profissional',
-        nome: data.full_name || authUser.user_metadata?.full_name,
-        avatar_url: data.avatar_url || authUser.user_metadata?.avatar_url
+        papel: profileData?.papel || 'profissional',
+        nome: profileData?.full_name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
+        avatar_url: profileData?.avatar_url || authUser.user_metadata?.avatar_url
       };
     } catch (e) {
-      console.warn("AuthContext: Perfil demorou muito ou falhou. Usando dados básicos do JWT.");
+      console.warn("AuthContext: Erro ao buscar perfil extendido.");
       return { 
         ...authUser, 
-        papel: (authUser as any).papel || 'admin', 
+        papel: 'profissional', 
         nome: authUser.user_metadata?.full_name || 'Usuário' 
       };
     }
@@ -74,10 +77,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       setLoading(true);
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
-        
         if (error) {
-          console.error("AuthContext: Erro ao recuperar sessão inicial:", error.message);
-          // Se o erro for de token inválido, limpa tudo para não travar
           if (error.message.toLowerCase().includes('refresh_token')) {
             await supabase.auth.signOut();
             if (mounted) setUser(null);
@@ -89,17 +89,13 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
           const appUser = await fetchProfile(session.user);
           setUser(appUser);
         }
-      } catch (err) {
-        console.error("AuthContext: Erro crítico na inicialização:", err);
       } finally {
-        // GARANTIA ABSOLUTA: O loading sempre termina, aconteça o que acontecer
         if (mounted) setLoading(false);
       }
     };
 
     getInitialSession();
 
-    // Listener de mudanças de estado
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         const appUser = await fetchProfile(session.user);
@@ -107,8 +103,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       } else {
         if (mounted) setUser(null);
       }
-      
-      // Se houve um evento de logout ou erro, garante o fim do loading
       if (mounted) setLoading(false);
     });
 
@@ -118,57 +112,16 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     };
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    return await supabase.auth.signInWithPassword({ email, password });
-  };
-
-  const signUp = async (email: string, password: string, name: string) => {
-    return await supabase.auth.signUp({ 
-        email, 
-        password,
-        options: { data: { full_name: name } }
-    });
-  };
-
-  const signInWithGoogle = async () => {
-    return await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/` },
-    });
-  };
-
-  const resetPassword = async (email: string) => {
-    return await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-  };
-
-  const updatePassword = async (newPassword: string) => {
-    return await supabase.auth.updateUser({ password: newPassword });
-  };
-
+  const signIn = async (email: string, password: string) => supabase.auth.signInWithPassword({ email, password });
+  const signUp = async (email: string, password: string, name: string) => supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
+  const signInWithGoogle = async () => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/` } });
+  const resetPassword = async (email: string) => supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
+  const updatePassword = async (newPassword: string) => supabase.auth.updateUser({ password: newPassword });
   const signOut = async () => {
-    try {
-        setLoading(true);
-        await supabase.auth.signOut();
-    } finally {
-        setUser(null);
-        setLoading(false);
-        localStorage.clear();
-        sessionStorage.clear();
-    }
+    try { setLoading(true); await supabase.auth.signOut(); } finally { setUser(null); setLoading(false); localStorage.clear(); }
   };
 
-  const value = useMemo(() => ({
-    user,
-    loading,
-    signIn,
-    signUp,
-    signInWithGoogle,
-    resetPassword,
-    updatePassword,
-    signOut,
-  }), [user, loading]);
+  const value = useMemo(() => ({ user, loading, signIn, signUp, signInWithGoogle, resetPassword, updatePassword, signOut }), [user, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

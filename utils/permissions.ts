@@ -1,13 +1,12 @@
 
 import { UserRole, ViewState } from '../types';
 
-// Defines which views each role can access
 const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
-    // Admin & Gestor have full access
+    // Admins e Gestores: Acesso irrestrito
     admin: ['*'],
     gestor: ['*'],
     
-    // Reception: Operational focus (No financials/reports/settings)
+    // Recepção: Operacional completo, exceto configurações globais e relatórios financeiros profundos
     recepcao: [
         'dashboard', 
         'agenda', 
@@ -21,27 +20,28 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
         'whatsapp'
     ],
     
-    // Professional: Service focus (No cash, inventory, settings, sensitive data)
+    // Profissional (Staff): Foco total no atendimento e cliente
+    // Bloqueados: Financeiro, Relatórios, Configurações, Controle de Caixa, Remunerações (Globais)
     profissional: [
         'dashboard', 
         'agenda', 
         'clientes', 
         'comandas', 
-        'whatsapp'
+        'whatsapp',
+        'vendas' // Permitido para que possam lançar produtos consumidos
     ]
 };
 
-export const hasAccess = (role: UserRole | undefined, view: ViewState): boolean => {
+export const hasAccess = (role: UserRole | string | undefined, view: ViewState): boolean => {
     if (!role) return false;
-    const permissions = ROLE_PERMISSIONS[role];
+    const permissions = ROLE_PERMISSIONS[role as UserRole] || ROLE_PERMISSIONS['profissional'];
     if (permissions.includes('*')) return true;
     return permissions.includes(view);
 };
 
-export const getFirstAllowedView = (role: UserRole | undefined): ViewState => {
+export const getFirstAllowedView = (role: UserRole | string | undefined): ViewState => {
     if (!role) return 'dashboard';
-    const permissions = ROLE_PERMISSIONS[role];
+    const permissions = ROLE_PERMISSIONS[role as UserRole] || ROLE_PERMISSIONS['profissional'];
     if (permissions.includes('*')) return 'dashboard';
-    // Return the first valid view, fallback to dashboard
     return (permissions[0] as ViewState) || 'dashboard';
 };

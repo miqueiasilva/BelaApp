@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { ViewState, FinancialTransaction } from './types';
+import { ViewState, FinancialTransaction, UserRole } from './types';
 import EnvGate from './components/EnvGate';
+import { hasAccess } from './utils/permissions';
 
 // Layout & Views
 import MainLayout from './components/layout/MainLayout';
@@ -37,13 +39,8 @@ const AppContent: React.FC = () => {
     const handleHashChange = () => {
       const newHash = window.location.hash;
       setHash(newHash);
-      
-      // Se voltar para a raiz, garante o Dashboard
-      if (newHash === '' || newHash === '#/') {
-        setCurrentView('dashboard');
-      }
+      if (newHash === '' || newHash === '#/') setCurrentView('dashboard');
     };
-    
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
@@ -59,61 +56,38 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Se estiver na pré-visualização pública
-  if (hash === '#/public-preview') {
-    return <PublicBookingPreview />;
-  }
+  if (hash === '#/public-preview') return <PublicBookingPreview />;
+  if (pathname === '/reset-password' || hash === '#/reset-password') return <ResetPasswordView />;
+  if (!user) return <LoginView />;
 
-  // Redefinição de senha
-  if (pathname === '/reset-password' || hash === '#/reset-password') {
-    return <ResetPasswordView />;
-  }
-
-  // Se não estiver logado, vai para login
-  if (!user) {
-    return <LoginView />;
-  }
-
-  const handleAddTransaction = (t: FinancialTransaction) => {
-    setTransactions(prev => [t, ...prev]);
-  };
+  const handleAddTransaction = (t: FinancialTransaction) => setTransactions(prev => [t, ...prev]);
 
   const renderView = () => {
-    switch (currentView) {
-      case 'dashboard':
+    // SEGURANÇA: Verificação de Permissão antes de Renderizar
+    if (!hasAccess(user.papel as UserRole, currentView)) {
         return <DashboardView onNavigate={setCurrentView} />;
-      case 'agenda':
-        return <AtendimentosView onAddTransaction={handleAddTransaction} />;
-      case 'agenda_online':
-        return <AgendaOnlineView />;
-      case 'whatsapp':
-        return <WhatsAppView />;
-      case 'financeiro':
-        return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
-      case 'clientes':
-        return <ClientesView />;
-      case 'relatorios':
-        return <RelatoriosView />;
-      case 'configuracoes':
-        return <ConfiguracoesView />;
-      case 'remuneracoes':
-        return <RemuneracoesView />;
-      case 'vendas':
-        return <VendasView onAddTransaction={handleAddTransaction} />;
-      case 'comandas':
-        return <ComandasView onAddTransaction={handleAddTransaction} />;
-      case 'caixa':
-        return <CaixaView />;
-      case 'produtos':
-        return <ProdutosView />;
-      case 'servicos':
-        return <ServicosView />;
+    }
+
+    switch (currentView) {
+      case 'dashboard': return <DashboardView onNavigate={setCurrentView} />;
+      case 'agenda': return <AtendimentosView onAddTransaction={handleAddTransaction} />;
+      case 'agenda_online': return <AgendaOnlineView />;
+      case 'whatsapp': return <WhatsAppView />;
+      case 'financeiro': return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
+      case 'clientes': return <ClientesView />;
+      case 'relatorios': return <RelatoriosView />;
+      case 'configuracoes': return <ConfiguracoesView />;
+      case 'remuneracoes': return <RemuneracoesView />;
+      case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
+      case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} />;
+      case 'caixa': return <CaixaView />;
+      case 'produtos': return <ProdutosView />;
+      case 'servicos': return <ServicosView />;
+      case 'equipe': return <EquipeView />;
       case 'public_preview':
         window.location.hash = '/public-preview';
         return null;
-      default:
-        if ((currentView as string) === 'equipe') return <EquipeView />;
-        return <DashboardView onNavigate={setCurrentView} />;
+      default: return <DashboardView onNavigate={setCurrentView} />;
     }
   };
 
