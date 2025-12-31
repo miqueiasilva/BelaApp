@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
@@ -14,46 +15,58 @@ interface SidebarProps {
     className?: string;
 }
 
+interface MenuItem {
+    id: ViewState;
+    icon: any;
+    label: string;
+}
+
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = '' }) => {
     const { user } = useAuth();
-    
-    const menuItems = [
+    const userRole = (user?.papel as UserRole) || 'profissional';
+
+    // 1. Definição Semântica de todos os itens do sistema
+    const principalItems: MenuItem[] = [
         { id: 'dashboard', icon: Home, label: 'Página principal' },
         { id: 'agenda', icon: Calendar, label: 'Atendimentos' },
         { id: 'agenda_online', icon: Globe, label: 'Agenda Online' },
         { id: 'whatsapp', icon: MessageSquare, label: 'WhatsApp' },
-        { id: 'financeiro', icon: ArrowRightLeft, label: 'Fluxo de Caixa' },
         { id: 'clientes', icon: Users, label: 'Clientes' },
-        { id: 'equipe', icon: Briefcase, label: 'Equipe' }, 
+    ];
+
+    const gestaoItems: MenuItem[] = [
+        { id: 'financeiro', icon: ArrowRightLeft, label: 'Fluxo de Caixa' },
         { id: 'relatorios', icon: BarChart, label: 'Relatórios' },
+        { id: 'equipe', icon: Briefcase, label: 'Equipe' }, 
+        { id: 'remuneracoes', icon: Banknote, label: 'Remunerações' },
         { id: 'configuracoes', icon: Settings, label: 'Configurações' },
     ];
 
-    const secondaryItems = [
-         { id: 'remuneracoes', icon: Banknote, label: 'Remunerações' },
-         { id: 'vendas', icon: ShoppingCart, label: 'Vendas' },
-         { id: 'comandas', icon: ClipboardList, label: 'Comandas' },
-         { id: 'caixa', icon: Archive, label: 'Controle de Caixa' },
-         { id: 'servicos', icon: Star, label: 'Serviços' },
-         { id: 'produtos', icon: Package, label: 'Produtos' },
+    const operacionalItems: MenuItem[] = [
+        { id: 'vendas', icon: ShoppingCart, label: 'Vendas (PDV)' },
+        { id: 'comandas', icon: ClipboardList, label: 'Comandas' },
+        { id: 'caixa', icon: Archive, label: 'Controle de Caixa' },
+        { id: 'servicos', icon: Star, label: 'Serviços' },
+        { id: 'produtos', icon: Package, label: 'Produtos' },
     ];
+
+    // 2. Filtro de Permissão
+    const filter = (items: MenuItem[]) => items.filter(item => hasAccess(userRole, item.id));
+
+    const filteredPrincipal = filter(principalItems);
+    const filteredGestao = filter(gestaoItems);
+    const filteredOperacional = filter(operacionalItems);
 
     const handleNavigation = (e: React.MouseEvent, viewId: string) => {
         e.preventDefault();
-        onNavigate(viewId as any);
+        onNavigate(viewId as ViewState);
     };
 
     const handleLogout = async () => {
         const confirmLogout = window.confirm("Deseja realmente sair do sistema?");
         if (!confirmLogout) return;
-
         try {
-            await Promise.race([
-                supabase.auth.signOut(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
-            ]);
-        } catch (error) {
-            console.error("Erro ou timeout no logout:", error);
+            await supabase.auth.signOut();
         } finally {
             localStorage.clear();
             sessionStorage.clear();
@@ -61,14 +74,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         }
     };
 
-    const filterItems = (items: any[]) => {
-        return items.filter(item => hasAccess(user?.papel as UserRole, item.id as ViewState));
-    };
-
-    const filteredMenu = filterItems(menuItems);
-    const filteredSecondary = filterItems(secondaryItems);
-
-    const renderItem = (item: any) => {
+    const renderItem = (item: MenuItem) => {
         const Icon = item.icon;
         const isActive = currentView === item.id;
         
@@ -90,32 +96,50 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 
     return (
         <aside className={`bg-white border-r border-slate-200 flex flex-col h-full ${className}`}>
+            {/* Logo Section */}
             <div className="h-16 flex items-center px-6 gap-3 border-b border-slate-100 flex-shrink-0">
                 <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center font-black text-white text-xl shadow-lg shadow-orange-100">
                     B
                 </div>
                 <div>
                     <h1 className="font-black text-slate-800 text-base leading-tight tracking-tight">BelaFlow</h1>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Painel Administrativo</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Gestão Inteligente</p>
                 </div>
             </div>
             
             <nav className="flex-1 overflow-y-auto p-4 scrollbar-hide">
-                <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3 mt-2">Principal</div>
-                <ul className="space-y-1">
-                    {filteredMenu.map(renderItem)}
-                </ul>
-
-                {filteredSecondary.length > 0 && (
-                    <>
-                        <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3 mt-8">Operacional</div>
+                {/* GRUPO PRINCIPAL */}
+                {filteredPrincipal.length > 0 && (
+                    <div className="mb-6">
+                        <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3">Principal</div>
                         <ul className="space-y-1">
-                            {filteredSecondary.map(renderItem)}
+                            {filteredPrincipal.map(renderItem)}
                         </ul>
-                    </>
+                    </div>
+                )}
+
+                {/* GRUPO OPERACIONAL (Vendas, Comandas, etc) */}
+                {filteredOperacional.length > 0 && (
+                    <div className="mb-6">
+                        <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3">Operação</div>
+                        <ul className="space-y-1">
+                            {filteredOperacional.map(renderItem)}
+                        </ul>
+                    </div>
+                )}
+
+                {/* GRUPO GESTÃO (Admin Only) */}
+                {filteredGestao.length > 0 && (
+                    <div className="mb-6">
+                        <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3">Gestão</div>
+                        <ul className="space-y-1">
+                            {filteredGestao.map(renderItem)}
+                        </ul>
+                    </div>
                 )}
             </nav>
 
+            {/* User Profile Section */}
             <div className="p-4 border-t border-slate-100 bg-slate-50/50">
                 <div className="flex items-center gap-3 w-full p-3 rounded-2xl bg-white border border-slate-100 shadow-sm">
                     <img 
@@ -125,7 +149,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                     />
                     <div className="flex-1 min-w-0">
                         <p className="text-sm font-black text-slate-700 truncate leading-none mb-1">{user?.nome || 'Usuário'}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{user?.papel || 'Visitante'}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{userRole}</p>
                     </div>
                     
                     <button 
@@ -142,4 +166,3 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 };
 
 export default Sidebar;
-// Updated to BelaFlow

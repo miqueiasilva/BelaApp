@@ -2,11 +2,11 @@
 import { UserRole, ViewState } from '../types';
 
 const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
-    // Admins e Gestores: Acesso irrestrito
+    // Admins e Gestores: Acesso irrestrito a todos os módulos
     admin: ['*'],
     gestor: ['*'],
     
-    // Recepção: Operacional completo, exceto configurações globais e relatórios financeiros profundos
+    // Recepção: Operacional completo e gestão de estoque/serviços, exceto faturamento bruto e equipe
     recepcao: [
         'dashboard', 
         'agenda', 
@@ -20,15 +20,16 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
         'whatsapp'
     ],
     
-    // Profissional (Staff): Foco total no atendimento e cliente
-    // Bloqueados: Financeiro, Relatórios, Configurações, Controle de Caixa, Remunerações (Globais)
+    // Profissional (Staff): Foco total na jornada do cliente e lançamentos de consumo
+    // Bloqueados: Financeiro Global, Relatórios de Lucro, Configurações de Studio e Gestão de Equipe
     profissional: [
         'dashboard', 
         'agenda', 
+        'agenda_online', // Precisa ver o link para enviar a clientes
         'clientes', 
-        'comandas', 
         'whatsapp',
-        'vendas' // Permitido para que possam lançar produtos consumidos
+        'comandas', 
+        'vendas' // Liberado: Staff precisa registrar vendas de produtos e serviços
     ]
 };
 
