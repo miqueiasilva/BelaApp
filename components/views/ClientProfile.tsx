@@ -15,6 +15,7 @@ import { Client } from '../../types';
 import { differenceInYears, parseISO, isValid, format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
+import Toast, { ToastType } from '../shared/Toast';
 
 interface ClientProfileProps {
     client: Client;
@@ -34,11 +35,10 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         
-        // Configurações de "Caneta Esferográfica"
-        ctx.strokeStyle = '#000080'; // Azul Marinho Profissional
+        ctx.strokeStyle = '#000080'; 
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        ctx.lineWidth = 1.2; // Espessura base refinada
+        ctx.lineWidth = 1.2;
     }, []);
 
     const getPos = (e: any) => {
@@ -47,17 +47,13 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
         const rect = canvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        return {
-            x: clientX - rect.left,
-            y: clientY - rect.top
-        };
+        return { x: clientX - rect.left, y: clientY - rect.top };
     };
 
     const startDrawing = (e: any) => {
         const pos = getPos(e);
         lastPos.current = pos;
         setIsDrawing(true);
-        
         const ctx = canvasRef.current?.getContext('2d');
         if (ctx) {
             ctx.beginPath();
@@ -70,19 +66,12 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (!ctx || !canvas) return;
-
         const pos = getPos(e);
-        
-        // Cálculo de velocidade para variar espessura (Simulação de Pressão)
         const dist = Math.sqrt(Math.pow(pos.x - lastPos.current.x, 2) + Math.pow(pos.y - lastPos.current.y, 2));
         const newWidth = Math.max(0.5, Math.min(2.5, 5 / (dist + 1)));
-        
-        // Suavização do traço
-        ctx.lineWidth = (ctx.lineWidth * 0.3) + (newWidth * 0.7); // Filtro de velocidade (Smoothing)
-        
+        ctx.lineWidth = (ctx.lineWidth * 0.3) + (newWidth * 0.7);
         ctx.lineTo(pos.x, pos.y);
         ctx.stroke();
-        
         lastPos.current = pos;
     };
 
@@ -102,9 +91,7 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
     return (
         <div className="space-y-3">
             <div className="relative border-2 border-slate-200 rounded-3xl bg-white overflow-hidden h-48 touch-none shadow-inner">
-                {/* Linha Guia Estilo Papel */}
                 <div className="absolute bottom-12 left-8 right-8 h-px bg-slate-100 pointer-events-none"></div>
-                
                 <canvas 
                     ref={canvasRef}
                     width={600}
@@ -128,7 +115,7 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
     );
 };
 
-const EditField = ({ label, name, value, onChange, type = "text", placeholder, span = "col-span-1", icon: Icon }: any) => (
+const EditField = ({ label, name, value, onChange, type = "text", placeholder, span = "col-span-1", icon: Icon, disabled }: any) => (
     <div className={`space-y-1.5 ${span}`}>
         <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-wider">{label}</label>
         <div className="relative group">
@@ -142,8 +129,9 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
                 name={name}
                 value={value || ''}
                 onChange={onChange}
+                disabled={disabled}
                 placeholder={placeholder}
-                className={`w-full bg-white border border-slate-200 rounded-xl py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all shadow-sm ${Icon ? 'pl-11 pr-4' : 'px-4'}`}
+                className={`w-full bg-white border border-slate-200 rounded-xl py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all shadow-sm ${Icon ? 'pl-11 pr-4' : 'px-4'} disabled:opacity-60 disabled:bg-slate-50`}
             />
         </div>
     </div>
@@ -152,9 +140,12 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
 const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }) => {
     const isNew = !client.id;
     const [isEditing, setIsEditing] = useState(isNew);
+    const [isSaving, setIsSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [activeTab, setActiveTab] = useState<'geral' | 'anamnese' | 'fotos' | 'historico'>('geral');
     const [zoomImage, setZoomImage] = useState<string | null>(null);
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    
     const fileInputRef = useRef<HTMLInputElement>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
     
@@ -175,24 +166,24 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     const [formData, setFormData] = useState<any>({
         nome: client.nome || '',
-        apelido: (client as any).apelido || '',
+        apelido: client.apelido || '',
         whatsapp: client.whatsapp || '',
         email: client.email || '',
-        instagram: (client as any).instagram || '',
+        instagram: client.instagram || '',
         nascimento: client.nascimento || '',
-        cpf: (client as any).cpf || '',
-        rg: (client as any).rg || '',
-        sexo: (client as any).sexo || '',
-        profissao: (client as any).profissao || '',
-        cep: (client as any).cep || '',
-        endereco: (client as any).endereco || '',
-        numero: (client as any).numero || '',
-        bairro: (client as any).bairro || '',
-        cidade: (client as any).cidade || '',
-        estado: (client as any).estado || '',
-        photo_url: (client as any).photo_url || null,
-        online_booking_enabled: (client as any).online_booking_enabled ?? true,
-        origem: (client as any).origem || 'Instagram',
+        cpf: client.cpf || '',
+        rg: client.rg || '',
+        sexo: client.sexo || '',
+        profissao: client.profissao || '',
+        cep: client.cep || '',
+        endereco: client.endereco || '',
+        numero: client.numero || '',
+        bairro: client.bairro || '',
+        cidade: client.cidade || '',
+        estado: client.estado || '',
+        photo_url: client.photo_url || null,
+        online_booking_enabled: client.online_booking_enabled ?? true,
+        origem: client.origem || 'Instagram',
         notas_gerais: (client as any).notas_gerais || '',
         id: client.id || null
     });
@@ -249,7 +240,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 clinical_notes: currentNotes + divider + template.content
             });
             setSelectedTemplateId('');
-            alert(`Roteiro "${template.name}" inserido com sucesso!`);
         }
     };
 
@@ -264,26 +254,12 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     };
 
     const handleSaveAnamnesis = async () => {
+        setIsSaving(true);
         const payload = { ...anamnesis, client_id: client.id };
         const { error } = await supabase.from('client_anamnesis').upsert(payload);
-        if (!error) alert("Ficha de anamnese salva!");
-    };
-
-    const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !client.id) return;
-        setIsUploading(true);
-        try {
-            const fileName = `evolution_${client.id}_${Date.now()}.jpg`;
-            const { error: uploadError } = await supabase.storage.from('client-evolution').upload(fileName, file);
-            if (uploadError) throw uploadError;
-            
-            const { data: { publicUrl } } = supabase.storage.from('client-evolution').getPublicUrl(fileName);
-            await supabase.from('client_photos').insert([{ client_id: client.id, url: publicUrl, type: 'depois' }]);
-            fetchPhotos();
-        } finally {
-            setIsUploading(false);
-        }
+        setIsSaving(false);
+        if (!error) setToast({ message: "Anamnese salva com sucesso!", type: 'success' });
+        else setToast({ message: "Erro ao salvar anamnese.", type: 'error' });
     };
 
     const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -296,20 +272,42 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             if (uploadError) throw uploadError;
             const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
             setFormData((prev: any) => ({ ...prev, photo_url: publicUrl }));
+            setToast({ message: "Foto carregada!", type: 'success' });
+        } catch(e) {
+            setToast({ message: "Erro no upload da foto.", type: 'error' });
         } finally {
             setIsUploading(false);
         }
     };
 
     const handleSave = async () => {
-        const payload = { ...formData };
-        if (isNew) delete payload.id;
-        await onSave(payload);
-        setIsEditing(false);
+        if (!formData.nome) {
+            setToast({ message: "O nome do cliente é obrigatório.", type: 'error' });
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const payload = { ...formData };
+            if (isNew) delete payload.id;
+
+            // Chamar função de salvamento do pai (ClientesView) que já tem a lógica do Supabase
+            await onSave(payload);
+            
+            setToast({ message: "Dados atualizados com sucesso! ✅", type: 'success' });
+            setIsEditing(false);
+        } catch (err: any) {
+            console.error("Erro ao salvar perfil:", err);
+            setToast({ message: "Erro ao persistir dados no banco.", type: 'error' });
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
         <div className="fixed inset-0 bg-slate-100 z-[100] flex flex-col font-sans animate-in slide-in-from-right duration-300">
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            
             {/* HEADER */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col gap-6 shadow-sm z-10">
                 <div className="flex items-center justify-between">
@@ -324,8 +322,14 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                         ) : (
                             <div className="flex gap-2">
                                 <button onClick={() => !isNew ? setIsEditing(false) : onClose()} className="px-4 py-2.5 text-slate-500 font-bold text-sm">Cancelar</button>
-                                <button type="button" onClick={handleSave} className="px-6 py-2.5 bg-orange-600 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95">
-                                    <Save size={18} /> {isNew ? 'Criar Cliente' : 'Salvar Alterações'}
+                                <button 
+                                    type="button" 
+                                    onClick={handleSave} 
+                                    disabled={isSaving}
+                                    className="px-6 py-2.5 bg-orange-600 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95 disabled:opacity-70"
+                                >
+                                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                                    {isSaving ? 'Salvando...' : (isNew ? 'Criar Cliente' : 'Salvar Alterações')}
                                 </button>
                             </div>
                         )}
@@ -376,44 +380,44 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                              {/* SEÇÃO: CONTATO */}
                              <Card title="Contato e Redes Sociais" icon={<Smartphone size={18} />}>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <EditField label="WhatsApp / Celular" name="whatsapp" value={formData.whatsapp} onChange={handleInputChange} placeholder="(00) 00000-0000" icon={Phone} />
-                                    <EditField label="E-mail Principal" name="email" value={formData.email} onChange={handleInputChange} placeholder="cliente@email.com" icon={Mail} />
-                                    <EditField label="Instagram" name="instagram" value={formData.instagram} onChange={handleInputChange} placeholder="@usuario" icon={Instagram} />
+                                    <EditField label="WhatsApp / Celular" name="whatsapp" value={formData.whatsapp} onChange={handleInputChange} disabled={!isEditing} placeholder="(00) 00000-0000" icon={Phone} />
+                                    <EditField label="E-mail Principal" name="email" value={formData.email} onChange={handleInputChange} disabled={!isEditing} placeholder="cliente@email.com" icon={Mail} />
+                                    <EditField label="Instagram" name="instagram" value={formData.instagram} onChange={handleInputChange} disabled={!isEditing} placeholder="@usuario" icon={Instagram} />
                                 </div>
                              </Card>
 
                              {/* SEÇÃO: ENDEREÇO COMPLETO */}
                              <Card title="Endereço e Localização" icon={<MapPin size={18} />}>
                                 <div className="grid grid-cols-2 md:grid-cols-6 gap-6">
-                                    <EditField label="CEP" name="cep" value={formData.cep} onChange={handleInputChange} placeholder="00000-000" icon={Hash} span="col-span-2" />
-                                    <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} placeholder="Rua, Av..." icon={Navigation} span="col-span-3" />
-                                    <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} placeholder="123" span="col-span-1" />
-                                    <EditField label="Bairro" name="bairro" value={formData.bairro} onChange={handleInputChange} placeholder="Bairro" span="col-span-2" />
-                                    <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} placeholder="Cidade" span="col-span-2" />
-                                    <EditField label="Estado" name="estado" value={formData.estado} onChange={handleInputChange} placeholder="UF" span="col-span-2" />
+                                    <EditField label="CEP" name="cep" value={formData.cep} onChange={handleInputChange} disabled={!isEditing} placeholder="00000-000" icon={Hash} span="col-span-2" />
+                                    <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} disabled={!isEditing} placeholder="Rua, Av..." icon={Navigation} span="col-span-3" />
+                                    <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} disabled={!isEditing} placeholder="123" span="col-span-1" />
+                                    <EditField label="Bairro" name="bairro" value={formData.bairro} onChange={handleInputChange} disabled={!isEditing} placeholder="Bairro" span="col-span-2" />
+                                    <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} disabled={!isEditing} placeholder="Cidade" span="col-span-2" />
+                                    <EditField label="Estado" name="estado" value={formData.estado} onChange={handleInputChange} disabled={!isEditing} placeholder="UF" span="col-span-2" />
                                 </div>
                              </Card>
 
                              {/* SEÇÃO: DADOS PESSOAIS */}
                              <Card title="Perfil do Cliente" icon={<User size={18} />}>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                    <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} icon={User} span="md:col-span-2" />
-                                    <EditField label="Como Gosta de ser Chamada" name="apelido" value={formData.apelido} onChange={handleInputChange} icon={Smile} />
-                                    <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} placeholder="000.000.000-00" icon={CreditCard} />
-                                    <EditField label="Data de Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} icon={Calendar} />
+                                    <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} disabled={!isEditing} icon={User} span="md:col-span-2" />
+                                    <EditField label="Como Gosta de ser Chamada" name="apelido" value={formData.apelido} onChange={handleInputChange} disabled={!isEditing} icon={Smile} />
+                                    <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} disabled={!isEditing} placeholder="000.000.000-00" icon={CreditCard} />
+                                    <EditField label="Data de Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} disabled={!isEditing} icon={Calendar} />
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Sexo</label>
-                                        <select name="sexo" value={formData.sexo} onChange={handleInputChange} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50">
+                                        <select name="sexo" value={formData.sexo} onChange={handleInputChange} disabled={!isEditing} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 disabled:opacity-60">
                                             <option value="">Selecione</option>
                                             <option value="Feminino">Feminino</option>
                                             <option value="Masculino">Masculino</option>
                                             <option value="Não informado">Não informar</option>
                                         </select>
                                     </div>
-                                    <EditField label="Profissão" name="profissao" value={formData.profissao} onChange={handleInputChange} icon={Briefcase} />
+                                    <EditField label="Profissão" name="profissao" value={formData.profissao} onChange={handleInputChange} disabled={!isEditing} icon={Briefcase} />
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Como nos conheceu?</label>
-                                        <select name="origem" value={formData.origem} onChange={handleInputChange} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50">
+                                        <select name="origem" value={formData.origem} onChange={handleInputChange} disabled={!isEditing} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 disabled:opacity-60">
                                             <option value="Instagram">Instagram</option>
                                             <option value="Indicação">Indicação</option>
                                             <option value="Passagem">Passagem</option>
@@ -432,18 +436,26 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         name="notas_gerais"
                                         value={formData.notas_gerais}
                                         onChange={handleInputChange}
-                                        className="w-full bg-white border border-slate-200 rounded-2xl p-4 min-h-[120px] outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-medium text-slate-600 resize-none shadow-sm"
+                                        disabled={!isEditing}
+                                        className="w-full bg-white border border-slate-200 rounded-2xl p-4 min-h-[120px] outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-medium text-slate-600 resize-none shadow-sm disabled:opacity-60"
                                         placeholder="Ex: Prefere tons pastéis, tem sensibilidade nos cílios, gosta de conversar sobre viagens..."
                                     />
                                 </div>
                              </Card>
 
                              {/* BOTÃO DE SALVAR NO RODAPÉ DA ABA */}
-                             <div className="flex justify-end pt-4">
-                                <button onClick={handleSave} className="px-10 py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 shadow-xl transition-all active:scale-95 flex items-center gap-3">
-                                    <Save size={20} /> Salvar Todos os Dados
-                                </button>
-                             </div>
+                             {isEditing && (
+                                <div className="flex justify-end pt-4">
+                                    <button 
+                                        onClick={handleSave} 
+                                        disabled={isSaving}
+                                        className="px-10 py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 shadow-xl transition-all active:scale-95 flex items-center gap-3 disabled:opacity-70"
+                                    >
+                                        {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
+                                        {isSaving ? 'Sincronizando...' : 'Salvar Todos os Dados'}
+                                    </button>
+                                </div>
+                             )}
                         </div>
                     )}
 
@@ -475,7 +487,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         </div>
                                     ))}
 
-                                    {/* SEÇÃO DE TEMPLATES DINÂMICOS */}
                                     <div className="pt-4 space-y-4">
                                         <div className="flex flex-col sm:flex-row items-end gap-3 p-4 bg-orange-50 rounded-2xl border border-orange-100">
                                             <div className="flex-1 w-full space-y-1.5">
@@ -517,11 +528,12 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
                                     <div className="pt-6 border-t border-slate-100">
                                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><PenTool size={14}/> Assinatura do Termo de Ciência</h4>
-                                        <SignaturePad onSave={(blob) => alert("Assinatura capturada! Clique em Salvar Ficha para finalizar.")} />
+                                        <SignaturePad onSave={(blob) => setToast({ message: "Assinatura capturada!", type: 'info' })} />
                                     </div>
                                     
-                                    <button onClick={handleSaveAnamnesis} className="w-full py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2">
-                                        <Save size={18} /> Salvar Ficha de Anamnese
+                                    <button onClick={handleSaveAnamnesis} disabled={isSaving} className="w-full py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70">
+                                        {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                                        Salvar Ficha de Anamnese
                                     </button>
                                 </div>
                             </Card>
@@ -538,7 +550,19 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 >
                                     <Plus size={16} /> Adicionar Foto
                                 </button>
-                                <input type="file" ref={photoInputRef} className="hidden" accept="image/*" onChange={handlePhotoUpload} />
+                                <input type="file" ref={photoInputRef} className="hidden" accept="image/*" onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file || !client.id) return;
+                                    setIsUploading(true);
+                                    try {
+                                        const fileName = `evolution_${client.id}_${Date.now()}.jpg`;
+                                        await supabase.storage.from('client-evolution').upload(fileName, file);
+                                        const { data: { publicUrl } } = supabase.storage.from('client-evolution').getPublicUrl(fileName);
+                                        await supabase.from('client_photos').insert([{ client_id: client.id, url: publicUrl, type: 'depois' }]);
+                                        fetchPhotos();
+                                        setToast({ message: "Foto adicionada!", type: 'success' });
+                                    } finally { setIsUploading(false); }
+                                }} />
                             </header>
 
                             {photos.length === 0 ? (
@@ -554,10 +578,15 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             <div className="absolute top-3 left-3 px-2.5 py-1 bg-white/90 backdrop-blur rounded-lg text-[9px] font-black text-slate-800 uppercase shadow-sm">{format(parseISO(photo.created_at), 'dd MMM yy')}</div>
                                             <div className="absolute bottom-3 right-3 flex gap-2 translate-y-10 group-hover:translate-y-0 transition-transform duration-300">
                                                 <button onClick={() => setZoomImage(photo.url)} className="p-2 bg-white text-slate-600 rounded-xl shadow-lg hover:text-orange-500"><Maximize2 size={14}/></button>
-                                                <button className="p-2 bg-white text-rose-500 rounded-xl shadow-lg hover:bg-rose-50"><Trash2 size={14}/></button>
+                                                <button onClick={async () => {
+                                                    if(confirm("Remover foto?")) {
+                                                        await supabase.from('client_photos').delete().eq('id', photo.id);
+                                                        fetchPhotos();
+                                                    }
+                                                }} className="p-2 bg-white text-rose-500 rounded-xl shadow-lg hover:bg-rose-50"><Trash2 size={14}/></button>
                                             </div>
                                             <div className="absolute top-3 right-3">
-                                                <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase ${photo.type === 'antes' ? 'bg-slate-800 text-white' : 'bg-emerald-50 text-white'}`}>
+                                                <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase ${photo.type === 'antes' ? 'bg-slate-800 text-white' : 'bg-emerald-500 text-white'}`}>
                                                     {photo.type}
                                                 </span>
                                             </div>
