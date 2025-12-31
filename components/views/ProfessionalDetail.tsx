@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
-    Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle
+    Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Coffee
 } from 'lucide-react';
 import { LegacyProfessional, LegacyService } from '../../types';
 import Card from '../shared/Card';
@@ -172,7 +172,13 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     };
 
     const updateSchedule = (day: string, field: string, value: any) => {
-        const current = prof.work_schedule[day] || { active: false, start: '09:00', end: '18:00' };
+        const current = prof.work_schedule[day] || { 
+            active: false, 
+            start: '09:00', 
+            break_start: '12:00', 
+            break_end: '13:00', 
+            end: '18:00' 
+        };
         setProf({
             ...prof,
             work_schedule: {
@@ -341,23 +347,88 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </Card>
                     )}
 
-                    {/* TAB: HORARIOS */}
+                    {/* TAB: HORARIOS (SPLIT SHIFT UI) */}
                     {activeTab === 'horarios' && (
-                        <Card title="Grade Semanal de Horários" className="animate-in fade-in duration-300">
-                            <div className="space-y-3">
+                        <Card title="Grade Semanal com Intervalos" className="animate-in fade-in duration-300">
+                            <p className="text-xs text-slate-500 mb-6 -mt-2">Defina os horários de início, pausa para almoço e encerramento para cada dia.</p>
+                            <div className="space-y-4">
                                 {DAYS_OF_WEEK.map(day => {
-                                    const config = prof.work_schedule[day.key] || { active: false, start: '09:00', end: '18:00' };
+                                    const config = prof.work_schedule[day.key] || { 
+                                        active: false, 
+                                        start: '09:00', 
+                                        break_start: '12:00', 
+                                        break_end: '13:00', 
+                                        end: '18:00' 
+                                    };
+
+                                    const isBreakInvalid = config.active && config.break_end <= config.break_start;
+
                                     return (
-                                        <div key={day.key} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${config.active ? 'bg-white border-slate-200' : 'bg-slate-50 border-transparent opacity-60'}`}>
-                                            <div className="flex items-center gap-4">
+                                        <div key={day.key} className={`flex flex-col xl:flex-row items-center justify-between p-5 rounded-3xl border transition-all ${config.active ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
+                                            <div className="flex items-center gap-4 w-full xl:w-1/4 mb-4 xl:mb-0">
                                                 <ToggleSwitch on={config.active} onClick={() => updateSchedule(day.key, 'active', !config.active)} />
-                                                <span className="font-bold text-slate-700 w-32">{day.label}</span>
+                                                <span className="font-black text-slate-700 text-sm w-32">{day.label}</span>
                                             </div>
-                                            {config.active && (
-                                                <div className="flex items-center gap-3">
-                                                    <input type="time" value={config.start} onChange={e => updateSchedule(day.key, 'start', e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-sm font-bold focus:ring-1 focus:ring-orange-500 outline-none" />
-                                                    <span className="text-slate-300 font-bold">até</span>
-                                                    <input type="time" value={config.end} onChange={e => updateSchedule(day.key, 'end', e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-sm font-bold focus:ring-1 focus:ring-orange-500 outline-none" />
+                                            
+                                            {config.active ? (
+                                                <div className="flex flex-col md:flex-row items-center gap-4 xl:gap-6 w-full xl:w-3/4 justify-end flex-wrap">
+                                                    
+                                                    {/* TURNO 1 */}
+                                                    <div className="flex items-center gap-2 group flex-wrap md:flex-nowrap">
+                                                        <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
+                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Início</span>
+                                                            <input 
+                                                                type="time" 
+                                                                value={config.start || '09:00'} 
+                                                                onChange={e => updateSchedule(day.key, 'start', e.target.value)} 
+                                                                className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
+                                                            />
+                                                        </div>
+                                                        <span className="text-slate-300 font-bold text-xs">até</span>
+                                                        <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
+                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter text-right">Almoço</span>
+                                                            <input 
+                                                                type="time" 
+                                                                value={config.break_start || '12:00'} 
+                                                                onChange={e => updateSchedule(day.key, 'break_start', e.target.value)} 
+                                                                className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* CAFÉ DIVIDER */}
+                                                    <div className="flex items-center justify-center p-2.5 bg-orange-50 text-orange-500 rounded-full" title="Intervalo">
+                                                        <Coffee size={16} strokeWidth={3} />
+                                                    </div>
+
+                                                    {/* TURNO 2 */}
+                                                    <div className="flex items-center gap-2 group flex-wrap md:flex-nowrap">
+                                                        <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all min-w-[125px] ${isBreakInvalid ? 'bg-rose-50 border-rose-200' : 'bg-slate-100 border-transparent focus-within:border-orange-200 focus-within:bg-white'}`}>
+                                                            <span className={`text-[9px] font-black uppercase tracking-tighter ${isBreakInvalid ? 'text-rose-400' : 'text-slate-400'}`}>Volta</span>
+                                                            <input 
+                                                                type="time" 
+                                                                value={config.break_end || '13:00'} 
+                                                                onChange={e => updateSchedule(day.key, 'break_end', e.target.value)} 
+                                                                className={`bg-transparent border-none p-0 text-sm font-black outline-none focus:ring-0 flex-1 ${isBreakInvalid ? 'text-rose-600' : 'text-slate-700'}`} 
+                                                            />
+                                                            {isBreakInvalid && <AlertCircle size={14} className="text-rose-500 animate-pulse" />}
+                                                        </div>
+                                                        <span className="text-slate-300 font-bold text-xs">até</span>
+                                                        <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
+                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter text-right">Saída</span>
+                                                            <input 
+                                                                type="time" 
+                                                                value={config.end || '18:00'} 
+                                                                onChange={e => updateSchedule(day.key, 'end', e.target.value)} 
+                                                                className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                </div>
+                                            ) : (
+                                                <div className="flex-1 text-right">
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-200/40 px-4 py-2 rounded-xl">Indisponível</span>
                                                 </div>
                                             )}
                                         </div>
