@@ -1,41 +1,97 @@
 
-// --- Enums and Types for Core Models ---
+export type UserRole = 'admin' | 'gestor' | 'recepcao' | 'profissional';
 
-export type UserRole = 'admin' | 'gestor' | 'profissional' | 'recepcao';
-export type AppointmentStatus = 'agendado' | 'confirmado' | 'confirmado_whatsapp' | 'chegou' | 'em_atendimento' | 'concluido' | 'cancelado' | 'bloqueado' | 'faltou' | 'em_espera';
-export type AppointmentOrigin = 'interno' | 'link' | 'whatsapp';
-export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro' | 'transferencia' | 'boleto';
-export type OrderStatus = 'aberta' | 'fechada' | 'cancelada';
-export type OrderItemType = 'servico' | 'produto';
-
-// Navigation State Type
 export type ViewState = 
   | 'dashboard' 
   | 'agenda' 
-  | 'agenda_online'
-  | 'clientes' 
+  | 'agenda_online' 
+  | 'whatsapp' 
   | 'financeiro' 
-  | 'configuracoes'
-  | 'whatsapp'
-  | 'relatorios'
-  | 'remuneracoes'
-  | 'vendas'
-  | 'comandas'
-  | 'caixa'
-  | 'servicos'
-  | 'produtos'
-  | 'public_preview'; 
+  | 'clientes' 
+  | 'relatorios' 
+  | 'configuracoes' 
+  | 'remuneracoes' 
+  | 'vendas' 
+  | 'comandas' 
+  | 'caixa' 
+  | 'produtos' 
+  | 'servicos' 
+  | 'public_preview' 
+  | 'equipe';
 
-// --- Database Table Interfaces ---
+export type AppointmentStatus = 
+  | 'confirmado' 
+  | 'confirmado_whatsapp' 
+  | 'agendado' 
+  | 'chegou' 
+  | 'concluido' 
+  | 'cancelado' 
+  | 'bloqueado' 
+  | 'faltou' 
+  | 'em_atendimento' 
+  | 'em_espera';
 
-export interface User {
-  id: string; // uuid
+export type TransactionType = 'receita' | 'despesa' | 'income' | 'expense';
+
+export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro' | 'transferencia' | 'boleto';
+
+export type TransactionCategory = string;
+
+export interface Client {
+  id?: number;
   nome: string;
-  papel: UserRole;
-  avatar_url?: string;
+  apelido?: string;
   whatsapp?: string;
-  email: string;
-  ativo: boolean;
+  telefone?: string;
+  email?: string;
+  instagram?: string;
+  nascimento?: string;
+  cpf?: string;
+  rg?: string;
+  sexo?: string;
+  profissao?: string;
+  cep?: string;
+  endereco?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  estado?: string;
+  photo_url?: string | null;
+  online_booking_enabled?: boolean;
+  origem?: string;
+  observacoes?: string;
+  consent: boolean;
+  tags?: string[];
+  postal_code?: string;
+  address?: string;
+  number?: string;
+  complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  birth_date?: string;
+}
+
+export interface LegacyProfessional {
+  id: number;
+  name: string;
+  avatarUrl: string;
+  role?: string;
+  order_index?: number;
+  services_enabled?: number[];
+  active?: boolean;
+  photo_url?: string;
+}
+
+export interface LegacyService {
+  id: number;
+  name: string;
+  duration: number;
+  price: number;
+  color: string;
+  category?: string;
+  description?: string;
 }
 
 export interface Service {
@@ -43,189 +99,15 @@ export interface Service {
   nome: string;
   duracao_min: number;
   preco: number;
-  cor_hex?: string; // For styling appointment blocks
+  cor_hex: string;
   ativo: boolean;
-}
-
-export interface Availability {
-  id: number;
-  user_id: string; // Foreign key to User
-  weekday: 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0=Sunday, 6=Saturday
-  start_time: string; // "HH:mm:ss"
-  end_time: string; // "HH:mm:ss"
-}
-
-export interface Client {
-  id: number;
-  nome: string;
-  whatsapp?: string;
-  email?: string;
-  nascimento?: string; // "YYYY-MM-DD"
-  tags?: string[];
-  consent: boolean;
-  // Campos Adicionais para Perfil Completo
-  apelido?: string;
-  cpf?: string;
-  rg?: string;
-  sexo?: string;
-  profissao?: string;
-  instagram?: string;
-  origem?: string;
-  photo_url?: string;
-  online_booking_enabled?: boolean;
-  // Endereço
-  cep?: string;
-  endereco?: string;
-  numero?: string;
-  bairro?: string;
-  cidade?: string;
-  estado?: string;
-}
-
-export interface Appointment {
-  id: number;
-  client_id?: number; // Foreign key to Client, optional for 'bloqueado'
-  user_id: string; // Foreign key to User (Professional)
-  service_id: number; // Foreign key to Service
-  inicio: Date; // timestamptz
-  fim: Date; // timestamptz
-  status: AppointmentStatus;
-  origem: AppointmentOrigin;
-  notas?: string;
-}
-
-export interface Payment {
-  id: number;
-  appointment_id: number; // Foreign key to Appointment
-  forma: PaymentMethod;
-  valor: number;
-  recebido: boolean;
-  taxa?: number;
-  data: Date; // timestamptz
-}
-
-export interface CashSession {
-  id: number;
-  data: string; // "YYYY-MM-DD"
-  responsavel_id: string; // Foreign key to User
-  abertura: number;
-  fechamento?: number;
-  diferenca?: number;
-  obs?: string;
-}
-
-export interface Expense {
-  id: number;
-  data: string; // "YYYY-MM-DD"
-  categoria: string;
-  descricao: string;
-  valor: number;
-  forma: PaymentMethod;
-  comprovante_url?: string;
-}
-
-export interface Commission {
-  id: number;
-  user_id: string; // Foreign key to User
-  appointment_id: number; // Foreign key to Appointment
-  regra: string;
-  percentual: number;
-  valor: number;
-}
-
-export interface Product {
-  id: number;
-  name: string;
-  sku?: string;
-  stock_quantity: number;
-  cost_price?: number;
-  price: number;
-  active: boolean;
-}
-
-export interface Order {
-  id: number;
-  client_id: number; // Foreign key to Client
-  total: number;
-  status: OrderStatus;
-  created_at: Date; // timestamptz
-}
-
-export interface OrderItem {
-  id: number;
-  order_id: number; // Foreign key to Order
-  tipo: OrderItemType;
-  ref_id: number; // refers to service_id or product_id
-  qtd: number;
-  valor_unit: number;
-  valor_total: number;
-}
-
-export interface Command {
-  id: number;
-  client_name?: string;
-  client_id?: number;
-  professional_id?: string;
-  status: 'aberta' | 'fechando' | 'paga';
-  total: number;
-  created_at: Date;
-  items?: CommandItem[];
-}
-
-export interface CommandItem {
-  id: number;
-  command_id: number;
-  item_type: 'servico' | 'produto' | 'cortesia';
-  item_id?: number;
-  item_name: string;
-  quantity: number;
-  unit_price: number;
-  total_price: number;
-}
-
-export interface Campaign {
-    id: number;
-    tipo: string;
-    texto: string;
-    cupom?: string;
-    ativo: boolean;
-    janela_inicio?: Date;
-    janela_fim?: Date;
-}
-
-
-// --- Legacy types for mock data compatibility ---
-// These can be phased out as real data is integrated.
-
-export interface LegacyProfessional {
-  id: number;
-  name: string;
-  avatarUrl: string;
-  // Extended fields
-  email?: string;
-  phone?: string;
-  role?: string;
-  bio?: string;
-  active?: boolean;
-  onlineBooking?: boolean;
-  commissionRate?: number;
-  pixKey?: string;
-  services?: number[]; // IDs of enabled services
-  schedule?: { day: string; start: string; end: string; active: boolean }[];
-}
-
-export interface LegacyService {
-  id: number;
-  name: string;
-  duration: number; // in minutes
-  price: number;
-  color: string; // For styling appointment blocks
-  category?: string;
+  categoria?: string;
+  descricao?: string;
 }
 
 export interface LegacyAppointment {
   id: number;
-  client?: Client; // Using new Client type
+  client?: Client;
   professional: LegacyProfessional;
   service: LegacyService;
   start: Date;
@@ -233,60 +115,6 @@ export interface LegacyAppointment {
   status: AppointmentStatus;
   notas?: string;
 }
-
-// --- Online Booking & Analytics ---
-
-export interface OnlineBookingConfig {
-    isActive: boolean;
-    slug: string; // belaapp.com/slug
-    studioName: string;
-    description: string;
-    coverUrl: string;
-    logoUrl: string;
-    timeIntervalMinutes: 15 | 20 | 30 | 60;
-    minAdvanceHours: number; // Min hours before booking
-    maxFutureDays: number; // Max days in future to book
-    cancellationPolicyHours: number; // Hours before to cancel
-    showStudioInSearch: boolean;
-}
-
-export interface Review {
-    id: number;
-    clientName: string;
-    rating: number; // 1-5
-    comment: string;
-    date: Date;
-    reply?: string;
-    serviceName?: string;
-}
-
-export interface AnalyticsData {
-    pageViews: {
-        profile: number;
-        gallery: number;
-        details: number;
-        reviews: number;
-    };
-    conversion: {
-        started: number;
-        completed: number;
-        whatsappClicks: number;
-    };
-}
-
-// --- Financial Types (New) ---
-
-export type TransactionType = 'receita' | 'despesa';
-export type TransactionCategory = 
-  | 'servico' 
-  | 'produto' 
-  | 'comissao' 
-  | 'aluguel' 
-  | 'insumos' 
-  | 'marketing' 
-  | 'taxas' 
-  | 'impostos' 
-  | 'outros';
 
 export interface FinancialTransaction {
   id: number;
@@ -297,28 +125,76 @@ export interface FinancialTransaction {
   date: Date;
   paymentMethod: PaymentMethod;
   status: 'pago' | 'pendente';
-  professionalId?: number; // If linked to a specific professional (commission or revenue gen)
-  clientId?: number;
+  professionalId?: number;
+  appointment_id?: number;
+  client_id?: number;
 }
 
-// --- WhatsApp & Chat Types (New) ---
+export interface Product {
+  id: number;
+  name: string;
+  sku?: string;
+  stock_quantity: number;
+  min_stock: number;
+  cost_price?: number;
+  price: number;
+  active: boolean;
+}
+
+export interface OnlineBookingConfig {
+  isActive: boolean;
+  slug: string;
+  studioName: string;
+  description: string;
+  coverUrl?: string;
+  logoUrl?: string;
+  timeIntervalMinutes?: number;
+  minAdvanceHours?: number;
+  maxFutureDays?: number;
+  cancellationPolicyHours?: number;
+  showStudioInSearch?: boolean;
+}
+
+export interface Review {
+  id: number;
+  clientName: string;
+  rating: number;
+  comment: string;
+  date: Date;
+  serviceName?: string;
+  reply?: string;
+}
+
+export interface AnalyticsData {
+  pageViews: {
+    profile: number;
+    gallery: number;
+    details: number;
+    reviews: number;
+  };
+  conversion: {
+    started: number;
+    completed: number;
+    whatsappClicks: number;
+  };
+}
 
 export interface ChatMessage {
-    id: string;
-    sender: 'user' | 'client' | 'system';
-    text: string;
-    timestamp: Date;
-    status: 'sent' | 'delivered' | 'read';
+  id: string;
+  sender: 'user' | 'client' | 'system';
+  text: string;
+  timestamp: Date;
+  status: 'sent' | 'read';
 }
 
 export interface ChatConversation {
-    id: number;
-    clientId: number;
-    clientName: string;
-    clientAvatar?: string;
-    lastMessage: string;
-    lastMessageTime: Date;
-    unreadCount: number;
-    messages: ChatMessage[];
-    tags?: string[];
+  id: number;
+  clientId: number;
+  clientName: string;
+  clientAvatar?: string;
+  lastMessage: string;
+  lastMessageTime: Date;
+  unreadCount: number;
+  messages: ChatMessage[];
+  tags?: string[];
 }

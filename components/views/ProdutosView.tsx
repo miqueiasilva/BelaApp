@@ -3,7 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Package, Search, Plus, Filter, Edit2, Trash2, 
     AlertTriangle, TrendingUp, DollarSign, Archive, LayoutGrid, List,
-    Loader2, ArrowUpDown, History, ShieldCheck, Save, X, RefreshCw
+    Loader2, ArrowUpDown, History, ShieldCheck, Save, X, RefreshCw,
+    ShoppingBag, ChevronRight
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
@@ -88,10 +89,7 @@ const ProdutosView: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Verificação de permissão (Administrador ou Gestor)
-    const isAdmin = useMemo(() => {
-        return user?.papel === 'admin' || user?.papel === 'gestor';
-    }, [user]);
+    const isAdmin = useMemo(() => user?.papel === 'admin' || user?.papel === 'gestor', [user]);
 
     const fetchProducts = async () => {
         setLoading(true);
@@ -118,18 +116,16 @@ const ProdutosView: React.FC = () => {
     const handleSaveProduct = async (productData: Product) => {
         setIsSaving(true);
         try {
-            // Mapeamento correto e conversão de tipos para o Supabase
             const payload = {
                 name: productData.name,
                 sku: productData.sku || null,
                 price: parseFloat(productData.price.toString()),
                 cost_price: productData.cost_price ? parseFloat(productData.cost_price.toString()) : 0,
                 stock_quantity: parseInt(productData.stock_quantity.toString(), 10),
+                min_stock: parseInt(productData.min_stock.toString(), 10),
                 active: Boolean(productData.active)
             };
 
-            const isEditing = !!productData.id && productData.id > 1000000000; // Mock ID check or real UUID
-            // If the ID is a real existing ID from DB
             const isRealEdit = productData.id && products.some(p => p.id === productData.id);
 
             const { error } = isRealEdit 
@@ -152,7 +148,6 @@ const ProdutosView: React.FC = () => {
         if (!isAdjusting) return;
         setIsSaving(true);
         try {
-            // 1. Atualizar estoque do produto
             const { error: prodError } = await supabase
                 .from('products')
                 .update({ stock_quantity: newQuantity })
@@ -160,18 +155,13 @@ const ProdutosView: React.FC = () => {
 
             if (prodError) throw prodError;
 
-            // 2. Gravar no log de ajustes (Audit Trail)
-            const { error: logError } = await supabase
-                .from('stock_adjustments')
-                .insert([{
-                    product_id: isAdjusting.id,
-                    user_id: user?.id,
-                    previous_quantity: isAdjusting.stock_quantity,
-                    new_quantity: newQuantity,
-                    reason: reason
-                }]);
-
-            if (logError) console.warn("Aviso: Falha ao gravar log de auditoria", logError);
+            await supabase.from('stock_adjustments').insert([{
+                product_id: isAdjusting.id,
+                user_id: user?.id,
+                previous_quantity: isAdjusting.stock_quantity,
+                new_quantity: newQuantity,
+                reason: reason
+            }]);
 
             showToast("Estoque ajustado com sucesso!");
             setIsAdjusting(null);
@@ -184,16 +174,10 @@ const ProdutosView: React.FC = () => {
     };
 
     const handleDeleteProduct = async (id: number) => {
-        if (!isAdmin) {
-            showToast("Apenas administradores podem excluir produtos.", "error");
-            return;
-        }
-        if (window.confirm('Tem certeza que deseja excluir este produto permanentemente?')) {
+        if (!isAdmin) return showToast("Sem permissão.", "error");
+        if (window.confirm('Excluir este produto permanentemente?')) {
             const { error } = await supabase.from('products').delete().eq('id', id);
-            if (!error) {
-                showToast('Produto removido.', 'info');
-                fetchProducts();
-            }
+            if (!error) { showToast('Produto removido.'); fetchProducts(); }
         }
     };
 
@@ -202,10 +186,9 @@ const ProdutosView: React.FC = () => {
             const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                                   p.sku?.toLowerCase().includes(searchTerm.toLowerCase());
             
-            // Usando min_stock dinâmico se existir no banco ou fallback para 5
-            const minStock = (p as any).min_stock || 5;
+            const isLow = p.stock_quantity <= (p.min_stock || 0);
             
-            if (filterStatus === 'baixo_estoque') return matchesSearch && p.stock_quantity <= minStock;
+            if (filterStatus === 'baixo_estoque') return matchesSearch && isLow;
             if (filterStatus === 'ativos') return matchesSearch && p.active;
             return matchesSearch;
         });
@@ -214,7 +197,7 @@ const ProdutosView: React.FC = () => {
     const stats = useMemo(() => {
         return {
             totalItems: products.length,
-            lowStock: products.filter(p => p.stock_quantity <= ((p as any).min_stock || 5)).length,
+            lowStock: products.filter(p => p.stock_quantity <= (p.min_stock || 0)).length,
             totalValue: products.reduce((acc, p) => acc + (Number(p.cost_price) || 0) * p.stock_quantity, 0)
         };
     }, [products]);
@@ -230,7 +213,7 @@ const ProdutosView: React.FC = () => {
                         <Archive className="text-purple-500" size={28} />
                         Gestão de Estoque
                     </h1>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Controle real de inventário e insumos</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Sinalização de níveis críticos em tempo real</p>
                 </div>
                 
                 <div className="flex gap-2">
@@ -246,20 +229,20 @@ const ProdutosView: React.FC = () => {
 
             {/* KPI Summary */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 px-6 pt-6">
-                <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Custo Total em Estoque</p>
-                    <p className="text-2xl font-black text-slate-800">R$ {stats.totalValue.toFixed(2)}</p>
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Patrimônio em Estoque</p>
+                    <p className="text-2xl font-black text-slate-800">R$ {stats.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
-                <div className={`p-5 rounded-3xl border shadow-sm flex items-center justify-between ${stats.lowStock > 0 ? 'bg-rose-50 border-rose-100' : 'bg-white border-slate-100'}`}>
+                <div className={`p-6 rounded-3xl border shadow-sm flex items-center justify-between transition-all ${stats.lowStock > 0 ? 'bg-rose-50 border-rose-100 shadow-rose-100' : 'bg-white border-slate-100'}`}>
                     <div>
-                        <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${stats.lowStock > 0 ? 'text-rose-500' : 'text-slate-400'}`}>Produtos em Alerta</p>
-                        <p className={`text-2xl font-black ${stats.lowStock > 0 ? 'text-rose-700' : 'text-slate-800'}`}>{stats.lowStock} itens críticos</p>
+                        <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${stats.lowStock > 0 ? 'text-rose-500' : 'text-slate-400'}`}>Itens Críticos (Reposição)</p>
+                        <p className={`text-2xl font-black ${stats.lowStock > 0 ? 'text-rose-700' : 'text-slate-800'}`}>{stats.lowStock} produtos em alerta</p>
                     </div>
-                    <AlertTriangle className={stats.lowStock > 0 ? 'text-rose-400' : 'text-slate-200'} size={32} />
+                    <AlertTriangle className={stats.lowStock > 0 ? 'text-rose-400 animate-pulse' : 'text-slate-200'} size={32} />
                 </div>
-                <div className="bg-slate-800 p-5 rounded-3xl text-white shadow-xl shadow-slate-200 flex items-center justify-between">
+                <div className="bg-slate-800 p-6 rounded-3xl text-white shadow-xl shadow-slate-200 flex items-center justify-between">
                     <div>
-                        <p className="text-[10px] font-black opacity-60 uppercase tracking-widest mb-1">Itens Cadastrados</p>
+                        <p className="text-[10px] font-black opacity-60 uppercase tracking-widest mb-1">Itens Ativos</p>
                         <p className="text-2xl font-black">{stats.totalItems}</p>
                     </div>
                     <Package className="text-purple-400" size={32} />
@@ -279,15 +262,16 @@ const ProdutosView: React.FC = () => {
                     />
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
-                    <select 
-                        value={filterStatus}
-                        onChange={(e) => setFilterStatus(e.target.value as any)}
-                        className="flex-1 sm:w-48 appearance-none bg-white border border-slate-200 rounded-2xl px-4 py-3.5 text-xs font-black uppercase tracking-wider text-slate-600 focus:ring-2 focus:ring-purple-100 outline-none cursor-pointer"
+                    <button 
+                        onClick={() => setFilterStatus(filterStatus === 'baixo_estoque' ? 'todos' : 'baixo_estoque')}
+                        className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
+                            filterStatus === 'baixo_estoque' 
+                            ? 'bg-rose-500 border-rose-500 text-white shadow-lg shadow-rose-100' 
+                            : 'bg-white border-slate-200 text-slate-500 hover:border-rose-200 hover:text-rose-500'
+                        }`}
                     >
-                        <option value="todos">Todos Produtos</option>
-                        <option value="ativos">Apenas Ativos</option>
-                        <option value="baixo_estoque">Estoque Baixo</option>
-                    </select>
+                        <ShoppingBag size={16} /> Estoque Baixo
+                    </button>
                     <div className="flex bg-white border border-slate-200 rounded-2xl p-1 shadow-sm">
                         <button onClick={() => setViewMode('grid')} className={`p-2 rounded-xl transition-all ${viewMode === 'grid' ? 'bg-slate-100 text-purple-600' : 'text-slate-400'}`}><LayoutGrid size={20}/></button>
                         <button onClick={() => setViewMode('list')} className={`p-2 rounded-xl transition-all ${viewMode === 'list' ? 'bg-slate-100 text-purple-600' : 'text-slate-400'}`}><List size={20}/></button>
@@ -305,63 +289,73 @@ const ProdutosView: React.FC = () => {
                 ) : filteredProducts.length === 0 ? (
                     <div className="py-20 text-center flex flex-col items-center bg-white rounded-[40px] border-2 border-dashed border-slate-100">
                         <Package size={64} className="text-slate-100 mb-4" />
-                        <h3 className="font-black text-slate-700">Nenhum produto por aqui</h3>
+                        <h3 className="font-black text-slate-700 uppercase">O estoque está limpo</h3>
                         <p className="text-slate-400 text-sm mt-1">Refine sua busca ou cadastre um novo item.</p>
                     </div>
                 ) : (
                     <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
-                        <table className="w-full text-left text-sm min-w-[800px]">
+                        <table className="w-full text-left text-sm min-w-[900px]">
                             <thead className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                 <tr>
-                                    <th className="px-6 py-4">Produto</th>
-                                    <th className="px-6 py-4">SKU</th>
-                                    <th className="px-6 py-4 text-center">Saldo</th>
-                                    <th className="px-6 py-4 text-right">Custo</th>
-                                    <th className="px-6 py-4 text-right">Preço Venda</th>
-                                    <th className="px-6 py-4 text-center">Status</th>
-                                    <th className="px-6 py-4 text-right">Ações</th>
+                                    <th className="px-6 py-5">Produto</th>
+                                    <th className="px-6 py-5">SKU</th>
+                                    <th className="px-6 py-5 text-center">Saldo Atual</th>
+                                    <th className="px-6 py-5 text-center">Nível de Alerta</th>
+                                    <th className="px-6 py-5 text-right">Custo Un.</th>
+                                    <th className="px-6 py-5 text-center">Status</th>
+                                    <th className="px-6 py-5 text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
                                 {filteredProducts.map(p => {
-                                    const isLow = p.stock_quantity <= ((p as any).min_stock || 5);
+                                    const isLow = p.stock_quantity <= (p.min_stock || 0);
                                     return (
-                                        <tr key={p.id} className="hover:bg-slate-50/50 group transition-colors">
+                                        <tr key={p.id} className={`hover:bg-slate-50/50 group transition-colors ${isLow ? 'bg-rose-50/20' : ''}`}>
                                             <td className="px-6 py-4">
                                                 <div className="flex flex-col">
-                                                    <span className="font-bold text-slate-700 group-hover:text-purple-600 transition-colors">{p.name}</span>
+                                                    <span className={`font-bold text-slate-700 transition-colors ${isLow ? 'text-rose-700' : 'group-hover:text-purple-600'}`}>{p.name}</span>
                                                     <span className="text-[10px] text-slate-400 font-bold uppercase">{(p as any).category || 'Geral'}</span>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 text-slate-500 font-mono text-xs">{p.sku || '-'}</td>
+                                            <td className="px-6 py-4 text-slate-400 font-mono text-xs">{p.sku || '-'}</td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center justify-center gap-2">
-                                                    <div className={`px-3 py-1.5 rounded-xl font-black text-xs min-w-[60px] text-center ${
-                                                        isLow ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                                    <div className={`px-4 py-2 rounded-2xl font-black text-xs min-w-[70px] text-center border-2 transition-all ${
+                                                        isLow ? 'bg-rose-100 text-rose-600 border-rose-200 animate-pulse shadow-sm shadow-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
                                                     }`}>
                                                         {p.stock_quantity} un
                                                     </div>
-                                                    {isAdmin && (
-                                                        <button 
-                                                            onClick={() => setIsAdjusting(p)}
-                                                            className="p-1.5 text-slate-300 hover:text-orange-500 hover:bg-orange-50 rounded-lg transition-all"
-                                                            title="Ajuste Rápido"
-                                                        >
-                                                            <Edit2 size={14} />
-                                                        </button>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-center">
+                                                <span className="text-[11px] font-black text-slate-400">{p.min_stock || 0} un</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-bold text-slate-400">R$ {Number(p.cost_price || 0).toFixed(2)}</td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center justify-center">
+                                                    {isLow ? (
+                                                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-600 text-white text-[9px] font-black uppercase tracking-widest shadow-md">
+                                                            <AlertTriangle size={10} /> Repor Agora
+                                                        </div>
+                                                    ) : (
+                                                        <div className={`w-2.5 h-2.5 rounded-full ${p.active ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-300'}`}></div>
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 text-right font-bold text-slate-400">R$ {Number(p.cost_price || 0).toFixed(2)}</td>
-                                            <td className="px-6 py-4 text-right font-black text-slate-800">R$ {Number(p.price || 0).toFixed(2)}</td>
-                                            <td className="px-6 py-4 text-center">
-                                                <div className={`w-2 h-2 rounded-full mx-auto ${p.active ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
-                                            </td>
                                             <td className="px-6 py-4 text-right">
                                                 <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={() => { setEditingProduct(p); setIsModalOpen(true); }} className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all"><Edit2 size={16} /></button>
                                                     {isAdmin && (
-                                                        <button onClick={() => handleDeleteProduct(p.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
+                                                        <button 
+                                                            onClick={() => setIsAdjusting(p)}
+                                                            className="p-2.5 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all"
+                                                            title="Ajuste Rápido"
+                                                        >
+                                                            <History size={16} />
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => { setEditingProduct(p); setIsModalOpen(true); }} className="p-2.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all"><Edit2 size={16} /></button>
+                                                    {isAdmin && (
+                                                        <button onClick={() => handleDeleteProduct(p.id)} className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
                                                     )}
                                                 </div>
                                             </td>
