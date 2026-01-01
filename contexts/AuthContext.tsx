@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { User as SupabaseUser } from '@supabase/supabase-js';
+import { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
 export type AppUser = SupabaseUser & {
   papel?: string;
@@ -26,10 +26,12 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<Session | null>(null);
 
-  // Busca perfil unificado (Melhoria progressiva)
+  // Busca perfil estendido (DB) sem bloquear a UI se já estiver carregado
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
+      // Prioridade 1: Tabela de Profissionais (Equipe)
       const { data: profData } = await supabase
         .from('professionals')
         .select('role, photo_url, permissions, name')
@@ -46,6 +48,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         };
       }
 
+      // Prioridade 2: Tabela de Profiles (Admin/Outros)
       const { data: profileData } = await supabase
         .from('profiles')
         .select('full_name, papel, avatar_url')
@@ -70,87 +73,86 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    // 1. TIMEOUT DE SEGURANÇA (O Disjuntor Original)
-    const safetyTimeout = setTimeout(() => {
-      if (mounted && loading) {
-        console.warn("AuthContext: Boot demorado detectado. Forçando carregamento da UI.");
-        setLoading(false);
-      }
-    }, 3000);
-
-    // 2. FUNÇÃO DE INICIALIZAÇÃO DE SESSÃO
     const initializeAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        // 1. Verificação Otimista: Se não há token, não mostramos spinner por muito tempo
+        const storageKey = Object.keys(localStorage).find(k => k.includes('-auth-token'));
+        if (!storageKey || !localStorage.getItem(storageKey)) {
+          if (mounted) setLoading(false);
+        }
+
+        // 2. Busca Real da Sessão
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         
         if (error) throw error;
 
-        if (session?.user && mounted) {
-          const appUser = await fetchProfile(session.user);
-          setUser(appUser);
+        if (initialSession?.user && mounted) {
+          setSession(initialSession);
+          const appUser = await fetchProfile(initialSession.user);
+          if (mounted) setUser(appUser);
         }
       } catch (err) {
-        console.error("AuthContext: Erro ao recuperar sessão inicial:", err);
+        console.error("AuthContext Boot Error:", err);
       } finally {
-        if (mounted) {
-          setLoading(false);
-          clearTimeout(safetyTimeout);
-        }
+        // Liberação do Boot Inicial
+        if (mounted) setLoading(false);
       }
     };
 
     initializeAuth();
 
-    // 3. LISTENER DE MUDANÇAS (Silent Updates)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // 3. Listener de Eventos (Atualizações Silenciosas)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
 
-      console.log("AuthContext: Evento detectado ->", event);
+      console.log("AuthContext Event:", event);
 
-      // SIGNED_IN ou INITIAL_SESSION: Bloqueia apenas se não tivermos usuário
-      if (event === 'SIGNED_IN') {
-        if (session?.user) {
-          const appUser = await fetchProfile(session.user);
-          setUser(appUser);
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setSession(null);
+        setLoading(false);
+      } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (currentSession?.user) {
+          setSession(currentSession);
+          const appUser = await fetchProfile(currentSession.user);
+          if (mounted) setUser(appUser);
         }
         setLoading(false);
-      }
-
-      // TOKEN_REFRESHED ou USER_UPDATED: Atualiza dados SILENCIOSAMENTE em background
-      else if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        if (session?.user) {
-          const appUser = await fetchProfile(session.user);
-          setUser(appUser);
+      } else if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        // --- O SEGREDO: Atualização Silenciosa ---
+        // Se a aba acordar do background, atualizamos o user mas NÃO ativamos o spinner
+        if (currentSession?.user) {
+          setSession(currentSession);
+          const appUser = await fetchProfile(currentSession.user);
+          if (mounted) setUser(appUser);
         }
-        // Jamais chame setLoading(true) aqui! Apenas garante que está false.
-        setLoading(false); 
-      }
-
-      // SIGNED_OUT: Limpa estado e libera UI
-      else if (event === 'SIGNED_OUT') {
-        setUser(null);
+        // Garante que se o loading estivesse travado por algum motivo, ele seja liberado
         setLoading(false);
       }
     });
 
-    // 4. DISJUNTOR DE VISIBILIDADE (Anti-Travamento de Aba)
+    // 4. DISJUNTOR DE SEGURANÇA (Visibility Fail-Safe)
+    // Se o usuário volta para a aba, garantimos que qualquer "loading residual" seja limpo
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && loading) {
-        console.log("AuthContext: Aba retomou foco. Destravando loading residual...");
+      if (document.visibilityState === 'visible') {
+        // Se após 500ms de volta na tela o loading ainda estiver true, forçamos o falso.
         setTimeout(() => {
-          if (mounted) setLoading(false);
+          if (mounted && loading) {
+            console.warn("AuthContext: Force-unlocking UI after background resume.");
+            setLoading(false);
+          }
         }, 500);
       }
     };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
-      clearTimeout(safetyTimeout);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [loading]); // Adicionado loading como dependência para o timeout monitorar o estado real
 
   const signIn = async (email: string, password: string) => supabase.auth.signInWithPassword({ email, password });
   const signUp = async (email: string, password: string, name: string) => supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
@@ -163,9 +165,10 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       setLoading(true);
       await supabase.auth.signOut();
     } catch (error) {
-      console.error("AuthContext: Falha ao sair:", error);
+      console.error("AuthContext Logout Error:", error);
     } finally {
       setUser(null);
+      setSession(null);
       localStorage.clear();
       setLoading(false);
       window.location.href = '/'; 
