@@ -4,12 +4,13 @@ import {
     Settings, Store, Save, Loader2, MapPin, Phone, 
     Globe, Camera, Image as ImageIcon, Instagram, 
     Facebook, Layout, CreditCard, Hash, Map, Navigation, 
-    CheckCircle2, Clock, Calendar, Coffee, Utensils, AlertCircle
+    CheckCircle2, Clock, Calendar, Coffee, AlertCircle
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../contexts/AuthContext';
 
 const DAYS_OF_WEEK = [
     { key: 'monday', label: 'Segunda-feira' },
@@ -44,6 +45,7 @@ const InputField = ({ label, icon: Icon, value, onChange, placeholder, type = "t
 );
 
 const ConfiguracoesView: React.FC = () => {
+    const { user } = useAuth();
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -52,7 +54,6 @@ const ConfiguracoesView: React.FC = () => {
     const logoInputRef = useRef<HTMLInputElement>(null);
 
     const [studioData, setStudioData] = useState<any>({
-        id: null,
         studio_name: '',
         cnpj_cpf: '',
         presentation_text: '',
@@ -77,9 +78,17 @@ const ConfiguracoesView: React.FC = () => {
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
     const fetchData = async () => {
+        if (!user) return;
         setIsLoading(true);
         try {
-            const { data, error } = await supabase.from('studio_settings').select('*').maybeSingle();
+            const { data, error } = await supabase
+                .from('studio_settings')
+                .select('*')
+                .eq('studio_id', user.id)
+                .maybeSingle();
+
+            if (error) throw error;
+
             if (data) {
                 setStudioData(data);
                 setPreviews({ 
@@ -88,13 +97,16 @@ const ConfiguracoesView: React.FC = () => {
                 });
             }
         } catch (e) {
+            console.error("Erro ao carregar configurações:", e);
             showToast("Erro ao carregar configurações", "error");
         } finally {
             setIsLoading(false);
         }
     };
 
-    useEffect(() => { fetchData(); }, []);
+    useEffect(() => { 
+        if (user?.id) fetchData(); 
+    }, [user?.id]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -121,13 +133,14 @@ const ConfiguracoesView: React.FC = () => {
     };
 
     const uploadAsset = async (file: File, type: 'cover' | 'logo') => {
+        if (!user) return null;
         const fileExt = file.name.split('.').pop();
         const fileName = `${type}_${Date.now()}.${fileExt}`;
-        const filePath = `${studioData.id || 'master'}/${fileName}`;
+        const filePath = `${user.id}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
             .from('branding')
-            .upload(filePath, file);
+            .upload(filePath, file, { upsert: true });
 
         if (uploadError) throw uploadError;
 
@@ -139,6 +152,7 @@ const ConfiguracoesView: React.FC = () => {
     };
 
     const handleSaveStudio = async () => {
+        if (!user) return;
         setIsSaving(true);
         try {
             let finalCoverUrl = studioData.cover_image_url;
@@ -147,12 +161,31 @@ const ConfiguracoesView: React.FC = () => {
             if (pendingFiles.cover) finalCoverUrl = await uploadAsset(pendingFiles.cover, 'cover');
             if (pendingFiles.logo) finalLogoUrl = await uploadAsset(pendingFiles.logo, 'logo');
 
-            const payload = { ...studioData, cover_image_url: finalCoverUrl, logo_image_url: finalLogoUrl };
-            delete payload.id; 
+            // Preparação do Payload para UPSERT
+            const payload = {
+                studio_id: user.id,
+                studio_name: studioData.studio_name || '',
+                cnpj_cpf: studioData.cnpj_cpf || '',
+                presentation_text: studioData.presentation_text || '',
+                address: studioData.address || '',
+                number: studioData.number || '',
+                neighborhood: studioData.neighborhood || '',
+                city: studioData.city || '',
+                state: studioData.state || '',
+                zip_code: studioData.zip_code || '',
+                phone_whatsapp: studioData.phone_whatsapp || '',
+                instagram_handle: studioData.instagram_handle || '',
+                facebook_url: studioData.facebook_url || '',
+                website_url: studioData.website_url || '',
+                cover_image_url: finalCoverUrl,
+                logo_image_url: finalLogoUrl,
+                business_hours: studioData.business_hours || {},
+                updated_at: new Date().toISOString()
+            };
 
-            const { error } = studioData.id 
-                ? await supabase.from('studio_settings').update(payload).eq('id', studioData.id)
-                : await supabase.from('studio_settings').insert([payload]);
+            const { error } = await supabase
+                .from('studio_settings')
+                .upsert(payload, { onConflict: 'studio_id' });
 
             if (error) throw error;
 
@@ -160,7 +193,8 @@ const ConfiguracoesView: React.FC = () => {
             setPendingFiles({ cover: null, logo: null });
             fetchData();
         } catch (e: any) {
-            showToast(e.message, "error");
+            console.error("Erro ao salvar:", e);
+            showToast(e.message || "Erro ao salvar no banco", "error");
         } finally {
             setIsSaving(false);
         }
@@ -307,10 +341,10 @@ const ConfiguracoesView: React.FC = () => {
                     <Card title="Endereço & Localização" icon={<MapPin size={20} className="text-orange-500" />} className="rounded-2xl shadow-sm border-slate-200">
                         <div className="grid grid-cols-2 md:grid-cols-6 gap-6 mt-2">
                             <div className="md:col-span-2">
-                                <InputField label="CEP" name="zip_code" value={studioData.zip_code} onChange={handleInputChange} placeholder="00000-000" icon={Hash} />
+                                <InputField label="CEP" name="zip_code" value={studioData.zip_code} onChange={handleInputChange} placeholder="00000-000" icon={Hash} span="col-span-2" />
                             </div>
                             <div className="md:col-span-3">
-                                <InputField label="Logradouro" name="address" value={studioData.address} onChange={handleInputChange} placeholder="Ex: Av. Paulista" icon={Navigation} />
+                                <InputField label="Logradouro" name="address" value={studioData.address} onChange={handleInputChange} placeholder="Ex: Av. Paulista" icon={Navigation} span="col-span-3" />
                             </div>
                             <div className="md:col-span-1">
                                 <InputField label="Nº" name="number" value={studioData.number} onChange={handleInputChange} placeholder="123" />
@@ -327,7 +361,7 @@ const ConfiguracoesView: React.FC = () => {
                         </div>
                     </Card>
 
-                    {/* CARD 4: HORÁRIOS DE ATENDIMENTO COM TURNO DUPLO */}
+                    {/* CARD 4: HORÁRIOS DE ATENDIMENTO */}
                     <Card title="Horários de Atendimento" icon={<Clock size={20} className="text-orange-500" />} className="rounded-2xl shadow-sm border-slate-200">
                         <p className="text-xs text-slate-500 mb-6 -mt-2 ml-1">Defina os horários de funcionamento e intervalos de almoço por dia da semana.</p>
                         <div className="space-y-4 mt-4">
@@ -340,8 +374,7 @@ const ConfiguracoesView: React.FC = () => {
                                     end: '18:00' 
                                 };
 
-                                // Validação simples de tempo
-                                const isBreakInvalid = config.break_end <= config.break_start;
+                                const isBreakInvalid = config.active && config.break_end <= config.break_start;
 
                                 return (
                                     <div key={day.key} className={`flex flex-col xl:flex-row items-center justify-between p-5 rounded-2xl border transition-all ${config.active ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
@@ -353,7 +386,6 @@ const ConfiguracoesView: React.FC = () => {
                                         {config.active ? (
                                             <div className="flex flex-col md:flex-row items-center gap-4 xl:gap-6 w-full xl:w-3/4 justify-end flex-wrap">
                                                 
-                                                {/* TURNO 1 (MANHÃ) */}
                                                 <div className="flex items-center gap-2 group flex-wrap md:flex-nowrap">
                                                     <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
                                                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Início</span>
@@ -376,12 +408,10 @@ const ConfiguracoesView: React.FC = () => {
                                                     </div>
                                                 </div>
 
-                                                {/* INDICADOR DE PAUSA */}
                                                 <div className="flex items-center justify-center p-2.5 bg-orange-50 text-orange-500 rounded-full" title="Intervalo de Almoço">
                                                     <Coffee size={16} strokeWidth={3} />
                                                 </div>
 
-                                                {/* TURNO 2 (TARDE) */}
                                                 <div className="flex items-center gap-2 group flex-wrap md:flex-nowrap">
                                                     <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all min-w-[125px] ${isBreakInvalid ? 'bg-rose-50 border-rose-200' : 'bg-slate-100 border-transparent focus-within:border-orange-200 focus-within:bg-white'}`}>
                                                         <span className={`text-[9px] font-black uppercase tracking-tighter ${isBreakInvalid ? 'text-rose-400' : 'text-slate-400'}`}>Volta</span>
@@ -419,12 +449,11 @@ const ConfiguracoesView: React.FC = () => {
                 </div>
             </main>
 
-            {/* BARRA DE AÇÃO FIXA NO RODAPÉ */}
             <footer className="fixed bottom-0 right-0 left-0 md:left-64 bg-white/80 backdrop-blur-md border-t border-slate-200 p-6 z-40 flex justify-end">
                 <div className="max-w-4xl w-full mx-auto flex justify-end">
                     <button 
                         onClick={handleSaveStudio}
-                        disabled={isSaving}
+                        disabled={isSaving || !user}
                         className="bg-orange-500 hover:bg-orange-600 text-white px-10 py-4 rounded-2xl font-black shadow-xl shadow-orange-100 flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isSaving ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
