@@ -28,10 +28,8 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
 
-  // Busca perfil estendido (DB) sem bloquear a UI se já estiver carregado
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
-      // Prioridade 1: Tabela de Profissionais (Equipe)
       const { data: profData } = await supabase
         .from('professionals')
         .select('role, photo_url, permissions, name')
@@ -48,7 +46,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         };
       }
 
-      // Prioridade 2: Tabela de Profiles (Admin/Outros)
       const { data: profileData } = await supabase
         .from('profiles')
         .select('full_name, papel, avatar_url')
@@ -75,15 +72,12 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        // 1. Verificação Otimista: Se não há token, não mostramos spinner por muito tempo
         const storageKey = Object.keys(localStorage).find(k => k.includes('-auth-token'));
         if (!storageKey || !localStorage.getItem(storageKey)) {
           if (mounted) setLoading(false);
         }
 
-        // 2. Busca Real da Sessão
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
-        
         if (error) throw error;
 
         if (initialSession?.user && mounted) {
@@ -92,20 +86,16 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
           if (mounted) setUser(appUser);
         }
       } catch (err) {
-        console.error("AuthContext Boot Error:", err);
+        console.error("AuthContext: Erro no boot inicial:", err);
       } finally {
-        // Liberação do Boot Inicial
         if (mounted) setLoading(false);
       }
     };
 
     initializeAuth();
 
-    // 3. Listener de Eventos (Atualizações Silenciosas)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
-
-      console.log("AuthContext Event:", event);
 
       if (event === 'SIGNED_OUT') {
         setUser(null);
@@ -119,29 +109,20 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         }
         setLoading(false);
       } else if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        // --- O SEGREDO: Atualização Silenciosa ---
-        // Se a aba acordar do background, atualizamos o user mas NÃO ativamos o spinner
         if (currentSession?.user) {
           setSession(currentSession);
           const appUser = await fetchProfile(currentSession.user);
           if (mounted) setUser(appUser);
         }
-        // Garante que se o loading estivesse travado por algum motivo, ele seja liberado
         setLoading(false);
       }
     });
 
-    // 4. DISJUNTOR DE SEGURANÇA (Visibility Fail-Safe)
-    // Se o usuário volta para a aba, garantimos que qualquer "loading residual" seja limpo
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // Se após 500ms de volta na tela o loading ainda estiver true, forçamos o falso.
+      if (document.visibilityState === 'visible' && loading) {
         setTimeout(() => {
-          if (mounted && loading) {
-            console.warn("AuthContext: Force-unlocking UI after background resume.");
-            setLoading(false);
-          }
-        }, 500);
+          if (mounted && loading) setLoading(false);
+        }, 800);
       }
     };
 
@@ -152,7 +133,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       subscription.unsubscribe();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [loading]); // Adicionado loading como dependência para o timeout monitorar o estado real
+  }, [loading]);
 
   const signIn = async (email: string, password: string) => supabase.auth.signInWithPassword({ email, password });
   const signUp = async (email: string, password: string, name: string) => supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
@@ -162,15 +143,28 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   
   const signOut = async () => {
     try {
+      // 1. Ativa o loading para evitar cliques duplos durante o processo
       setLoading(true);
-      await supabase.auth.signOut();
+      
+      // 2. Tenta desconectar no servidor (pode falhar se não houver rede)
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
     } catch (error) {
-      console.error("AuthContext Logout Error:", error);
+      console.error("AuthContext: Erro ao avisar servidor do logout:", error);
     } finally {
+      // 3. Ações Críticas (Executam sempre para DESTRAVAR o app):
       setUser(null);
       setSession(null);
+      
+      // Limpeza nuclear de dados locais
       localStorage.clear();
+      sessionStorage.clear();
+
+      // Força o fim do estado de carregamento
       setLoading(false);
+
+      // 4. Reset Total via Navegador (Cura definitiva para o limbo de estado React)
       window.location.href = '/'; 
     }
   };
