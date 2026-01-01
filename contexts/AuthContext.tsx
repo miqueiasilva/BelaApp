@@ -27,14 +27,13 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Busca perfil unificado (Auth + Professionals)
+  // Busca perfil unificado (Não bloqueante se falhar)
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
-      // Prioridade 1: Buscar na tabela de profissionais (onde reside o Role operacional)
       const { data: profData } = await supabase
         .from('professionals')
         .select('role, photo_url, permissions, name')
-        .eq('email', authUser.email) // Link via e-mail ou auth_user_id se existir
+        .eq('email', authUser.email)
         .maybeSingle();
 
       if (profData) {
@@ -47,7 +46,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         };
       }
 
-      // Prioridade 2: Fallback para perfis genéricos (Profiles)
       const { data: profileData } = await supabase
         .from('profiles')
         .select('full_name, papel, avatar_url')
@@ -61,7 +59,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         avatar_url: profileData?.avatar_url || authUser.user_metadata?.avatar_url
       };
     } catch (e) {
-      console.warn("AuthContext: Erro ao buscar perfil extendido.");
       return { 
         ...authUser, 
         papel: 'profissional', 
@@ -73,35 +70,53 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    const getInitialSession = async () => {
-      setLoading(true);
+    // --- TIMEOUT DE SEGURANÇA (O Disjuntor) ---
+    // Se em 2.5s o Supabase não responder, liberamos a UI para evitar travamento.
+    const safetyTimeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn("AuthContext: Timeout de segurança atingido. Destravando UI...");
+        setLoading(false);
+      }
+    }, 2500);
+
+    const initializeAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) {
-          if (error.message.toLowerCase().includes('refresh_token')) {
-            await supabase.auth.signOut();
-            if (mounted) setUser(null);
-          }
+        // Verificação Otimista: Se não há token no storage, não há porque esperar a rede.
+        const hasSession = Object.keys(localStorage).some(key => key.startsWith('sb-') && key.endsWith('-auth-token'));
+        if (!hasSession) {
+          if (mounted) setLoading(false);
+          clearTimeout(safetyTimeout);
           return;
         }
 
-        if (session?.user && mounted) {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+           await supabase.auth.signOut();
+           if (mounted) setUser(null);
+        } else if (session?.user && mounted) {
           const appUser = await fetchProfile(session.user);
           setUser(appUser);
         }
+      } catch (err) {
+        console.error("AuthContext: Erro crítico no boot:", err);
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+          clearTimeout(safetyTimeout);
+        }
       }
     };
 
-    getInitialSession();
+    initializeAuth();
 
+    // Listener para mudanças de estado (Login/Logout em outras abas)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
+      if (session?.user && mounted) {
         const appUser = await fetchProfile(session.user);
-        if (mounted) setUser(appUser);
-      } else {
-        if (mounted) setUser(null);
+        setUser(appUser);
+      } else if (mounted) {
+        setUser(null);
       }
       if (mounted) setLoading(false);
     });
@@ -109,6 +124,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      clearTimeout(safetyTimeout);
     };
   }, []);
 
@@ -118,32 +134,17 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const resetPassword = async (email: string) => supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
   const updatePassword = async (newPassword: string) => supabase.auth.updateUser({ password: newPassword });
   
-  /**
-   * LOGOUT FAIL-SAFE
-   * Implementação robusta que garante a saída do usuário independente da resposta do servidor.
-   */
   const signOut = async () => {
     try {
       setLoading(true);
-      // Tentativa de encerramento de sessão no servidor
-      if (supabase) {
-        await supabase.auth.signOut();
-      }
+      if (supabase) await supabase.auth.signOut();
     } catch (error) {
-      // Silenciamos o erro para o usuário não travar em uma tela de erro durante a saída
-      console.error("AuthContext: Erro ao desconectar do servidor:", error);
+      console.error("AuthContext: Erro ao desconectar:", error);
     } finally {
-      // LIMPEZA LOCAL OBRIGATÓRIA (Mesmo se a rede falhar)
       setUser(null);
-      
-      // Limpeza nuclear de persistência local
       localStorage.clear();
       sessionStorage.clear();
-      
       setLoading(false);
-      
-      // Redirecionamento forçado para a raiz
-      // Em um SPA com controle de estado como este, o root sem 'user' disparará o LoginView.
       window.location.href = '/'; 
     }
   };
