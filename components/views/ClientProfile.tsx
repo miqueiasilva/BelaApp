@@ -179,7 +179,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
     const [photos, setPhotos] = useState<any[]>([]);
 
-    // --- Modelo de Estado Sincronizado com as Colunas do Banco (Português) ---
+    // --- Modelo de Estado Sincronizado com os Campos do Formulário ---
     const [formData, setFormData] = useState<any>({
         id: null,
         nome: '',
@@ -220,29 +220,30 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (!client.id) return;
         const { data, error } = await supabase.from('clients').select('*').eq('id', client.id).single();
         if (data) {
+            // MAPEBAMENTO: Banco de Dados -> Formulário (Português)
             setFormData({
                 id: data.id,
-                nome: data.nome || data.full_name || '',
-                apelido: data.apelido || data.nickname || '',
-                telefone: data.telefone || data.whatsapp || data.phone || '',
+                nome: data.nome || '',
+                apelido: data.apelido || '',
+                telefone: data.telefone || '',
                 email: data.email || '',
-                instagram: data.instagram || '',
-                nascimento: data.nascimento || data.birth_date || '',
+                instagram: data.instagram || '', // Mapeado conforme schema real
+                nascimento: data.birth_date || '', // Mapeado do schema 'birth_date'
                 cpf: data.cpf || '',
                 rg: data.rg || '',
-                sexo: data.sexo || data.gender || '',
-                profissao: data.profissao || data.profession || '',
-                cep: data.cep || data.postal_code || '',
-                endereco: data.endereco || data.address || '',
-                numero: data.numero || data.number || '',
-                complemento: data.complemento || data.complement || '',
-                bairro: data.bairro || data.neighborhood || '',
-                cidade: data.cidade || data.city || '',
-                estado: data.estado || data.state || '',
+                sexo: data.gender || '', // Mapeado do schema 'gender'
+                profissao: data.occupation || '', // Mapeado do schema 'occupation'
+                cep: data.cep || '',
+                endereco: data.endereco || '',
+                numero: data.numero || '',
+                complemento: data.complemento || '',
+                bairro: data.bairro || '',
+                cidade: data.cidade || '',
+                estado: data.estado || '',
                 photo_url: data.photo_url || null,
                 online_booking_enabled: data.online_booking_enabled ?? true,
-                origem: data.origem || data.how_found || 'Instagram',
-                observacoes: data.observacoes || data.notes || ''
+                origem: data.referral_source || 'Instagram', // Mapeado do schema 'referral_source'
+                observacoes: data.notes || '' // Mapeado do schema 'notes'
             });
         }
     };
@@ -330,6 +331,10 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         } finally { setIsSaving(false); }
     };
 
+    /**
+     * FIX: Mapeamento de Persistência com Schema Update
+     * Garante que os campos enviem as chaves exatas que o Postgres espera.
+     */
     const handleSave = async () => {
         if (!formData.nome) {
             setToast({ message: "Nome é obrigatório.", type: 'error' });
@@ -338,18 +343,18 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
         setIsSaving(true);
         try {
-            // --- Mapeamento Frontend -> Banco de Dados (Schema Exato em Português) ---
+            // MAPEAMENTO: Formulário -> Banco de Dados (Snake Case Schema)
             const payload = {
                 nome: formData.nome,
                 apelido: formData.apelido || null,
                 telefone: formData.telefone || null,
                 email: formData.email || null,
-                instagram: formData.instagram || null,
-                nascimento: formData.nascimento || null,
-                cpf: formData.cpf || null,
-                rg: formData.rg || null,
-                sexo: formData.sexo || null,
-                profissao: formData.profissao || null,
+                instagram: formData.instagram || null, // Coluna instagram garantida
+                gender: formData.sexo || null, // sex -> gender
+                referral_source: formData.origem || 'Outros', // origem -> referral_source
+                occupation: formData.profissao || null, // profissao -> occupation
+                birth_date: formData.nascimento && formData.nascimento !== "" ? formData.nascimento : null, // Fix DATE type
+                notes: formData.observacoes || null, // observacoes -> notes
                 cep: formData.cep || null,
                 endereco: formData.endereco || null,
                 numero: formData.numero || null,
@@ -357,9 +362,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 bairro: formData.bairro || null,
                 cidade: formData.cidade || null,
                 estado: formData.estado || null,
-                origem: formData.origem || 'Outros',
-                observacoes: formData.observacoes || null,
-                online_booking_enabled: formData.online_booking_enabled,
+                cpf: formData.cpf || null,
+                rg: formData.rg || null,
+                online_booking_enabled: !!formData.online_booking_enabled,
                 photo_url: formData.photo_url
             };
 
@@ -376,9 +381,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             
         } catch (err: any) {
             console.error("DB Save Error:", err);
-            // Debug detalhado conforme solicitado para identificar colunas faltantes ou tipos inválidos
+            // Mostramos o erro detalhado para facilitar diagnóstico de colunas no Supabase
             setToast({ 
-                message: `Erro ao persistir: ${err.message || "Erro desconhecido"}. Detalhes: ${err.details || err.hint || "Verifique restrições de banco."}`, 
+                message: `Erro ao salvar: ${err.message || "Verifique as permissões de banco."}`, 
                 type: 'error' 
             });
         } finally {
