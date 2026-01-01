@@ -53,16 +53,17 @@ const ConfiguracoesView: React.FC = () => {
     const coverInputRef = useRef<HTMLInputElement>(null);
     const logoInputRef = useRef<HTMLInputElement>(null);
 
+    // Estado inicial mapeado para as colunas reais do banco de dados
     const [studioData, setStudioData] = useState<any>({
         studio_name: '',
         cnpj_cpf: '',
         presentation_text: '',
-        address: '',
-        number: '',
-        neighborhood: '',
-        city: '',
-        state: '',
-        zip_code: '',
+        address_street: '',
+        address_number: '',
+        address_neighborhood: '',
+        address_city: '',
+        address_state: '',
+        address_zip: '',
         phone_whatsapp: '',
         instagram_handle: '',
         facebook_url: '',
@@ -161,18 +162,29 @@ const ConfiguracoesView: React.FC = () => {
             if (pendingFiles.cover) finalCoverUrl = await uploadAsset(pendingFiles.cover, 'cover');
             if (pendingFiles.logo) finalLogoUrl = await uploadAsset(pendingFiles.logo, 'logo');
 
-            // Preparação do Payload para UPSERT
+            // Preparação do Payload para UPSERT com decomposição de endereço
             const payload = {
                 studio_id: user.id,
                 studio_name: studioData.studio_name || '',
                 cnpj_cpf: studioData.cnpj_cpf || '',
                 presentation_text: studioData.presentation_text || '',
-                address: studioData.address || '',
-                number: studioData.number || '',
-                neighborhood: studioData.neighborhood || '',
-                city: studioData.city || '',
-                state: studioData.state || '',
-                zip_code: studioData.zip_code || '',
+                
+                // Mapeamento explícito para as colunas do banco
+                address_street: studioData.address_street || '',
+                address_number: studioData.address_number || '',
+                address_neighborhood: studioData.address_neighborhood || '',
+                address_city: studioData.address_city || '',
+                address_state: studioData.address_state || '',
+                address_zip: studioData.address_zip || '',
+                
+                // Objeto de backup para retrocompatibilidade ou uso flexível
+                address: {
+                    street: studioData.address_street,
+                    number: studioData.address_number,
+                    zip: studioData.address_zip,
+                    city: studioData.address_city
+                },
+
                 phone_whatsapp: studioData.phone_whatsapp || '',
                 instagram_handle: studioData.instagram_handle || '',
                 facebook_url: studioData.facebook_url || '',
@@ -189,7 +201,7 @@ const ConfiguracoesView: React.FC = () => {
 
             if (error) throw error;
 
-            showToast("Configurações atualizadas com sucesso!");
+            showToast("Configurações salvas com sucesso!");
             setPendingFiles({ cover: null, logo: null });
             fetchData();
         } catch (e: any) {
@@ -341,22 +353,22 @@ const ConfiguracoesView: React.FC = () => {
                     <Card title="Endereço & Localização" icon={<MapPin size={20} className="text-orange-500" />} className="rounded-2xl shadow-sm border-slate-200">
                         <div className="grid grid-cols-2 md:grid-cols-6 gap-6 mt-2">
                             <div className="md:col-span-2">
-                                <InputField label="CEP" name="zip_code" value={studioData.zip_code} onChange={handleInputChange} placeholder="00000-000" icon={Hash} span="col-span-2" />
+                                <InputField label="CEP" name="address_zip" value={studioData.address_zip} onChange={handleInputChange} placeholder="00000-000" icon={Hash} />
                             </div>
                             <div className="md:col-span-3">
-                                <InputField label="Logradouro" name="address" value={studioData.address} onChange={handleInputChange} placeholder="Ex: Av. Paulista" icon={Navigation} span="col-span-3" />
+                                <InputField label="Logradouro" name="address_street" value={studioData.address_street} onChange={handleInputChange} placeholder="Ex: Av. Paulista" icon={Navigation} />
                             </div>
                             <div className="md:col-span-1">
-                                <InputField label="Nº" name="number" value={studioData.number} onChange={handleInputChange} placeholder="123" />
+                                <InputField label="Nº" name="address_number" value={studioData.address_number} onChange={handleInputChange} placeholder="123" />
                             </div>
                             <div className="md:col-span-2">
-                                <InputField label="Bairro" name="neighborhood" value={studioData.neighborhood} onChange={handleInputChange} placeholder="Centro" icon={Map} />
+                                <InputField label="Bairro" name="address_neighborhood" value={studioData.address_neighborhood} onChange={handleInputChange} placeholder="Centro" icon={Map} />
                             </div>
                             <div className="md:col-span-2">
-                                <InputField label="Cidade" name="city" value={studioData.city} onChange={handleInputChange} placeholder="São Paulo" />
+                                <InputField label="Cidade" name="address_city" value={studioData.address_city} onChange={handleInputChange} placeholder="São Paulo" />
                             </div>
                             <div className="md:col-span-2">
-                                <InputField label="Estado (UF)" name="state" value={studioData.state} onChange={handleInputChange} placeholder="SP" />
+                                <InputField label="Estado (UF)" name="address_state" value={studioData.address_state} onChange={handleInputChange} placeholder="SP" />
                             </div>
                         </div>
                     </Card>
