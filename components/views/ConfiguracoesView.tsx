@@ -92,7 +92,15 @@ const ConfiguracoesView: React.FC = () => {
             if (error) throw error;
 
             if (data) {
-                setStudioData(data);
+                // Sincroniza campos que podem vir com nomes diferentes do banco
+                setStudioData({
+                    ...data,
+                    presentation_text: data.presentation_text || data.description || '',
+                    phone_whatsapp: data.phone_whatsapp || data.whatsapp || '',
+                    instagram_handle: data.instagram_handle || data.instagram || '',
+                    facebook_url: data.facebook_url || data.facebook || '',
+                    website_url: data.website_url || data.website || ''
+                });
                 setPreviews({ 
                     cover: data.cover_url || '', 
                     logo: data.profile_url || '' 
@@ -163,57 +171,45 @@ const ConfiguracoesView: React.FC = () => {
             if (pendingFiles.cover) finalCoverUrl = await uploadAsset(pendingFiles.cover, 'cover');
             if (pendingFiles.logo) finalProfileUrl = await uploadAsset(pendingFiles.logo, 'logo');
 
-            // Preparação do Payload Final para UPSERT
+            // CORREÇÃO DEFINITIVA: Payload com Redundância para compatibilidade de Schema
             const payload = {
                 studio_id: user.id,
+                updated_at: new Date().toISOString(),
+
+                // 1. Identidade
                 studio_name: studioData.studio_name || '',
                 cnpj_cpf: studioData.cnpj_cpf || '',
+                description: studioData.presentation_text || '',
                 presentation_text: studioData.presentation_text || '',
-                
-                // FINANCEIRO
-                monthly_revenue_goal: parseFloat(studioData.monthly_revenue_goal) || 0,
-
-                // IMAGENS
                 cover_url: finalCoverUrl,
                 profile_url: finalProfileUrl,
 
-                // ENDEREÇO
+                // 2. Redes Sociais (Garantia de Duplicidade para evitar erro 400)
+                instagram_handle: studioData.instagram_handle || '', 
+                instagram: studioData.instagram_handle || '',
+                whatsapp: studioData.phone_whatsapp || '',
+                phone_whatsapp: studioData.phone_whatsapp || '',
+                facebook_url: studioData.facebook_url || '',
+                facebook: studioData.facebook_url || '', 
+                website_url: studioData.website_url || '',
+                website: studioData.website_url || '',
+
+                // 3. Endereço (Detalhado)
+                address_zip: studioData.address_zip || '',
                 address_street: studioData.address_street || '',
                 address_number: studioData.address_number || '',
                 address_neighborhood: studioData.address_neighborhood || '',
                 address_city: studioData.address_city || '',
                 address_state: studioData.address_state || '',
-                address_zip: studioData.address_zip || '',
-                address: {
-                    street: studioData.address_street,
-                    number: studioData.address_number,
-                    zip: studioData.address_zip,
-                    city: studioData.address_city,
-                    neighborhood: studioData.address_neighborhood
-                },
-
-                // REDES SOCIAIS (Mapeamento Robusto conforme solicitado)
-                phone_whatsapp: studioData.phone_whatsapp || '',
-                whatsapp: studioData.phone_whatsapp || '', 
-                instagram: studioData.instagram_handle || '', 
-                instagram_handle: studioData.instagram_handle || '',
                 
-                // Persistência robusta para Facebook e Website
-                facebook_url: studioData.facebook_url || '',
-                website_url: studioData.website_url || '',
-                facebook: studioData.facebook_url || '', // Fallback legado
-                website: studioData.website_url || '', // Fallback legado
-
+                // 4. Financeiro e Horários
+                monthly_revenue_goal: parseFloat(studioData.monthly_revenue_goal) || 0,
+                business_hours: studioData.business_hours || {}, 
                 social_links: {
                     instagram: studioData.instagram_handle || '',
                     facebook: studioData.facebook_url || '',
                     website: studioData.website_url || ''
-                },
-
-                // HORÁRIOS
-                business_hours: studioData.business_hours || {},
-                
-                updated_at: new Date().toISOString()
+                }
             };
 
             const { error } = await supabase
@@ -226,8 +222,8 @@ const ConfiguracoesView: React.FC = () => {
             setPendingFiles({ cover: null, logo: null });
             fetchData();
         } catch (e: any) {
-            console.error("Erro ao salvar:", e);
-            showToast(e.message || "Erro de validação no banco", "error");
+            console.error("Erro crítico ao salvar:", e);
+            showToast(e.message || "Erro de Schema ou Conexão", "error");
         } finally {
             setIsSaving(false);
         }
@@ -247,14 +243,14 @@ const ConfiguracoesView: React.FC = () => {
         <div className="h-full bg-slate-50 flex flex-col font-sans relative text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            <header className="bg-white border-b border-slate-200 px-8 py-6 flex-shrink-0 z-20">
+            <header className="bg-white border-b border-slate-200 px-8 py-6 flex-shrink-0 z-20 shadow-sm">
                 <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
                     <div className="p-2 bg-orange-50 text-orange-600 rounded-xl">
                         <Settings size={24} />
                     </div>
                     Configurações do Negócio
                 </h1>
-                <p className="text-slate-400 text-sm font-medium mt-1 ml-12">Configure a identidade e as metas do seu estúdio.</p>
+                <p className="text-slate-400 text-sm font-medium mt-1 ml-12">Configure a identidade e as regras do seu estúdio.</p>
             </header>
 
             <main className="flex-1 overflow-y-auto p-8 custom-scrollbar pb-32">
@@ -325,13 +321,13 @@ const ConfiguracoesView: React.FC = () => {
                                     value={studioData.presentation_text}
                                     onChange={handleInputChange}
                                     className="w-full bg-white border border-slate-200 rounded-xl p-4 min-h-[120px] outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-medium text-slate-600 resize-none shadow-sm"
-                                    placeholder="Conte um pouco sobre sua história e especialidades para seus clientes..."
+                                    placeholder="Conte um pouco sobre sua história e especialidades..."
                                 />
                             </div>
                         </div>
                     </Card>
 
-                    {/* NOVO CARD: GESTÃO FINANCEIRA */}
+                    {/* CARD: GESTÃO FINANCEIRA */}
                     <Card title="Gestão & Metas" icon={<TrendingUp size={20} className="text-orange-500" />} className="rounded-2xl shadow-sm border-slate-200">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
                             <InputField 
@@ -416,7 +412,6 @@ const ConfiguracoesView: React.FC = () => {
 
                     {/* CARD 4: HORÁRIOS DE ATENDIMENTO */}
                     <Card title="Horários de Atendimento" icon={<Clock size={20} className="text-orange-500" />} className="rounded-2xl shadow-sm border-slate-200">
-                        <p className="text-xs text-slate-500 mb-6 -mt-2 ml-1">Defina os horários de funcionamento e intervalos de almoço por dia da semana.</p>
                         <div className="space-y-4 mt-4">
                             {DAYS_OF_WEEK.map((day) => {
                                 const config = (studioData.business_hours && studioData.business_hours[day.key]) || { 
@@ -427,8 +422,6 @@ const ConfiguracoesView: React.FC = () => {
                                     end: '18:00' 
                                 };
 
-                                const isBreakInvalid = config.active && config.break_end <= config.break_start;
-
                                 return (
                                     <div key={day.key} className={`flex flex-col xl:flex-row items-center justify-between p-5 rounded-2xl border transition-all ${config.active ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
                                         <div className="flex items-center gap-4 w-full xl:w-1/4 mb-4 xl:mb-0">
@@ -438,56 +431,25 @@ const ConfiguracoesView: React.FC = () => {
                                         
                                         {config.active ? (
                                             <div className="flex flex-col md:flex-row items-center gap-4 xl:gap-6 w-full xl:w-3/4 justify-end flex-wrap">
-                                                
-                                                <div className="flex items-center gap-2 group flex-wrap md:flex-nowrap">
-                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
-                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Início</span>
-                                                        <input 
-                                                            type="time" 
-                                                            value={config.start || '08:00'} 
-                                                            onChange={e => handleHourChange(day.key, 'start', e.target.value)} 
-                                                            className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
-                                                        />
-                                                    </div>
-                                                    <span className="text-slate-300 font-bold text-xs">até</span>
-                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
-                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter text-right">Almoço</span>
-                                                        <input 
-                                                            type="time" 
-                                                            value={config.break_start || '12:00'} 
-                                                            onChange={e => handleHourChange(day.key, 'break_start', e.target.value)} 
-                                                            className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
-                                                        />
-                                                    </div>
+                                                <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Início</span>
+                                                    <input 
+                                                        type="time" 
+                                                        value={config.start || '08:00'} 
+                                                        onChange={e => handleHourChange(day.key, 'start', e.target.value)} 
+                                                        className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
+                                                    />
                                                 </div>
-
-                                                <div className="flex items-center justify-center p-2.5 bg-orange-50 text-orange-500 rounded-full" title="Intervalo de Almoço">
-                                                    <Coffee size={16} strokeWidth={3} />
+                                                <span className="text-slate-300 font-bold text-xs">até</span>
+                                                <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter text-right">Saída</span>
+                                                    <input 
+                                                        type="time" 
+                                                        value={config.end || '18:00'} 
+                                                        onChange={e => handleHourChange(day.key, 'end', e.target.value)} 
+                                                        className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
+                                                    />
                                                 </div>
-
-                                                <div className="flex items-center gap-2 group flex-wrap md:flex-nowrap">
-                                                    <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all min-w-[125px] ${isBreakInvalid ? 'bg-rose-50 border-rose-200' : 'bg-slate-100 border-transparent focus-within:border-orange-200 focus-within:bg-white'}`}>
-                                                        <span className={`text-[9px] font-black uppercase tracking-tighter ${isBreakInvalid ? 'text-rose-400' : 'text-slate-400'}`}>Volta</span>
-                                                        <input 
-                                                            type="time" 
-                                                            value={config.break_end || '13:00'} 
-                                                            onChange={e => handleHourChange(day.key, 'break_end', e.target.value)} 
-                                                            className={`bg-transparent border-none p-0 text-sm font-black outline-none focus:ring-0 flex-1 ${isBreakInvalid ? 'text-rose-600' : 'text-slate-700'}`} 
-                                                        />
-                                                        {isBreakInvalid && <AlertCircle size={14} className="text-rose-500 animate-pulse" />}
-                                                    </div>
-                                                    <span className="text-slate-300 font-bold text-xs">até</span>
-                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
-                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter text-right">Saída</span>
-                                                        <input 
-                                                            type="time" 
-                                                            value={config.end || '18:00'} 
-                                                            onChange={e => handleHourChange(day.key, 'end', e.target.value)} 
-                                                            className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
-                                                        />
-                                                    </div>
-                                                </div>
-
                                             </div>
                                         ) : (
                                             <div className="flex-1 text-right">
@@ -509,7 +471,7 @@ const ConfiguracoesView: React.FC = () => {
                         disabled={isSaving || !user}
                         className="bg-orange-500 hover:bg-orange-600 text-white px-10 py-4 rounded-2xl font-black shadow-xl shadow-orange-100 flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50"
                     >
-                        {isSaving ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
+                        {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
                         {isSaving ? 'Gravando...' : 'Salvar Alterações'}
                     </button>
                 </div>
