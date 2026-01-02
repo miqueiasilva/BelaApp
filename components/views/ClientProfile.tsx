@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -296,41 +295,40 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     };
 
     const handleLoadTemplate = () => {
-        if (!selectedTemplateId) return;
+        if (!selectedTemplateId) {
+            alert("Por favor, selecione um modelo na lista antes de inserir.");
+            return;
+        }
         
         const template = templates.find(t => t.id === Number(selectedTemplateId));
         if (!template) return;
 
         let textToInsert = "";
 
-        // CASO 1: O conteúdo é TEXTO PURO (Contratos novos)
+        // 1. Parser de Conteúdo (Suporta Contratos/String e Fichas/Array)
         if (typeof template.content === 'string') {
-            // Remove aspas extras se houver e corrige quebras de linha escapadas
             textToInsert = template.content
-                .replace(/^"|"$/g, '')  // Remove aspas do início/fim
-                .replace(/\\n/g, '\n') // Transforma \n em quebra de linha real
-                .replace(/\\"/g, '"');  // Corrige aspas internas escapadas (comum em JSONB)
+                .replace(/^"|"$/g, '') 
+                .replace(/\\n/g, '\n')
+                .replace(/\\"/g, '"');
         } 
-        // CASO 2: O conteúdo é ARRAY (Fichas antigas)
         else if (Array.isArray(template.content)) {
             textToInsert = template.content
                 .map((item: any) => `• ${item.question || item.label || 'Campo'}\n   R: `)
                 .join('\n\n');
         }
-        // CASO 3: Objeto (Fallback)
         else if (typeof template.content === 'object' && template.content !== null) {
             textToInsert = JSON.stringify(template.content, null, 2);
         }
 
         if (!textToInsert) {
-            setToast({ message: "Modelo vazio ou em formato inválido.", type: 'error' });
+            alert("Atenção: Este modelo está vazio.");
             return;
         }
 
-        // Atualiza o estado da anamnese preservando o que já existe (Append Inteligente)
+        // 2. ATUALIZAÇÃO DO ESTADO CORRETO (anamnesis.clinical_notes)
         setAnamnesis((prev: any) => {
             const current = prev.clinical_notes || "";
-            // Adiciona divisor se já houver conteúdo
             const divider = current.trim() ? "\n\n---\n\n" : "";
             
             return {
@@ -340,7 +338,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         });
         
         setSelectedTemplateId('');
-        setToast({ message: "Modelo inserido com sucesso!", type: 'success' });
+        
+        // 3. Feedback Visual Garantido
+        alert("Modelo inserido com sucesso! Role a caixa de texto para visualizar o conteúdo.");
     };
 
     const fetchPhotos = async () => {
