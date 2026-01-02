@@ -177,6 +177,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
     const photoInputRef = useRef<HTMLInputElement>(null);
+    const avatarInputRef = useRef<HTMLInputElement>(null);
     
     const [anamnesis, setAnamnesis] = useState<any>({
         has_allergy: false,
@@ -296,31 +297,51 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     const handleLoadTemplate = () => {
         if (!selectedTemplateId) return;
+        
         const template = templates.find(t => t.id === Number(selectedTemplateId));
-        if (template) {
-            let textToInsert = "";
-            
-            // Lógica Obrigatória: Parser de JSON para String Legível
-            if (Array.isArray(template.content)) {
-                textToInsert = template.content
-                    .map((item: any) => `• ${item.question || item.label || 'Campo'}\n   R: `)
-                    .join('\n\n');
-            } else if (typeof template.content === 'string') {
-                textToInsert = template.content;
-            }
+        if (!template) return;
 
-            const currentNotes = anamnesis.clinical_notes || '';
+        let textToInsert = "";
+        
+        // --- PARSER POLIMÓRFICO DE CONTEÚDO ---
+        
+        // CASO 1: Texto Puro / Contratos (String)
+        if (typeof template.content === 'string') {
+            // Limpeza de aspas extras e newlines escapadas típicas de JSONB strings
+            textToInsert = template.content
+                .replace(/^"|"$/g, '') 
+                .replace(/\\n/g, '\n')
+                .replace(/\\"/g, '"');
+        } 
+        // CASO 2: Lista de Perguntas (Array)
+        else if (Array.isArray(template.content)) {
+            textToInsert = template.content
+                .map((item: any) => `• ${item.question || item.label || 'Campo'}\n   R: `)
+                .join('\n\n');
+        }
+        // CASO 3: Objeto JSON Genérico
+        else if (typeof template.content === 'object' && template.content !== null) {
+            textToInsert = JSON.stringify(template.content, null, 2);
+        }
+
+        if (!textToInsert) {
+            setToast({ message: "Este modelo parece estar vazio ou em formato inválido.", type: 'error' });
+            return;
+        }
+
+        // --- ATUALIZAÇÃO DO ESTADO (APPEND INTELIGENTE) ---
+        setAnamnesis((prev: any) => {
+            const currentNotes = prev.clinical_notes || '';
             const divider = currentNotes.trim() ? '\n\n---\n\n' : '';
             
-            // Atualizar o Estado preservando o conteúdo existente (Append)
-            setAnamnesis((prev: any) => ({
+            return {
                 ...prev,
-                clinical_notes: (currentNotes ? currentNotes + divider : "") + textToInsert
-            }));
-            
-            setSelectedTemplateId('');
-            setToast({ message: "Modelo inserido!", type: 'success' });
-        }
+                clinical_notes: currentNotes + divider + textToInsert
+            };
+        });
+        
+        setSelectedTemplateId('');
+        setToast({ message: "Modelo inserido com sucesso!", type: 'success' });
     };
 
     const fetchPhotos = async () => {
@@ -393,6 +414,51 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         }
     };
 
+    // --- LOGICA DE UPLOAD DE AVATAR (FOTO DE PERFIL) ---
+    const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !formData.id) return;
+
+        setIsUploading(true);
+        try {
+            // 1. Criar nome único para o arquivo
+            const fileExt = file.name.split('.').pop();
+            const fileName = `avatar_${formData.id}_${Date.now()}.${fileExt}`;
+            const filePath = `${formData.id}/${fileName}`;
+
+            // 2. Upload para o bucket 'avatars'
+            const { error: uploadError } = await supabase.storage
+                .from('avatars')
+                .upload(filePath, file, { upsert: true });
+
+            if (uploadError) throw uploadError;
+
+            // 3. Obter URL Pública
+            const { data: { publicUrl } } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(filePath);
+
+            // 4. Atualizar imediatamente a tabela clients
+            const { error: dbError } = await supabase
+                .from('clients')
+                .update({ photo_url: publicUrl })
+                .eq('id', formData.id);
+
+            if (dbError) throw dbError;
+
+            // 5. Atualizar estado local
+            setFormData((prev: any) => ({ ...prev, photo_url: publicUrl }));
+            setToast({ message: "Foto de perfil atualizada!", type: 'success' });
+
+        } catch (err: any) {
+            console.error("Avatar Upload Error:", err);
+            setToast({ message: `Erro no upload: ${err.message}`, type: 'error' });
+        } finally {
+            setIsUploading(false);
+            if (avatarInputRef.current) avatarInputRef.current.value = '';
+        }
+    };
+
     const handleSave = async () => {
         if (!formData.nome) {
             setToast({ message: "Nome é obrigatório.", type: 'error' });
@@ -452,6 +518,15 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         <div className="fixed inset-0 bg-slate-100 z-[100] flex flex-col font-sans animate-in slide-in-from-right duration-300">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
+            {/* Input de Arquivo Oculto para o Avatar */}
+            <input 
+                type="file" 
+                ref={avatarInputRef} 
+                onChange={handlePhotoUpload} 
+                className="hidden" 
+                accept="image/*" 
+            />
+
             {/* HEADER */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col gap-6 shadow-sm z-10">
                 <div className="flex items-center justify-between">
@@ -482,8 +557,27 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
                 <div className="flex items-center gap-5">
                     <div className="relative group">
-                        <div className={`w-20 h-20 rounded-[24px] flex items-center justify-center text-2xl font-black border-4 border-white shadow-xl overflow-hidden transition-all ${isEditing ? 'cursor-pointer ring-2 ring-orange-100' : ''} ${formData.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}`}>
-                            {formData.photo_url ? <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" /> : formData.nome?.charAt(0) || '?'}
+                        {/* Avatar Clicável com Overlay de Câmera */}
+                        <div 
+                            onClick={() => isEditing && avatarInputRef.current?.click()}
+                            className={`w-20 h-20 rounded-[24px] flex items-center justify-center text-2xl font-black border-4 border-white shadow-xl overflow-hidden transition-all relative
+                                ${isEditing ? 'cursor-pointer hover:ring-4 hover:ring-orange-100 group' : ''} 
+                                ${formData.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}
+                                ${isUploading ? 'opacity-50' : 'opacity-100'}
+                            `}
+                        >
+                            {formData.photo_url ? (
+                                <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" />
+                            ) : (
+                                formData.nome?.charAt(0) || '?'
+                            )}
+                            
+                            {/* Overlay de Edição */}
+                            {isEditing && (
+                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {isUploading ? <Loader2 className="text-white animate-spin" size={20} /> : <Camera className="text-white" size={20} />}
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -633,14 +727,14 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     <div className="pt-4 space-y-4">
                                         <div className="flex flex-col sm:flex-row items-end gap-3 p-4 bg-orange-50 rounded-2xl border border-orange-100">
                                             <div className="flex-1 w-full space-y-1.5">
-                                                <label className="text-[10px] font-black text-orange-600 uppercase tracking-widest ml-1">Carregar Modelo de Ficha</label>
+                                                <label className="text-[10px] font-black text-orange-600 uppercase tracking-widest ml-1">Carregar Modelo de Ficha ou Contrato</label>
                                                 <div className="relative">
                                                     <select 
                                                         value={selectedTemplateId}
                                                         onChange={(e) => setSelectedTemplateId(e.target.value)}
                                                         className="w-full bg-white border border-orange-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none appearance-none focus:ring-2 focus:ring-orange-200"
                                                     >
-                                                        <option value="">Selecione um roteiro...</option>
+                                                        <option value="">Selecione um roteiro ou contrato...</option>
                                                         {templates.map(t => (
                                                             <option key={t.id} value={t.id}>{t.name}</option>
                                                         ))}
@@ -654,13 +748,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         </div>
 
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Observações Clínicas</label>
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Observações Clínicas / Contrato</label>
                                             <textarea 
                                                 value={anamnesis.clinical_notes}
                                                 onChange={(e) => setAnamnesis({...anamnesis, clinical_notes: e.target.value})}
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-orange-100"
-                                                rows={8}
-                                                placeholder="Anotações internas..."
+                                                rows={12}
+                                                placeholder="Anotações internas ou corpo do contrato assinado..."
                                             />
                                         </div>
                                     </div>
