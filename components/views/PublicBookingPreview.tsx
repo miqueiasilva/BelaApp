@@ -24,13 +24,13 @@ const ServiceItem = ({ service, isSelected, onToggle }: any) => (
         className={`p-4 flex justify-between items-center border-b border-slate-50 last:border-0 cursor-pointer transition-all active:scale-[0.98] ${isSelected ? 'bg-orange-50/50' : 'hover:bg-slate-50'}`}
     >
         <div className="flex-1 pr-4">
-            <h4 className="font-bold text-slate-800 text-sm">{service.name}</h4>
+            <h4 className="font-bold text-slate-800 text-sm">{service.nome || service.name}</h4>
             <div className="flex items-center gap-3 mt-1">
                 <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">
                     <Clock size={10} /> {service.duracao_min} min
                 </span>
                 <span className="text-orange-600 font-black text-sm">
-                    R$ {service.preco.toFixed(2)}
+                    R$ {Number(service.preco).toFixed(2)}
                 </span>
             </div>
         </div>
@@ -127,6 +127,7 @@ const PublicBookingPreview: React.FC = () => {
         const loadPageData = async () => {
             setLoading(true);
             try {
+                // Sincronização com os dados reais de studio_settings
                 const { data: studioData } = await supabase.from('studio_settings').select('*').maybeSingle();
                 if (studioData) setStudio(studioData);
 
@@ -239,20 +240,16 @@ const PublicBookingPreview: React.FC = () => {
         }
     }, [selectedDate, selectedProfessional, bookingStep]);
 
-    // --- FUNCIONALIDADE: Find or Create Client (Data Integrity) ---
     const handleSubmitBooking = async () => {
         if (!clientName || !clientPhone || !selectedTime) return;
         setIsFinalizing(true);
 
         try {
-            // 1. Sanitização rigorosa do telefone (Apenas dígitos)
             const cleanPhone = clientPhone.replace(/\D/g, '');
-            
             if (cleanPhone.length < 10) {
                 throw new Error("Por favor, informe um WhatsApp válido com DDD.");
             }
 
-            // 2. Busca (Check): Verificar existência para evitar duplicidade
             const { data: existingClient, error: findError } = await supabase
                 .from('clients')
                 .select('id, nome')
@@ -262,16 +259,12 @@ const PublicBookingPreview: React.FC = () => {
             if (findError) throw findError;
 
             let clientId: number;
-
-            // 3. Decisão: Find or Create
             if (existingClient) {
                 clientId = existingClient.id;
-                // Opcional: Atualizar nome se for diferente (mantém cadastro atualizado)
                 if (existingClient.nome !== clientName) {
                     await supabase.from('clients').update({ nome: clientName }).eq('id', clientId);
                 }
             } else {
-                // Cadastro de Novo Cliente
                 const { data: newClient, error: clientErr } = await supabase
                     .from('clients')
                     .insert([{ 
@@ -287,16 +280,14 @@ const PublicBookingPreview: React.FC = () => {
                 clientId = newClient.id;
             }
 
-            // 4. Preparação do Agendamento
             const [h, m] = selectedTime.split(':').map(Number);
             const appointmentDate = new Date(selectedDate);
             appointmentDate.setHours(h, m, 0, 0);
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
-            const totalValue = selectedServices.reduce((acc, s) => acc + s.preco, 0);
-            const serviceNames = selectedServices.map(s => s.name).join(' + ');
+            const totalValue = selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
+            const serviceNames = selectedServices.map(s => s.nome || s.name).join(' + ');
 
-            // 5. Persistência do Agendamento vinculado ao ID único
             const { error: apptErr } = await supabase
                 .from('appointments')
                 .insert([{
@@ -314,10 +305,9 @@ const PublicBookingPreview: React.FC = () => {
                 }]);
 
             if (apptErr) throw apptErr;
-
             setBookingSuccess(true);
         } catch (e: any) {
-            alert(`Falha na integridade dos dados: ${e.message}`);
+            alert(`Falha no agendamento: ${e.message}`);
         } finally {
             setIsFinalizing(false);
         }
@@ -337,7 +327,7 @@ const PublicBookingPreview: React.FC = () => {
     }, [services, popularServiceIds]);
 
     const totalPrice = useMemo(() => {
-        return selectedServices.reduce((acc, s) => acc + s.preco, 0);
+        return selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
     }, [selectedServices]);
 
     const toggleService = (service: any) => {
@@ -362,12 +352,12 @@ const PublicBookingPreview: React.FC = () => {
     return (
         <div className="min-h-screen bg-slate-50 font-sans relative pb-40">
             
-            {/* HEADER */}
+            {/* HEADER DINÂMICO COM DADOS DO BANCO */}
             <div className="relative h-48 md:h-64 bg-slate-900">
                 <img 
-                    src={studio?.cover_image_url || DEFAULT_COVER} 
-                    className="w-full h-full object-cover opacity-50"
-                    alt="Banner"
+                    src={studio?.cover_url || DEFAULT_COVER} 
+                    className="w-full h-full object-cover opacity-60"
+                    alt="Banner do Estúdio"
                 />
                 <button 
                     onClick={() => setIsClientAppsOpen(true)}
@@ -380,26 +370,35 @@ const PublicBookingPreview: React.FC = () => {
 
             <div className="max-w-xl mx-auto px-6 -mt-16 relative z-10 text-center">
                 <div className="bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 flex flex-col items-center">
-                    <div className="w-24 h-24 rounded-3xl bg-white border-4 border-white shadow-xl -mt-20 overflow-hidden mb-4">
-                        <img src={studio?.logo_image_url || DEFAULT_LOGO} className="w-full h-full object-cover" alt="Logo" />
+                    <div className="w-24 h-24 rounded-3xl bg-white border-4 border-white shadow-xl -mt-20 overflow-hidden mb-4 flex items-center justify-center">
+                        {studio?.profile_url ? (
+                            <img src={studio.profile_url} className="w-full h-full object-cover" alt="Logo do Estúdio" />
+                        ) : (
+                            <div className="w-full h-full bg-orange-100 text-orange-500 flex items-center justify-center font-black text-2xl">
+                                {studio?.studio_name?.charAt(0) || 'B'}
+                            </div>
+                        )}
                     </div>
                     <h1 className="text-2xl font-black text-slate-800 leading-tight">
-                        {studio?.studio_name || "Seu Estúdio"}
+                        {studio?.studio_name || "Nome do Estúdio"}
                     </h1>
-                    <div className="flex items-center gap-3 mt-2 text-slate-400 justify-center">
+                    <div className="flex flex-col items-center gap-2 mt-2 text-slate-400">
                         <div className="flex items-center gap-1 text-amber-400 font-bold">
                             <Star size={14} fill="currentColor" /> 5.0
                         </div>
-                        <span className="text-slate-200">|</span>
-                        <div className="flex items-center gap-1 text-xs font-medium">
-                            <MapPin size={14} className="text-orange-500" /> 
-                            {studio?.address || "Endereço não informado"}
+                        <div className="flex items-center gap-1 text-xs font-bold text-slate-500 leading-tight">
+                            <MapPin size={14} className="text-orange-500 flex-shrink-0" /> 
+                            <span className="max-w-xs">
+                                {studio?.address_street 
+                                    ? `${studio.address_street}${studio.address_number ? `, ${studio.address_number}` : ''}${studio.address_neighborhood ? ` - ${studio.address_neighborhood}` : ''}`
+                                    : "Endereço não informado"}
+                            </span>
                         </div>
                     </div>
                 </div>
 
                 <div className="mt-8 space-y-2 text-left">
-                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-2">Escolha os serviços</h2>
+                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-2">Serviços Disponíveis</h2>
                     {Object.entries(servicesByCategory).map(([cat, items]) => (
                         <AccordionCategory 
                             key={cat}
@@ -432,7 +431,7 @@ const PublicBookingPreview: React.FC = () => {
                 </div>
             )}
 
-            {/* MODAL DE AGENDAMENTO */}
+            {/* MODAL DE AGENDAMENTO (Mantém lógica original mas com interface polida) */}
             {isBookingOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
@@ -501,7 +500,7 @@ const PublicBookingPreview: React.FC = () => {
                                                 <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Selecione o Dia</h4>
                                                 <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
                                                     {nextDays.map((date) => {
-                                                        const isClosed = !studio.business_hours?.[weekdayMap[getDay(date)]]?.active;
+                                                        const isClosed = !studio?.business_hours?.[weekdayMap[getDay(date)]]?.active;
                                                         const isSelected = isSameDay(date, selectedDate);
                                                         return (
                                                             <button
@@ -580,8 +579,8 @@ const PublicBookingPreview: React.FC = () => {
                                                 <div className="space-y-3">
                                                     {selectedServices.map(s => (
                                                         <div key={s.id} className="flex justify-between items-center text-sm font-bold text-slate-600">
-                                                            <span>{s.name}</span>
-                                                            <span>R$ {s.preco.toFixed(2)}</span>
+                                                            <span>{s.nome || s.name}</span>
+                                                            <span>R$ {Number(s.preco).toFixed(2)}</span>
                                                         </div>
                                                     ))}
                                                     <div className="pt-3 border-t border-slate-50 flex justify-between items-center">
