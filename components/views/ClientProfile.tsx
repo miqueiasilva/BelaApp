@@ -17,14 +17,29 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
 
+// --- Função Auxiliar Obrigatória: Base64 para Blob ---
+const dataURLtoBlob = (dataURL: string) => {
+  const arr = dataURL.split(',');
+  const mimeMatch = arr[0].match(/:(.*?);/);
+  if (!mimeMatch) return null;
+  const mime = mimeMatch[1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], { type: mime });
+};
+
 interface ClientProfileProps {
     client: Client;
     onClose: () => void;
     onSave: (client: any) => Promise<void>;
 }
 
-// --- Componente Interno: Assinatura Digital ---
-const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSaving: boolean }) => {
+// --- Componente Interno: Assinatura Digital Corrigido ---
+const SignaturePad = ({ onSave, isSaving }: { onSave: (dataUrl: string) => void, isSaving: boolean }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [isEmpty, setIsEmpty] = useState(true);
@@ -91,13 +106,13 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSa
     };
 
     const handleConfirm = () => {
-        if (isEmpty) {
+        if (isEmpty || !canvasRef.current) {
             alert("Por favor, assine antes de confirmar.");
             return;
         }
-        canvasRef.current?.toBlob((blob) => {
-            if (blob) onSave(blob);
-        }, 'image/png');
+        // Captura o dataURL (base64) para enviar ao pai
+        const dataUrl = canvasRef.current.toDataURL('image/png');
+        onSave(dataUrl);
     };
 
     return (
@@ -116,7 +131,7 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSa
                     onTouchEnd={() => setIsDrawing(false)}
                 />
                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-none text-[8px] font-black text-slate-300 uppercase tracking-[0.4em] z-0">
-                    Documento Assinado Digitalmente via BelaFlow
+                    Documento Assinado Digitalmente via BelareStudio
                 </div>
             </div>
             <div className="flex gap-2">
@@ -163,7 +178,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     
     const photoInputRef = useRef<HTMLInputElement>(null);
     
-    // States: Anamnese
     const [anamnesis, setAnamnesis] = useState<any>({
         has_allergy: false,
         allergy_details: '',
@@ -178,7 +192,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
     const [photos, setPhotos] = useState<any[]>([]);
 
-    // --- Modelo de Estado Sincronizado com os Campos do Formulário ---
     const [formData, setFormData] = useState<any>({
         id: null,
         nome: '',
@@ -204,10 +217,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         observacoes: ''
     });
 
-    /**
-     * FIX: Hidratação imediata do Formulário (Data Binding)
-     * Monitora a prop 'client' e mapeia campos nulos para strings vazias.
-     */
     useEffect(() => {
         if (client) {
             setFormData({
@@ -239,7 +248,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 fetchAnamnesis();
                 fetchPhotos();
                 fetchTemplates();
-                // Sincronização secundária com o servidor para garantir dados frescos
                 refreshClientData();
             }
         }
@@ -275,29 +283,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             });
         }
     };
-
-    // Busca automática de CEP
-    useEffect(() => {
-        const fetchAddress = async () => {
-            const cleanCep = formData.cep?.replace(/\D/g, '');
-            if (cleanCep?.length === 8) {
-                try {
-                    const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
-                    const data = await res.json();
-                    if (!data.erro) {
-                        setFormData((prev: any) => ({
-                            ...prev,
-                            endereco: data.logradouro,
-                            bairro: data.bairro,
-                            cidade: data.localidade,
-                            estado: data.uf
-                        }));
-                    }
-                } catch (e) { console.error("Erro CEP"); }
-            }
-        };
-        fetchAddress();
-    }, [formData.cep]);
 
     const fetchAnamnesis = async () => {
         const { data } = await supabase.from('client_anamnesis').select('*').eq('client_id', client.id).maybeSingle();
@@ -342,21 +327,55 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         else setToast({ message: "Erro na anamnese.", type: 'error' });
     };
 
-    const handleSaveSignature = async (blob: Blob) => {
+    // --- LOGICA DE SALVAMENTO DE ASSINATURA CORRIGIDA (UPLOAD ROBUSTO) ---
+    const handleSaveSignature = async (dataUrl: string) => {
         if (!client.id) return;
         setIsSaving(true);
+        
         try {
+            // 1. Converter Base64 para Blob
+            const blob = dataURLtoBlob(dataUrl);
+            if (!blob) throw new Error("Falha ao processar imagem da assinatura.");
+
+            // 2. Criar Nome Único
             const fileName = `sig_${client.id}_${Date.now()}.png`;
-            const { error: uploadError } = await supabase.storage.from('signatures').upload(fileName, blob, { contentType: 'image/png' });
+
+            // 3. Upload Robusto com Metadados Corretos
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('signatures')
+                .upload(fileName, blob, { 
+                    contentType: 'image/png',
+                    upsert: true 
+                });
+
             if (uploadError) throw uploadError;
-            const { data: { publicUrl } } = supabase.storage.from('signatures').getPublicUrl(fileName);
+
+            // 4. Obter URL Pública
+            const { data: { publicUrl } } = supabase.storage
+                .from('signatures')
+                .getPublicUrl(fileName);
+
             const timestamp = new Date().toISOString();
-            await supabase.from('client_anamnesis').update({ signature_url: publicUrl, signed_at: timestamp }).eq('client_id', client.id);
+
+            // 5. Salvar na Tabela de Anamnese
+            const { error: dbError } = await supabase
+                .from('client_anamnesis')
+                .upsert({ 
+                    client_id: client.id,
+                    signature_url: publicUrl, 
+                    signed_at: timestamp 
+                });
+
+            if (dbError) throw dbError;
+
             setAnamnesis(prev => ({ ...prev, signature_url: publicUrl, signed_at: timestamp }));
-            setToast({ message: "Assinatura vinculada!", type: 'success' });
+            setToast({ message: "Assinatura vinculada com sucesso!", type: 'success' });
         } catch (e: any) {
-            setToast({ message: "Erro na assinatura.", type: 'error' });
-        } finally { setIsSaving(false); }
+            console.error("Signature Save Error:", e);
+            setToast({ message: `Erro ao salvar assinatura: ${e.message}`, type: 'error' });
+        } finally { 
+            setIsSaving(false); 
+        }
     };
 
     const handleSave = async () => {
@@ -689,6 +708,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 }} />
                             </header>
 
+                            {/* Resto da galeria mantido igual */}
                             {photos.length === 0 ? (
                                 <div className="bg-white rounded-[32px] p-20 text-center border-2 border-dashed border-slate-100">
                                     <ImageIcon size={48} className="mx-auto text-slate-100 mb-4" />
