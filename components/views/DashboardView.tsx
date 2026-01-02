@@ -5,7 +5,7 @@ import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import WeeklyChart from '../charts/WeeklyChart';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, ChevronRight, CalendarRange } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, ChevronRight, CalendarRange, Filter as FilterIcon } from 'lucide-react';
 import { format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isSameDay, parseISO } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
@@ -54,6 +54,10 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [filter, setFilter] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('hoje');
     const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
+    
+    // Estados temporários para o filtro personalizado (UX de confirmação)
+    const [tempStart, setTempStart] = useState(customStart);
+    const [tempEnd, setTempEnd] = useState(customEnd);
 
     const dateRange = useMemo(() => {
         const now = new Date();
@@ -80,7 +84,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 return {
                     start: startOfDay(parseISO(customStart)).toISOString(),
                     end: endOfDay(parseISO(customEnd)).toISOString(),
-                    label: 'Período Personalizado'
+                    label: `Período: ${format(parseISO(customStart), 'dd/MM')} a ${format(parseISO(customEnd), 'dd/MM')}`
                 };
             default:
                 return { 
@@ -99,7 +103,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             try {
                 if (mounted) setIsLoading(true);
 
-                // 1. Agendamentos no PERÍODO SELECIONADO
+                // 1. Agendamentos no PERÍODO SELECIONADO para os Cards principais
                 const { data: appts, error: apptsError } = await supabase
                     .from('appointments')
                     .select('*')
@@ -110,28 +114,33 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (apptsError) throw apptsError;
                 if (mounted) setAppointments(appts || []);
 
-                // 2. Dados específicos para o card de Meta Mensal (Sempre do mês atual acumulado)
+                // 2. Dados específicos para o card de Meta (Sempre focado no MÊS ATUAL acumulado)
                 const now = new Date();
-                const startMonth = startOfMonth(now).toISOString();
-                const endMonth = endOfMonth(now).toISOString();
+                const startMonthStr = startOfMonth(now).toISOString();
+                const endMonthStr = endOfMonth(now).toISOString();
                 
-                const { data: monthData } = await supabase
+                const { data: monthData, error: monthError } = await supabase
                     .from('appointments')
                     .select('value')
                     .eq('status', 'concluido')
-                    .gte('date', startMonth)
-                    .lte('date', endMonth);
+                    .gte('date', startMonthStr)
+                    .lte('date', endMonthStr);
+                
+                if (monthError) throw monthError;
                 
                 const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
 
-                // 3. Busca meta real do estúdio (revenue_goal)
-                const { data: settings } = await supabase
+                // 3. Busca meta configurada em studio_settings (revenue_goal)
+                const { data: settings, error: settingsError } = await supabase
                     .from('studio_settings')
                     .select('revenue_goal')
                     .maybeSingle();
                 
-                if (mounted) setMonthlyGoal(settings?.revenue_goal || 0);
+                if (settingsError) throw settingsError;
+                
+                const goal = settings?.revenue_goal || 5000;
+                if (mounted) setMonthlyGoal(goal);
 
             } catch (e) {
                 console.error("Erro crítico ao sincronizar dashboard:", e);
@@ -145,9 +154,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         return () => {
             mounted = false;
         };
-    }, [dateRange]); // Recarrega sempre que o intervalo de data mudar
+    }, [dateRange]);
 
-    // KPIs Dinâmicos baseados no filtro
+    // KPIs Dinâmicos baseados no filtro selecionado (Hoje, 7 Dias, etc)
     const kpis = useMemo(() => {
         const revenue = appointments
             .filter(a => a.status === 'concluido')
@@ -159,13 +168,19 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         return { revenue, scheduled, completed };
     }, [appointments]);
 
-    const goalPercent = useMemo(() => {
-        if (monthlyGoal <= 0) return 0;
-        // Cálculo da porcentagem real sem limite para o texto, mas com limite de 100 para a barra
-        return Math.round((monthRevenueTotal / monthlyGoal) * 100);
+    const goalProgress = useMemo(() => {
+        if (monthlyGoal <= 0) return { percent: 0, visual: 0 };
+        const percent = (monthRevenueTotal / monthlyGoal) * 100;
+        return {
+            percent: percent.toFixed(1),
+            visual: Math.min(100, percent)
+        };
     }, [monthRevenueTotal, monthlyGoal]);
 
-    const visualProgress = useMemo(() => Math.min(100, goalPercent), [goalPercent]);
+    const handleApplyCustomFilter = () => {
+        setCustomStart(tempStart);
+        setCustomEnd(tempEnd);
+    };
 
     if (isLoading) {
         return (
@@ -193,30 +208,30 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4">
-                    {/* Filtro de Período UI */}
+                    {/* Filtro de Período UI - Senior UX Pill Style */}
                     <div className="flex flex-col gap-2 items-end">
-                        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+                        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                             <button 
                                 onClick={() => setFilter('hoje')}
-                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'hoje' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'hoje' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
                             >
                                 Hoje
                             </button>
                             <button 
                                 onClick={() => setFilter('semana')}
-                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'semana' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'semana' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
                             >
                                 7 Dias
                             </button>
                             <button 
                                 onClick={() => setFilter('mes')}
-                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'mes' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'mes' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
                             >
                                 Mês
                             </button>
                             <button 
                                 onClick={() => setFilter('custom')}
-                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'custom' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'custom' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
                             >
                                 <span className="flex items-center gap-1"><CalendarRange size={12} /> Personalizado</span>
                             </button>
@@ -224,24 +239,31 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
                         {filter === 'custom' && (
                             <div className="flex items-center gap-2 animate-in slide-in-from-top-2 duration-300">
-                                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
                                     <span className="text-[9px] font-black text-slate-400 uppercase">De:</span>
                                     <input 
                                         type="date" 
-                                        value={customStart} 
-                                        onChange={(e) => setCustomStart(e.target.value)}
-                                        className="text-[10px] font-bold text-slate-700 outline-none"
+                                        value={tempStart} 
+                                        onChange={(e) => setTempStart(e.target.value)}
+                                        className="text-[11px] font-bold text-slate-700 outline-none"
                                     />
                                 </div>
-                                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
                                     <span className="text-[9px] font-black text-slate-400 uppercase">Até:</span>
                                     <input 
                                         type="date" 
-                                        value={customEnd} 
-                                        onChange={(e) => setCustomEnd(e.target.value)}
-                                        className="text-[10px] font-bold text-slate-700 outline-none"
+                                        value={tempEnd} 
+                                        onChange={(e) => setTempEnd(e.target.value)}
+                                        className="text-[11px] font-bold text-slate-700 outline-none"
                                     />
                                 </div>
+                                <button 
+                                    onClick={handleApplyCustomFilter}
+                                    className="bg-orange-500 hover:bg-orange-600 text-white p-2 rounded-xl shadow-lg shadow-orange-100 transition-all active:scale-90"
+                                    title="Aplicar Filtro"
+                                >
+                                    <FilterIcon size={16} />
+                                </button>
                             </div>
                         )}
                     </div>
@@ -275,20 +297,26 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     subtext="Finalizados"
                 />
                 
-                <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group h-full">
+                <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group h-full transition-all hover:shadow-xl hover:shadow-slate-200">
                     <div className="flex justify-between items-start z-10">
                         <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Meta Mensal</p>
                         <TrendingUp size={12} className="text-orange-400" />
                     </div>
                     <div className="mt-2 z-10">
                         <div className="flex items-end justify-between mb-2">
-                            <h3 className="text-2xl font-black">{goalPercent}%</h3>
+                            <h3 className="text-2xl font-black">{goalProgress.percent}%</h3>
                             <span className="text-[10px] font-bold opacity-60">alvo: {formatCurrency(monthlyGoal)}</span>
                         </div>
                         <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mb-1">
-                            <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${visualProgress}%` }} />
+                            <div 
+                                className="h-full bg-orange-500 transition-all duration-1000 ease-out" 
+                                style={{ width: `${goalProgress.visual}%` }} 
+                            />
                         </div>
-                        <p className="text-[8px] font-black uppercase tracking-tighter opacity-40 mt-1">Acumulado do mês corrente</p>
+                        <p className="text-[8px] font-black uppercase tracking-tighter opacity-40 mt-1">Sincronizado com fechamentos do mês</p>
+                    </div>
+                    <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                        <TrendingUp size={100} />
                     </div>
                 </div>
             </div>
@@ -315,7 +343,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
 
                 <div className="lg:col-span-1">
-                    {/* Widget da timeline sempre focado no dia atual para controle operacional */}
                     <TodayScheduleWidget 
                         onNavigate={onNavigate} 
                         appointments={appointments.filter(a => isSameDay(new Date(a.date), new Date()))} 
