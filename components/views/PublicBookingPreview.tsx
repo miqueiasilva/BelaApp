@@ -112,7 +112,7 @@ const PublicBookingPreview: React.FC = () => {
     // Regras de Agendamento Dinâmicas
     const [rules, setRules] = useState({
         windowDays: 30,
-        minNoticeMinutes: 120, // 2 horas padrão
+        minNoticeMinutes: 120, 
         cancellationHours: 24
     });
 
@@ -135,9 +135,9 @@ const PublicBookingPreview: React.FC = () => {
         0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'
     };
 
-    // Função de Geração de Datas (Explícita e Auditável)
-    const generateAvailableDates = (limit: number) => {
-        console.log(`[BelaFlow] Gerando horizonte de agendamento: ${limit} dias.`);
+    // 1. Função de Geração de Datas (Lógica Requisitada)
+    const generateDates = (limit: number) => {
+        console.log("Gerando datas com limite de:", limit);
         const dates = [];
         const today = startOfDay(new Date());
         for (let i = 0; i < limit; i++) {
@@ -147,29 +147,24 @@ const PublicBookingPreview: React.FC = () => {
     };
 
     useEffect(() => {
-        const loadPageData = async () => {
+        const fetchRulesAndData = async () => {
             setLoading(true);
             try {
-                // 1. Busca Robusta de Configurações
+                // 2. Fetch Unificado (Busca e Regenera)
                 const { data: studioData } = await supabase
                     .from('studio_settings')
                     .select('*')
                     .limit(1)
                     .maybeSingle();
 
-                let currentWindow = 30;
+                let currentWindow = 30; // Fallback seguro
 
                 if (studioData) {
                     setStudio(studioData);
 
-                    // LOGICA OBRIGATÓRIA: Interpretação de Antecedência
-                    // Se o valor for < 48, assumimos que são HORAS e convertemos para MINUTOS
+                    // Lógica de Antecedência (Horas p/ Minutos)
                     let rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
-                    let finalNoticeMinutes = rawNotice;
-                    
-                    if (rawNotice < 48) {
-                        finalNoticeMinutes = rawNotice * 60;
-                    }
+                    let finalNoticeMinutes = rawNotice < 48 ? rawNotice * 60 : rawNotice;
 
                     currentWindow = parseInt(studioData.max_scheduling_window || '30', 10);
 
@@ -180,8 +175,8 @@ const PublicBookingPreview: React.FC = () => {
                     });
                 }
 
-                // Dispara geração de datas imediatamente após as regras serem definidas
-                generateAvailableDates(currentWindow);
+                // O PULO DO GATO: Gera imediatamente com o valor carregado
+                generateDates(currentWindow);
 
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
                 if (servicesData) setServices(servicesData);
@@ -211,16 +206,16 @@ const PublicBookingPreview: React.FC = () => {
                 }
 
             } catch (e) {
-                console.error("Erro ao carregar dados públicos", e);
-                generateAvailableDates(30); // Fallback
+                console.error("Erro ao buscar regras:", e);
+                generateDates(30); // Fallback em caso de erro
             } finally {
                 setLoading(false);
             }
         };
-        loadPageData();
+        fetchRulesAndData();
     }, []);
 
-    // --- LOGICA DE FILTRAGEM DE HORÁRIOS (Antecedência com Precisão) ---
+    // --- FILTRAGEM DE HORÁRIOS ---
     const generateAvailableSlots = async (date: Date, professional: any) => {
         if (!studio || selectedServices.length === 0) return;
         setIsLoadingSlots(true);
@@ -236,8 +231,6 @@ const PublicBookingPreview: React.FC = () => {
             }
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
-            
-            // Cálculo do Horário Limite (Agora + Antecedência)
             const now = new Date();
             const minTimeLimit = addMinutes(now, rules.minNoticeMinutes);
 
@@ -260,7 +253,6 @@ const PublicBookingPreview: React.FC = () => {
             endLimit.setHours(endH, endM, 0, 0);
 
             while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
-                // Filtro: Bloqueia horários que desrespeitam a antecedência mínima (Lead Time)
                 if (isSameDay(date, now)) {
                     if (isBefore(currentPointer, minTimeLimit)) {
                         currentPointer = addMinutes(currentPointer, 30);
@@ -268,7 +260,6 @@ const PublicBookingPreview: React.FC = () => {
                     }
                 }
 
-                // Verificação de conflitos na agenda existente
                 const hasOverlap = busyAppointments?.some(app => {
                     const appStart = parseISO(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
@@ -302,37 +293,22 @@ const PublicBookingPreview: React.FC = () => {
 
         try {
             const cleanPhone = clientPhone.replace(/\D/g, '');
-            if (cleanPhone.length < 10) {
-                throw new Error("Por favor, informe um WhatsApp válido com DDD.");
-            }
+            if (cleanPhone.length < 10) throw new Error("Informe um WhatsApp válido.");
 
-            const { data: existingClient, error: findError } = await supabase
+            const { data: existingClient } = await supabase
                 .from('clients')
                 .select('id, nome')
                 .eq('whatsapp', cleanPhone)
                 .maybeSingle();
 
-            if (findError) throw findError;
-
             let clientId: number;
             if (existingClient) {
                 clientId = existingClient.id;
-                if (existingClient.nome !== clientName) {
-                    await supabase.from('clients').update({ nome: clientName }).eq('id', clientId);
-                }
             } else {
-                const { data: newClient, error: clientErr } = await supabase
+                const { data: newClient } = await supabase
                     .from('clients')
-                    .insert([{ 
-                        nome: clientName, 
-                        whatsapp: cleanPhone, 
-                        consent: true, 
-                        origem: 'Link Público' 
-                    }])
-                    .select()
-                    .single();
-                
-                if (clientErr) throw clientErr;
+                    .insert([{ nome: clientName, whatsapp: cleanPhone, consent: true, origem: 'Link Público' }])
+                    .select().single();
                 clientId = newClient.id;
             }
 
@@ -404,7 +380,6 @@ const PublicBookingPreview: React.FC = () => {
     return (
         <div className="min-h-screen bg-slate-50 font-sans relative pb-40 text-left">
             
-            {/* BOTÃO VOLTAR (Protegido por Autenticação) */}
             {user && (
                 <button 
                     onClick={() => window.location.hash = '#/'}
@@ -415,23 +390,11 @@ const PublicBookingPreview: React.FC = () => {
                 </button>
             )}
 
-            {/* CONTAINER DO BANNER (CORREÇÃO MOBILE) */}
             <div 
                 className="relative w-full h-56 md:h-72 lg:h-96 bg-slate-200 bg-cover bg-center transition-all duration-500 overflow-hidden"
-                style={{ 
-                    backgroundImage: `url(${studio?.cover_url || DEFAULT_COVER})` 
-                }}
+                style={{ backgroundImage: `url(${studio?.cover_url || DEFAULT_COVER})` }}
             >
-                {/* Overlay para contraste e leitura */}
                 <div className="absolute inset-0 bg-slate-900/30"></div>
-
-                {/* Placeholder case a imagem falhe */}
-                {!studio?.cover_url && !DEFAULT_COVER && (
-                    <div className="flex items-center justify-center h-full text-slate-400">
-                        <ImageIcon size={48} />
-                    </div>
-                )}
-
                 <button 
                     onClick={() => setIsClientAppsOpen(true)}
                     className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl z-20"
@@ -445,27 +408,17 @@ const PublicBookingPreview: React.FC = () => {
                 <div className="bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 flex flex-col items-center">
                     <div className="w-24 h-24 rounded-[28px] bg-white border-4 border-white shadow-xl -mt-20 overflow-hidden mb-4 flex items-center justify-center">
                         {studio?.profile_url ? (
-                            <img src={studio.profile_url} className="w-full h-full object-cover" alt="Logo do Estúdio" />
+                            <img src={studio.profile_url} className="w-full h-full object-cover" alt="Logo" />
                         ) : (
-                            <div className="w-full h-full bg-orange-100 text-orange-500 flex items-center justify-center font-black text-2xl">
-                                {studio?.studio_name?.charAt(0) || 'B'}
-                            </div>
+                            <div className="w-full h-full bg-orange-100 text-orange-50 flex items-center justify-center font-black text-2xl">{studio?.studio_name?.charAt(0) || 'B'}</div>
                         )}
                     </div>
-                    <h1 className="text-2xl font-black text-slate-800 leading-tight">
-                        {studio?.studio_name || "Seu Estúdio de Beleza"}
-                    </h1>
+                    <h1 className="text-2xl font-black text-slate-800 leading-tight">{studio?.studio_name || "Seu Estúdio de Beleza"}</h1>
                     <div className="flex flex-col items-center gap-2 mt-2 text-slate-400">
-                        <div className="flex items-center gap-1 text-amber-400 font-bold">
-                            <Star size={14} fill="currentColor" /> 5.0
-                        </div>
+                        <div className="flex items-center gap-1 text-amber-400 font-bold"><Star size={14} fill="currentColor" /> 5.0</div>
                         <div className="flex items-center gap-1 text-xs font-bold text-slate-500 leading-tight">
-                            <MapPin size={14} className="text-orange-500 flex-shrink-0" /> 
-                            <span className="max-w-xs">
-                                {studio?.address_street 
-                                    ? `${studio.address_street}${studio.address_number ? `, ${studio.address_number}` : ''}${studio.address_neighborhood ? ` - ${studio.address_neighborhood}` : ''}`
-                                    : "Endereço não informado"}
-                            </span>
+                            <MapPin size={14} className="text-orange-500" /> 
+                            <span>{studio?.address_street ? `${studio.address_street}, ${studio.address_number || ''}` : "Endereço não informado"}</span>
                         </div>
                     </div>
                 </div>
@@ -474,11 +427,8 @@ const PublicBookingPreview: React.FC = () => {
                     <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-2">Serviços Disponíveis</h2>
                     {Object.entries(servicesByCategory).map(([cat, items]) => (
                         <AccordionCategory 
-                            key={cat}
-                            category={cat}
-                            services={items}
-                            selectedIds={selectedServices.map(s => s.id)}
-                            onToggleService={toggleService}
+                            key={cat} category={cat} services={items} 
+                            selectedIds={selectedServices.map(s => s.id)} onToggleService={toggleService}
                             defaultOpen={cat === '⭐ Mais Populares'} 
                         />
                     ))}
@@ -489,50 +439,29 @@ const PublicBookingPreview: React.FC = () => {
                 <div className="fixed bottom-0 left-0 right-0 p-6 z-40 bg-gradient-to-t from-white via-white to-white/80 backdrop-blur-md border-t border-slate-100 animate-in slide-in-from-bottom-full duration-500">
                     <div className="max-w-xl mx-auto flex items-center justify-between gap-6">
                         <div className="flex-1">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                {selectedServices.length} selecionados
-                            </p>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{selectedServices.length} selecionados</p>
                             <p className="text-xl font-black text-slate-800">Total R$ {totalPrice.toFixed(2)}</p>
                         </div>
-                        <button 
-                            onClick={() => { setIsBookingOpen(true); setBookingStep(1); }}
-                            className="bg-orange-50 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-orange-100 flex items-center gap-2 transition-all active:scale-95"
-                        >
-                            Continuar <ArrowRight size={20} />
-                        </button>
+                        <button onClick={() => { setIsBookingOpen(true); setBookingStep(1); }} className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl flex items-center gap-2 transition-all active:scale-95">Continuar <ArrowRight size={20} /></button>
                     </div>
                 </div>
             )}
 
-            {/* MODAL DE AGENDAMENTO */}
             {isBookingOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
-                        
                         {bookingSuccess ? (
                             <div className="p-12 text-center flex flex-col items-center justify-center space-y-6">
-                                <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-                                    <CheckCircle2 size={56} />
-                                </div>
+                                <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><CheckCircle2 size={56} /></div>
                                 <h2 className="text-2xl font-black text-slate-800">Reserva Confirmada!</h2>
-                                <p className="text-slate-500 leading-relaxed">
-                                    Tudo certo, <b>{clientName}</b>! Seu horário foi reservado e nossa equipe já foi notificada.
-                                </p>
-                                <button 
-                                    onClick={() => window.location.reload()}
-                                    className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black shadow-xl"
-                                >
-                                    Voltar ao Início
-                                </button>
+                                <button onClick={() => window.location.reload()} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black shadow-xl">Voltar ao Início</button>
                             </div>
                         ) : (
                             <>
                                 <header className="p-6 border-b border-slate-50 flex items-center justify-between">
                                     <div className="flex items-center gap-4">
                                         {bookingStep > 1 && (
-                                            <button onClick={() => setBookingStep(prev => prev - 1)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:bg-slate-200">
-                                                <ChevronLeft size={20} />
-                                            </button>
+                                            <button onClick={() => setBookingStep(prev => prev - 1)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:bg-slate-200"><ChevronLeft size={20} /></button>
                                         )}
                                         <div>
                                             <h3 className="font-black text-slate-800">
@@ -543,7 +472,7 @@ const PublicBookingPreview: React.FC = () => {
                                             <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Passo {bookingStep} de 3</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400"><X size={24}/></button>
+                                    <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={24}/></button>
                                 </header>
 
                                 <main className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50/30">
@@ -551,17 +480,11 @@ const PublicBookingPreview: React.FC = () => {
                                         <div className="space-y-4">
                                             {professionals.map(p => (
                                                 <button 
-                                                    key={p.id}
-                                                    onClick={() => { setSelectedProfessional(p); setBookingStep(2); }}
+                                                    key={p.id} onClick={() => { setSelectedProfessional(p); setBookingStep(2); }}
                                                     className={`w-full p-5 flex items-center gap-4 border-2 rounded-3xl transition-all text-left bg-white ${selectedProfessional?.id === p.id ? 'border-orange-500 bg-orange-50/30' : 'border-slate-100 hover:border-orange-200'}`}
                                                 >
-                                                    <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md">
-                                                        <img src={p.photo_url || DEFAULT_LOGO} className="w-full h-full object-cover" alt={p.name} />
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-bold text-slate-800 text-base">{p.name}</p>
-                                                        <p className="text-xs text-slate-400 mt-1 font-medium">{p.role}</p>
-                                                    </div>
+                                                    <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md"><img src={p.photo_url || DEFAULT_LOGO} className="w-full h-full object-cover" /></div>
+                                                    <div><p className="font-bold text-slate-800 text-base">{p.name}</p><p className="text-xs text-slate-400 mt-1 font-medium">{p.role}</p></div>
                                                 </button>
                                             ))}
                                         </div>
@@ -570,7 +493,11 @@ const PublicBookingPreview: React.FC = () => {
                                     {bookingStep === 2 && (
                                         <div className="space-y-8">
                                             <div className="space-y-4">
-                                                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Selecione o Dia</h4>
+                                                <div className="flex justify-between items-end pr-2">
+                                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Selecione o Dia</h4>
+                                                    <p className="text-[9px] font-black text-slate-300 uppercase tracking-tighter">(Debug: {availableDates.length} dias carregados)</p>
+                                                </div>
+                                                {/* Container com scroll horizontal garantido */}
                                                 <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
                                                     {availableDates.map((date) => {
                                                         const isClosed = !studio?.business_hours?.[weekdayMap[getDay(date)]]?.active;
@@ -597,41 +524,20 @@ const PublicBookingPreview: React.FC = () => {
                                             <div className="space-y-4">
                                                 <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Horários Disponíveis</h4>
                                                 {isLoadingSlots ? (
-                                                    <div className="py-10 text-center text-slate-400 flex flex-col items-center">
-                                                        <Loader2 className="animate-spin mb-2" />
-                                                        <p className="text-xs font-bold">Consultando agenda...</p>
-                                                    </div>
+                                                    <div className="py-10 text-center text-slate-400 flex flex-col items-center"><Loader2 className="animate-spin mb-2" /><p className="text-xs font-bold">Consultando agenda...</p></div>
                                                 ) : availableSlots.length > 0 ? (
                                                     <div className="grid grid-cols-4 gap-2">
                                                         {availableSlots.map(time => (
-                                                            <button
-                                                                key={time}
-                                                                onClick={() => setSelectedTime(time)}
-                                                                className={`py-3 rounded-xl text-sm font-black border-2 transition-all ${
-                                                                    selectedTime === time 
-                                                                    ? 'bg-slate-800 border-slate-800 text-white shadow-lg' 
-                                                                    : 'bg-white border-slate-100 text-slate-600 hover:border-orange-300'
-                                                                }`}
-                                                            >
-                                                                {time}
-                                                            </button>
+                                                            <button key={time} onClick={() => setSelectedTime(time)} className={`py-3 rounded-xl text-sm font-black border-2 transition-all ${selectedTime === time ? 'bg-slate-800 border-slate-800 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-600 hover:border-orange-300'}`}>{time}</button>
                                                         ))}
                                                     </div>
                                                 ) : (
-                                                    <div className="p-8 bg-slate-100/50 rounded-3xl border border-dashed border-slate-200 text-center">
-                                                        <Clock className="mx-auto text-slate-300 mb-2" size={32} />
-                                                        <p className="text-sm font-bold text-slate-400 leading-tight">Nenhum horário livre para<br/>os serviços selecionados neste dia.</p>
-                                                    </div>
+                                                    <div className="p-8 bg-slate-100/50 rounded-3xl border border-dashed border-slate-200 text-center"><Clock className="mx-auto text-slate-300 mb-2" size={32} /><p className="text-sm font-bold text-slate-400 leading-tight">Nenhum horário livre para este dia.</p></div>
                                                 )}
                                             </div>
 
                                             {selectedTime && (
-                                                <button 
-                                                    onClick={() => setBookingStep(3)}
-                                                    className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 animate-in slide-in-from-bottom-2"
-                                                >
-                                                    Continuar <ArrowRight size={20} />
-                                                </button>
+                                                <button onClick={() => setBookingStep(3)} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 animate-in slide-in-from-bottom-2">Continuar <ArrowRight size={20} /></button>
                                             )}
                                         </div>
                                     )}
@@ -639,58 +545,17 @@ const PublicBookingPreview: React.FC = () => {
                                     {bookingStep === 3 && (
                                         <div className="space-y-6">
                                             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-                                                <div className="flex items-center gap-4 pb-4 border-b border-slate-50">
-                                                    <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600">
-                                                        <Calendar size={24} />
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Seu Horário</p>
-                                                        <p className="text-base font-black text-slate-800">{format(selectedDate, "dd 'de' MMMM", { locale: pt })} às {selectedTime}</p>
-                                                    </div>
-                                                </div>
-
-                                                <div className="space-y-3">
-                                                    {selectedServices.map(s => (
-                                                        <div key={s.id} className="flex justify-between items-center text-sm font-bold text-slate-600">
-                                                            <span>{s.nome || s.name}</span>
-                                                            <span>R$ {Number(s.preco).toFixed(2)}</span>
-                                                        </div>
-                                                    ))}
-                                                    <div className="pt-3 border-t border-slate-50 flex justify-between items-center">
-                                                        <span className="text-xs font-black uppercase text-slate-400">Total</span>
-                                                        <span className="text-xl font-black text-orange-600">R$ {totalPrice.toFixed(2)}</span>
-                                                    </div>
-                                                </div>
+                                                <div className="flex items-center gap-4 pb-4 border-b border-slate-50"><div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600"><Calendar size={24} /></div><div><p className="text-xs font-black text-slate-400 uppercase tracking-widest">Seu Horário</p><p className="text-base font-black text-slate-800">{format(selectedDate, "dd 'de' MMMM", { locale: pt })} às {selectedTime}</p></div></div>
+                                                <div className="pt-3 border-t border-slate-50 flex justify-between items-center"><span className="text-xs font-black uppercase text-slate-400">Total</span><span className="text-xl font-black text-orange-600">R$ {totalPrice.toFixed(2)}</span></div>
                                             </div>
 
                                             <div className="space-y-4">
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Seu Nome Completo</label>
-                                                    <input 
-                                                        value={clientName}
-                                                        onChange={e => setClientName(e.target.value)}
-                                                        className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 font-bold shadow-sm" 
-                                                        placeholder="Como devemos te chamar?" 
-                                                    />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">WhatsApp para Lembrete</label>
-                                                    <input 
-                                                        value={clientPhone}
-                                                        onChange={e => setClientPhone(e.target.value)}
-                                                        className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 font-bold shadow-sm" 
-                                                        placeholder="(00) 00000-0000" 
-                                                    />
-                                                </div>
+                                                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Seu Nome Completo</label><input value={clientName} onChange={e => setClientName(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none font-bold shadow-sm" placeholder="Como devemos te chamar?" /></div>
+                                                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">WhatsApp para Lembrete</label><input value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none font-bold shadow-sm" placeholder="(00) 00000-0000" /></div>
                                             </div>
                                             
-                                            <button 
-                                                onClick={handleSubmitBooking}
-                                                disabled={isFinalizing || !clientName || clientPhone.length < 10}
-                                                className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-3xl font-black shadow-xl shadow-green-100 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50"
-                                            >
-                                                {isFinalizing ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={24} />}
-                                                Finalizar Agendamento
+                                            <button onClick={handleSubmitBooking} disabled={isFinalizing || !clientName || clientPhone.length < 10} className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-3xl font-black shadow-xl flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50">
+                                                {isFinalizing ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={24} />} Finalizar Agendamento
                                             </button>
                                         </div>
                                     )}
@@ -701,9 +566,7 @@ const PublicBookingPreview: React.FC = () => {
                 </div>
             )}
 
-            {isClientAppsOpen && (
-                <ClientAppointmentsModal onClose={() => setIsClientAppsOpen(false)} />
-            )}
+            {isClientAppsOpen && <ClientAppointmentsModal onClose={() => setIsClientAppsOpen(false)} />}
         </div>
     );
 };
