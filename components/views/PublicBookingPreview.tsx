@@ -91,7 +91,7 @@ const AccordionCategory = ({ category, services, selectedIds, onToggleService, d
 
 const Plus = ({ size }: { size: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+        <line x1="12" x2="12" y1="5" y2="19" /><line x1="5" x2="19" y1="12" y2="12" />
     </svg>
 );
 
@@ -130,9 +130,20 @@ const PublicBookingPreview: React.FC = () => {
         const loadPageData = async () => {
             setLoading(true);
             try {
-                // Sincronização com os dados reais de studio_settings
-                const { data: studioData } = await supabase.from('studio_settings').select('*').maybeSingle();
-                if (studioData) setStudio(studioData);
+                // Sincronização com os dados reais de studio_settings filtrando pelo dono logado (Preview)
+                if (user?.id) {
+                    const { data: studioData } = await supabase
+                        .from('studio_settings')
+                        .select('*')
+                        .eq('studio_id', user.id)
+                        .maybeSingle();
+                    
+                    if (studioData) setStudio(studioData);
+                } else {
+                    // Fallback para quando não há user logado (link público real - futuro)
+                    const { data: studioData } = await supabase.from('studio_settings').select('*').maybeSingle();
+                    if (studioData) setStudio(studioData);
+                }
 
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
                 if (servicesData) setServices(servicesData);
@@ -172,7 +183,7 @@ const PublicBookingPreview: React.FC = () => {
             }
         };
         loadPageData();
-    }, []);
+    }, [user?.id]);
 
     const generateAvailableSlots = async (date: Date, professional: any) => {
         if (!studio || selectedServices.length === 0) return;
@@ -394,7 +405,7 @@ const PublicBookingPreview: React.FC = () => {
                         )}
                     </div>
                     <h1 className="text-2xl font-black text-slate-800 leading-tight">
-                        {studio?.studio_name || "Nome do Estúdio"}
+                        {studio?.studio_name || "Seu Estúdio de Beleza"}
                     </h1>
                     <div className="flex flex-col items-center gap-2 mt-2 text-slate-400">
                         <div className="flex items-center gap-1 text-amber-400 font-bold">
@@ -445,7 +456,7 @@ const PublicBookingPreview: React.FC = () => {
                 </div>
             )}
 
-            {/* MODAL DE AGENDAMENTO (Mantém lógica original mas com interface polida) */}
+            {/* MODAL DE AGENDAMENTO */}
             {isBookingOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
