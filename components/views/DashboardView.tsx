@@ -5,8 +5,8 @@ import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import WeeklyChart from '../charts/WeeklyChart';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, ChevronRight } from 'lucide-react';
-import { format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
+import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, ChevronRight, CalendarRange } from 'lucide-react';
+import { format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isSameDay, parseISO } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
 import { supabase } from '../../services/supabaseClient';
@@ -51,7 +51,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [monthRevenueTotal, setMonthRevenueTotal] = useState(0);
     
     // Filtro de Período
-    const [filter, setFilter] = useState<'hoje' | 'semana' | 'mes'>('hoje');
+    const [filter, setFilter] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('hoje');
+    const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
 
     const dateRange = useMemo(() => {
         const now = new Date();
@@ -74,6 +76,12 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     end: endOfMonth(now).toISOString(),
                     label: 'Este Mês'
                 };
+            case 'custom':
+                return {
+                    start: startOfDay(parseISO(customStart)).toISOString(),
+                    end: endOfDay(parseISO(customEnd)).toISOString(),
+                    label: 'Período Personalizado'
+                };
             default:
                 return { 
                     start: startOfDay(now).toISOString(), 
@@ -81,7 +89,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     label: 'Hoje'
                 };
         }
-    }, [filter]);
+    }, [filter, customStart, customEnd]);
 
     // --- CARREGAMENTO DE DADOS ---
     useEffect(() => {
@@ -112,7 +120,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     .select('value')
                     .eq('status', 'concluido')
                     .gte('date', startM)
-                    .lte('endM'); // Correção lógica para pegar o mês cheio
+                    .lte('date', endM);
                 
                 const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
@@ -177,27 +185,58 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     </h1>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-4">
                     {/* Filtro de Período UI */}
-                    <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm mr-2">
-                        <button 
-                            onClick={() => setFilter('hoje')}
-                            className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'hoje' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
-                        >
-                            Hoje
-                        </button>
-                        <button 
-                            onClick={() => setFilter('semana')}
-                            className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'semana' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
-                        >
-                            7 Dias
-                        </button>
-                        <button 
-                            onClick={() => setFilter('mes')}
-                            className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'mes' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
-                        >
-                            Mês
-                        </button>
+                    <div className="flex flex-col gap-2 items-end">
+                        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+                            <button 
+                                onClick={() => setFilter('hoje')}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'hoje' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                            >
+                                Hoje
+                            </button>
+                            <button 
+                                onClick={() => setFilter('semana')}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'semana' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                            >
+                                7 Dias
+                            </button>
+                            <button 
+                                onClick={() => setFilter('mes')}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'mes' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                            >
+                                Mês
+                            </button>
+                            <button 
+                                onClick={() => setFilter('custom')}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'custom' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                            >
+                                <span className="flex items-center gap-1"><CalendarRange size={12} /> Personalizado</span>
+                            </button>
+                        </div>
+
+                        {filter === 'custom' && (
+                            <div className="flex items-center gap-2 animate-in slide-in-from-top-2 duration-300">
+                                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase">De:</span>
+                                    <input 
+                                        type="date" 
+                                        value={customStart} 
+                                        onChange={(e) => setCustomStart(e.target.value)}
+                                        className="text-[10px] font-bold text-slate-700 outline-none"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase">Até:</span>
+                                    <input 
+                                        type="date" 
+                                        value={customEnd} 
+                                        onChange={(e) => setCustomEnd(e.target.value)}
+                                        className="text-[10px] font-bold text-slate-700 outline-none"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <button onClick={() => onNavigate('agenda')} className="px-4 py-2.5 bg-orange-500 text-white font-black rounded-xl hover:bg-orange-600 transition shadow-lg shadow-orange-100 flex items-center gap-2 text-sm active:scale-95">
