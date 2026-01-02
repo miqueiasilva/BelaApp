@@ -130,20 +130,8 @@ const PublicBookingPreview: React.FC = () => {
         const loadPageData = async () => {
             setLoading(true);
             try {
-                // Sincronização com os dados reais de studio_settings
-                let studioData = null;
-                if (user?.id) {
-                    const { data } = await supabase
-                        .from('studio_settings')
-                        .select('*')
-                        .eq('studio_id', user.id)
-                        .maybeSingle();
-                    studioData = data;
-                } else {
-                    const { data } = await supabase.from('studio_settings').select('*').maybeSingle();
-                    studioData = data;
-                }
-
+                // Busca de configurações do estúdio (Horizonte e Antecedência)
+                const { data: studioData } = await supabase.from('studio_settings').select('*').maybeSingle();
                 if (studioData) setStudio(studioData);
 
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
@@ -184,9 +172,9 @@ const PublicBookingPreview: React.FC = () => {
             }
         };
         loadPageData();
-    }, [user?.id]);
+    }, []);
 
-    // --- LOGICA DE FILTRAGEM DE HORÁRIOS (Lead Time) ---
+    // --- LOGICA DE FILTRAGEM DE HORÁRIOS (Antecedência Mínima) ---
     const generateAvailableSlots = async (date: Date, professional: any) => {
         if (!studio || selectedServices.length === 0) return;
         setIsLoadingSlots(true);
@@ -203,10 +191,10 @@ const PublicBookingPreview: React.FC = () => {
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             
-            // Regra de Antecedência Mínima (Min Notice)
+            // Regra de Antecedência Mínima: Converte horas (float) para minutos
             const minNoticeHours = parseFloat(studio.min_scheduling_notice || '2');
             const now = new Date();
-            const minTimeLimit = addMinutes(now, minNoticeHours * 60);
+            const minTimeLimit = addMinutes(now, Math.round(minNoticeHours * 60));
 
             const { data: busyAppointments } = await supabase
                 .from('appointments')
@@ -227,7 +215,7 @@ const PublicBookingPreview: React.FC = () => {
             endLimit.setHours(endH, endM, 0, 0);
 
             while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
-                // Filtro 1: Antecedência Mínima (Lead Time) para o dia de HOJE
+                // Filtro 1: Bloqueia horários passados ou dentro da janela de antecedência mínima
                 if (isSameDay(date, now)) {
                     if (isBefore(currentPointer, minTimeLimit)) {
                         currentPointer = addMinutes(currentPointer, 30);
@@ -257,11 +245,12 @@ const PublicBookingPreview: React.FC = () => {
         }
     };
 
+    // Atualiza slots sempre que a data, profissional ou SERVIÇOS mudarem
     useEffect(() => {
-        if (bookingStep === 2 && selectedDate) {
+        if (bookingStep === 2 && selectedDate && selectedProfessional) {
             generateAvailableSlots(selectedDate, selectedProfessional);
         }
-    }, [selectedDate, selectedProfessional, bookingStep]);
+    }, [selectedDate, selectedProfessional, bookingStep, selectedServices]);
 
     const handleSubmitBooking = async () => {
         if (!clientName || !clientPhone || !selectedTime) return;
@@ -361,23 +350,23 @@ const PublicBookingPreview: React.FC = () => {
         });
     };
 
-    // --- LOGICA DE HORIZONTE DE DIAS (Booking Window) ---
+    // --- LOGICA DE HORIZONTE DINÂMICO (max_scheduling_window) ---
     const nextDays = useMemo(() => {
-        const windowSize = parseInt(studio?.max_scheduling_window || '30');
+        const windowSize = parseInt(studio?.max_scheduling_window || '30', 10);
         return Array.from({ length: windowSize }).map((_, i) => addDays(new Date(), i));
     }, [studio?.max_scheduling_window]);
 
     if (loading) return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
             <Loader2 className="animate-spin text-orange-500 w-10 h-10 mb-4" />
-            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Acessando BelaFlow...</p>
+            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Sincronizando com BelaFlow...</p>
         </div>
     );
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans relative pb-40">
+        <div className="min-h-screen bg-slate-50 font-sans relative pb-40 text-left">
             
-            {/* BOTÃO VOLTAR (Protegido por Autenticação) */}
+            {/* BOTÃO VOLTAR (Exibido apenas para Admin Logado) */}
             {user && (
                 <button 
                     onClick={() => window.location.hash = '#/'}
@@ -388,7 +377,6 @@ const PublicBookingPreview: React.FC = () => {
                 </button>
             )}
 
-            {/* HEADER DINÂMICO */}
             <div className="relative h-48 md:h-64 bg-slate-900">
                 <img 
                     src={studio?.cover_url || DEFAULT_COVER} 
@@ -474,7 +462,7 @@ const PublicBookingPreview: React.FC = () => {
                         
                         {bookingSuccess ? (
                             <div className="p-12 text-center flex flex-col items-center justify-center space-y-6">
-                                <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center animate-bounce">
+                                <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
                                     <CheckCircle2 size={56} />
                                 </div>
                                 <h2 className="text-2xl font-black text-slate-800">Reserva Confirmada!</h2>
