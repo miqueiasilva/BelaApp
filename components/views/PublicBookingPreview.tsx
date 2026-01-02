@@ -130,20 +130,21 @@ const PublicBookingPreview: React.FC = () => {
         const loadPageData = async () => {
             setLoading(true);
             try {
-                // Sincronização com os dados reais de studio_settings filtrando pelo dono logado (Preview)
+                // Sincronização com os dados reais de studio_settings
+                let studioData = null;
                 if (user?.id) {
-                    const { data: studioData } = await supabase
+                    const { data } = await supabase
                         .from('studio_settings')
                         .select('*')
                         .eq('studio_id', user.id)
                         .maybeSingle();
-                    
-                    if (studioData) setStudio(studioData);
+                    studioData = data;
                 } else {
-                    // Fallback para quando não há user logado (link público real - futuro)
-                    const { data: studioData } = await supabase.from('studio_settings').select('*').maybeSingle();
-                    if (studioData) setStudio(studioData);
+                    const { data } = await supabase.from('studio_settings').select('*').maybeSingle();
+                    studioData = data;
                 }
+
+                if (studioData) setStudio(studioData);
 
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
                 if (servicesData) setServices(servicesData);
@@ -185,6 +186,7 @@ const PublicBookingPreview: React.FC = () => {
         loadPageData();
     }, [user?.id]);
 
+    // --- LOGICA DE FILTRAGEM DE HORÁRIOS (Lead Time) ---
     const generateAvailableSlots = async (date: Date, professional: any) => {
         if (!studio || selectedServices.length === 0) return;
         setIsLoadingSlots(true);
@@ -201,6 +203,11 @@ const PublicBookingPreview: React.FC = () => {
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             
+            // Regra de Antecedência Mínima (Min Notice)
+            const minNoticeHours = parseFloat(studio.min_scheduling_notice || '2');
+            const now = new Date();
+            const minTimeLimit = addMinutes(now, minNoticeHours * 60);
+
             const { data: busyAppointments } = await supabase
                 .from('appointments')
                 .select('date, duration')
@@ -218,15 +225,17 @@ const PublicBookingPreview: React.FC = () => {
             
             const endLimit = new Date(date);
             endLimit.setHours(endH, endM, 0, 0);
-            
-            const now = new Date();
 
             while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
-                if (isSameDay(date, now) && isBefore(currentPointer, now)) {
-                    currentPointer = addMinutes(currentPointer, 30);
-                    continue;
+                // Filtro 1: Antecedência Mínima (Lead Time) para o dia de HOJE
+                if (isSameDay(date, now)) {
+                    if (isBefore(currentPointer, minTimeLimit)) {
+                        currentPointer = addMinutes(currentPointer, 30);
+                        continue;
+                    }
                 }
 
+                // Filtro 2: Sobreposição com outros agendamentos
                 const hasOverlap = busyAppointments?.some(app => {
                     const appStart = parseISO(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
@@ -352,9 +361,11 @@ const PublicBookingPreview: React.FC = () => {
         });
     };
 
+    // --- LOGICA DE HORIZONTE DE DIAS (Booking Window) ---
     const nextDays = useMemo(() => {
-        return Array.from({ length: 14 }).map((_, i) => addDays(new Date(), i));
-    }, []);
+        const windowSize = parseInt(studio?.max_scheduling_window || '30');
+        return Array.from({ length: windowSize }).map((_, i) => addDays(new Date(), i));
+    }, [studio?.max_scheduling_window]);
 
     if (loading) return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
@@ -366,7 +377,7 @@ const PublicBookingPreview: React.FC = () => {
     return (
         <div className="min-h-screen bg-slate-50 font-sans relative pb-40">
             
-            {/* BOTÃO VOLTAR (Só aparece para o dono logado) */}
+            {/* BOTÃO VOLTAR (Protegido por Autenticação) */}
             {user && (
                 <button 
                     onClick={() => window.location.hash = '#/'}
@@ -377,7 +388,7 @@ const PublicBookingPreview: React.FC = () => {
                 </button>
             )}
 
-            {/* HEADER DINÂMICO COM DADOS DO BANCO */}
+            {/* HEADER DINÂMICO */}
             <div className="relative h-48 md:h-64 bg-slate-900">
                 <img 
                     src={studio?.cover_url || DEFAULT_COVER} 
