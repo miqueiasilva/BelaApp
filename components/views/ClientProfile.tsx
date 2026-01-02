@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -302,41 +301,40 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (!template) return;
 
         let textToInsert = "";
-        
-        // --- PARSER POLIMÓRFICO DE CONTEÚDO ---
-        
-        // CASO 1: Texto Puro / Contratos (String)
+
+        // CASO 1: O conteúdo é TEXTO PURO (Contratos novos)
         if (typeof template.content === 'string') {
-            // Limpeza de aspas extras e newlines escapadas típicas de JSONB strings
+            // Remove aspas extras se houver e corrige quebras de linha escapadas
             textToInsert = template.content
-                .replace(/^"|"$/g, '') 
-                .replace(/\\n/g, '\n')
-                .replace(/\\"/g, '"');
+                .replace(/^"|"$/g, '')  // Remove aspas do início/fim
+                .replace(/\\n/g, '\n') // Transforma \n em quebra de linha real
+                .replace(/\\"/g, '"');  // Corrige aspas internas escapadas (comum em JSONB)
         } 
-        // CASO 2: Lista de Perguntas (Array)
+        // CASO 2: O conteúdo é ARRAY (Fichas antigas)
         else if (Array.isArray(template.content)) {
             textToInsert = template.content
                 .map((item: any) => `• ${item.question || item.label || 'Campo'}\n   R: `)
                 .join('\n\n');
         }
-        // CASO 3: Objeto JSON Genérico
+        // CASO 3: Objeto (Fallback)
         else if (typeof template.content === 'object' && template.content !== null) {
             textToInsert = JSON.stringify(template.content, null, 2);
         }
 
         if (!textToInsert) {
-            setToast({ message: "Este modelo parece estar vazio ou em formato inválido.", type: 'error' });
+            setToast({ message: "Modelo vazio ou em formato inválido.", type: 'error' });
             return;
         }
 
-        // --- ATUALIZAÇÃO DO ESTADO (APPEND INTELIGENTE) ---
+        // Atualiza o estado da anamnese preservando o que já existe (Append Inteligente)
         setAnamnesis((prev: any) => {
-            const currentNotes = prev.clinical_notes || '';
-            const divider = currentNotes.trim() ? '\n\n---\n\n' : '';
+            const current = prev.clinical_notes || "";
+            // Adiciona divisor se já houver conteúdo
+            const divider = current.trim() ? "\n\n---\n\n" : "";
             
             return {
                 ...prev,
-                clinical_notes: currentNotes + divider + textToInsert
+                clinical_notes: current + divider + textToInsert
             };
         });
         
