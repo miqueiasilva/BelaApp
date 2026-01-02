@@ -109,6 +109,13 @@ const PublicBookingPreview: React.FC = () => {
     const [isClientAppsOpen, setIsClientAppsOpen] = useState(false);
     const [bookingStep, setBookingStep] = useState(1); 
 
+    // Regras de Agendamento Unificadas
+    const [rules, setRules] = useState({
+        windowDays: 30,
+        minNoticeMinutes: 120, // 2 horas padrão
+        cancellationHours: 24
+    });
+
     // Appointment Choices
     const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
     const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
@@ -130,13 +137,21 @@ const PublicBookingPreview: React.FC = () => {
         const loadPageData = async () => {
             setLoading(true);
             try {
-                // Sincronização obrigatória de max_scheduling_window
+                // 1. Busca Robusta de Configurações
                 const { data: studioData } = await supabase
                     .from('studio_settings')
-                    .select('*, max_scheduling_window, min_scheduling_notice')
+                    .select('*')
+                    .limit(1)
                     .maybeSingle();
 
-                if (studioData) setStudio(studioData);
+                if (studioData) {
+                    setStudio(studioData);
+                    setRules({
+                        windowDays: studioData.max_scheduling_window || 30,
+                        minNoticeMinutes: studioData.min_scheduling_notice ? Math.round(parseFloat(studioData.min_scheduling_notice) * 60) : 120,
+                        cancellationHours: studioData.cancellation_notice || 24
+                    });
+                }
 
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
                 if (servicesData) setServices(servicesData);
@@ -144,6 +159,7 @@ const PublicBookingPreview: React.FC = () => {
                 const { data: profsData } = await supabase.from('professionals').select('*').eq('active', true).order('order_index');
                 if (profsData) setProfessionals(profsData);
 
+                // Lógica de Mais Populares
                 const sixtyDaysAgo = subDays(new Date(), 60).toISOString();
                 const { data: recentApps } = await supabase
                     .from('appointments')
@@ -156,16 +172,11 @@ const PublicBookingPreview: React.FC = () => {
                     recentApps.forEach(app => {
                         counts[app.service_name] = (counts[app.service_name] || 0) + 1;
                     });
-
                     const sortedNames = Object.entries(counts)
                         .sort(([, a], [, b]) => b - a)
                         .slice(0, 5)
                         .map(([name]) => name);
-
-                    const topIds = servicesData
-                        ?.filter(s => sortedNames.includes(s.nome))
-                        .map(s => s.id) || [];
-                    
+                    const topIds = servicesData?.filter(s => sortedNames.includes(s.nome)).map(s => s.id) || [];
                     setPopularServiceIds(topIds);
                 }
 
@@ -177,6 +188,16 @@ const PublicBookingPreview: React.FC = () => {
         };
         loadPageData();
     }, []);
+
+    // --- LOGICA DE GERAÇÃO DE DATAS DINÂMICA ---
+    const availableDates = useMemo(() => {
+        const dates = [];
+        const today = startOfDay(new Date());
+        for (let i = 0; i < rules.windowDays; i++) {
+            dates.push(addDays(today, i));
+        }
+        return dates;
+    }, [rules.windowDays]);
 
     // --- LOGICA DE FILTRAGEM DE HORÁRIOS (Lead Time) ---
     const generateAvailableSlots = async (date: Date, professional: any) => {
@@ -194,11 +215,8 @@ const PublicBookingPreview: React.FC = () => {
             }
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
-            
-            // Regra de Antecedência Mínima (Min Notice)
-            const minNoticeHours = parseFloat(studio.min_scheduling_notice || '2');
             const now = new Date();
-            const minTimeLimit = addMinutes(now, Math.round(minNoticeHours * 60));
+            const minTimeLimit = addMinutes(now, rules.minNoticeMinutes);
 
             const { data: busyAppointments } = await supabase
                 .from('appointments')
@@ -219,7 +237,7 @@ const PublicBookingPreview: React.FC = () => {
             endLimit.setHours(endH, endM, 0, 0);
 
             while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
-                // Filtro 1: Bloqueia horários dentro da janela de antecedência mínima para HOJE
+                // Filtro 1: Antecedência Mínima ( Lead Time) para o dia de HOJE
                 if (isSameDay(date, now)) {
                     if (isBefore(currentPointer, minTimeLimit)) {
                         currentPointer = addMinutes(currentPointer, 30);
@@ -253,7 +271,7 @@ const PublicBookingPreview: React.FC = () => {
         if (bookingStep === 2 && selectedDate && selectedProfessional) {
             generateAvailableSlots(selectedDate, selectedProfessional);
         }
-    }, [selectedDate, selectedProfessional, bookingStep, selectedServices]);
+    }, [selectedDate, selectedProfessional, bookingStep, selectedServices, rules]);
 
     const handleSubmitBooking = async () => {
         if (!clientName || !clientPhone || !selectedTime) return;
@@ -352,17 +370,6 @@ const PublicBookingPreview: React.FC = () => {
             return [...prev, service];
         });
     };
-
-    // --- LOGICA DE HORIZONTE DINÂMICO (CORRIGIDO: Obedece max_scheduling_window) ---
-    const nextDays = useMemo(() => {
-        // Fallback para 30 dias se o valor no banco for null ou indefinido
-        const daysLimit = parseInt(studio?.max_scheduling_window || '30', 10);
-        const dates = [];
-        for (let i = 0; i < daysLimit; i++) {
-            dates.push(addDays(new Date(), i));
-        }
-        return dates;
-    }, [studio?.max_scheduling_window]);
 
     if (loading) return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
@@ -531,7 +538,7 @@ const PublicBookingPreview: React.FC = () => {
                                             <div className="space-y-4">
                                                 <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Selecione o Dia</h4>
                                                 <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
-                                                    {nextDays.map((date) => {
+                                                    {availableDates.map((date) => {
                                                         const isClosed = !studio?.business_hours?.[weekdayMap[getDay(date)]]?.active;
                                                         const isSelected = isSameDay(date, selectedDate);
                                                         return (
