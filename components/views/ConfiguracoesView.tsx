@@ -4,7 +4,9 @@ import {
     Settings, Store, Save, Loader2, MapPin, Phone, 
     Globe, Camera, Image as ImageIcon, Instagram, 
     Facebook, Layout, CreditCard, Hash, Map, Navigation, 
-    CheckCircle2, Clock, Calendar, Coffee, AlertCircle
+    CheckCircle2, Clock, Calendar, Coffee, AlertCircle, TrendingUp,
+    // FIX: Added missing DollarSign import from lucide-react.
+    DollarSign
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -53,11 +55,12 @@ const ConfiguracoesView: React.FC = () => {
     const coverInputRef = useRef<HTMLInputElement>(null);
     const logoInputRef = useRef<HTMLInputElement>(null);
 
-    // Estado inicial mapeado para as colunas reais do banco de dados
+    // Estado inicial alinhado com o Schema do Banco (snake_case)
     const [studioData, setStudioData] = useState<any>({
         studio_name: '',
         cnpj_cpf: '',
         presentation_text: '',
+        monthly_revenue_goal: 0,
         address_street: '',
         address_number: '',
         address_neighborhood: '',
@@ -68,8 +71,8 @@ const ConfiguracoesView: React.FC = () => {
         instagram_handle: '',
         facebook_url: '',
         website_url: '',
-        cover_image_url: null,
-        logo_image_url: null,
+        cover_url: null,
+        profile_url: null,
         business_hours: {} 
     });
 
@@ -93,8 +96,8 @@ const ConfiguracoesView: React.FC = () => {
             if (data) {
                 setStudioData(data);
                 setPreviews({ 
-                    cover: data.cover_image_url || '', 
-                    logo: data.logo_image_url || '' 
+                    cover: data.cover_url || '', 
+                    logo: data.profile_url || '' 
                 });
             }
         } catch (e) {
@@ -156,20 +159,27 @@ const ConfiguracoesView: React.FC = () => {
         if (!user) return;
         setIsSaving(true);
         try {
-            let finalCoverUrl = studioData.cover_image_url;
-            let finalLogoUrl = studioData.logo_image_url;
+            let finalCoverUrl = studioData.cover_url;
+            let finalProfileUrl = studioData.profile_url;
 
             if (pendingFiles.cover) finalCoverUrl = await uploadAsset(pendingFiles.cover, 'cover');
-            if (pendingFiles.logo) finalLogoUrl = await uploadAsset(pendingFiles.logo, 'logo');
+            if (pendingFiles.logo) finalProfileUrl = await uploadAsset(pendingFiles.logo, 'logo');
 
-            // Preparação do Payload Final para UPSERT
+            // Preparação do Payload Final para UPSERT (Correção do Erro 400)
             const payload = {
                 studio_id: user.id,
                 studio_name: studioData.studio_name || '',
                 cnpj_cpf: studioData.cnpj_cpf || '',
                 presentation_text: studioData.presentation_text || '',
                 
-                // 1. MAPEAMENTO DE ENDEREÇO (Atômico + JSONB Backup)
+                // FINANCEIRO (Resolvendo erro de Schema Mismatch)
+                monthly_revenue_goal: parseFloat(studioData.monthly_revenue_goal) || 0,
+
+                // IMAGENS (Alinhadas com nomes de colunas do banco)
+                cover_url: finalCoverUrl,
+                profile_url: finalProfileUrl,
+
+                // ENDEREÇO (Atômico + JSONB Backup)
                 address_street: studioData.address_street || '',
                 address_number: studioData.address_number || '',
                 address_neighborhood: studioData.address_neighborhood || '',
@@ -184,10 +194,10 @@ const ConfiguracoesView: React.FC = () => {
                     neighborhood: studioData.address_neighborhood
                 },
 
-                // 2. MAPEAMENTO DE CONTATO E REDES SOCIAIS (Individual + JSONB)
+                // REDES SOCIAIS (Agrupamento JSONB)
                 phone_whatsapp: studioData.phone_whatsapp || '',
-                whatsapp: studioData.phone_whatsapp || '', // Espelhamento solicitado
-                instagram: studioData.instagram_handle || '', // Espelhamento solicitado
+                whatsapp: studioData.phone_whatsapp || '', 
+                instagram: studioData.instagram_handle || '', 
                 instagram_handle: studioData.instagram_handle || '',
                 facebook_url: studioData.facebook_url || '',
                 website_url: studioData.website_url || '',
@@ -197,10 +207,8 @@ const ConfiguracoesView: React.FC = () => {
                     website: studioData.website_url || ''
                 },
 
-                // 3. ASSETS E HORÁRIOS
-                cover_image_url: finalCoverUrl,
-                logo_image_url: finalLogoUrl,
-                business_hours: studioData.business_hours || {}, // Mapeamento JSONB
+                // HORÁRIOS
+                business_hours: studioData.business_hours || {},
                 
                 updated_at: new Date().toISOString()
             };
@@ -211,12 +219,12 @@ const ConfiguracoesView: React.FC = () => {
 
             if (error) throw error;
 
-            showToast("Configurações salvas com sucesso!");
+            showToast("Configurações atualizadas com sucesso!");
             setPendingFiles({ cover: null, logo: null });
             fetchData();
         } catch (e: any) {
             console.error("Erro ao salvar:", e);
-            showToast(e.message || "Erro ao salvar no banco", "error");
+            showToast(e.message || "Erro de validação no banco", "error");
         } finally {
             setIsSaving(false);
         }
@@ -233,7 +241,7 @@ const ConfiguracoesView: React.FC = () => {
     if (isLoading) return <div className="h-full flex flex-col items-center justify-center text-slate-400 font-sans uppercase font-black tracking-widest text-[10px]"><Loader2 className="animate-spin text-orange-500 mb-2" size={32} /> Carregando Painel...</div>;
 
     return (
-        <div className="h-full bg-slate-50 flex flex-col font-sans relative">
+        <div className="h-full bg-slate-50 flex flex-col font-sans relative text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
             <header className="bg-white border-b border-slate-200 px-8 py-6 flex-shrink-0 z-20">
@@ -243,7 +251,7 @@ const ConfiguracoesView: React.FC = () => {
                     </div>
                     Configurações do Negócio
                 </h1>
-                <p className="text-slate-400 text-sm font-medium mt-1 ml-12">Configure a identidade e as regras operacionais do seu estúdio.</p>
+                <p className="text-slate-400 text-sm font-medium mt-1 ml-12">Configure a identidade e as metas do seu estúdio.</p>
             </header>
 
             <main className="flex-1 overflow-y-auto p-8 custom-scrollbar pb-32">
@@ -317,6 +325,27 @@ const ConfiguracoesView: React.FC = () => {
                                     className="w-full bg-white border border-slate-200 rounded-xl p-4 min-h-[120px] outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-medium text-slate-600 resize-none shadow-sm"
                                     placeholder="Conte um pouco sobre sua história e especialidades para seus clientes..."
                                 />
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* NOVO CARD: GESTÃO FINANCEIRA */}
+                    <Card title="Gestão & Metas" icon={<TrendingUp size={20} className="text-orange-500" />} className="rounded-2xl shadow-sm border-slate-200">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+                            <InputField 
+                                label="Meta de Faturamento Mensal (R$)" 
+                                name="monthly_revenue_goal"
+                                type="number"
+                                value={studioData.monthly_revenue_goal}
+                                onChange={handleInputChange}
+                                placeholder="Ex: 10000"
+                                icon={DollarSign}
+                            />
+                            <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 flex items-start gap-3">
+                                <AlertCircle size={18} className="text-orange-500 mt-0.5" />
+                                <p className="text-[10px] text-orange-800 font-bold leading-relaxed">
+                                    Essa meta será usada no Dashboard para calcular seu progresso mensal em tempo real.
+                                </p>
                             </div>
                         </div>
                     </Card>
@@ -479,7 +508,7 @@ const ConfiguracoesView: React.FC = () => {
                         className="bg-orange-500 hover:bg-orange-600 text-white px-10 py-4 rounded-2xl font-black shadow-xl shadow-orange-100 flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isSaving ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
-                        {isSaving ? 'Salvando...' : 'Salvar Alterações'}
+                        {isSaving ? 'Gravando...' : 'Salvar Alterações'}
                     </button>
                 </div>
             </footer>
