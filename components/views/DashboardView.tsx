@@ -47,7 +47,7 @@ const QuickAction = ({ icon: Icon, label, color, onClick }: any) => (
 const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNavigate }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [appointments, setAppointments] = useState<any[]>([]);
-    const [monthlyGoal, setMonthlyGoal] = useState(0);
+    const [financialGoal, setFinancialGoal] = useState(0);
     const [monthRevenueTotal, setMonthRevenueTotal] = useState(0);
     
     // Filtro de Período
@@ -132,6 +132,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
 
                 // 3. Busca meta configurada em studio_settings (revenue_goal)
+                // FIX: Busca dedicada da meta para garantir sincronização com as configurações
                 const { data: settings, error: settingsError } = await supabase
                     .from('studio_settings')
                     .select('revenue_goal')
@@ -140,7 +141,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (settingsError) throw settingsError;
                 
                 const goal = settings?.revenue_goal || 5000;
-                if (mounted) setMonthlyGoal(goal);
+                if (mounted) setFinancialGoal(goal);
 
             } catch (e) {
                 console.error("Erro crítico ao sincronizar dashboard:", e);
@@ -169,13 +170,13 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     }, [appointments]);
 
     const goalProgress = useMemo(() => {
-        if (monthlyGoal <= 0) return { percent: 0, visual: 0 };
-        const percent = (monthRevenueTotal / monthlyGoal) * 100;
+        if (financialGoal <= 0) return { percent: 0, visual: 0 };
+        const percent = (monthRevenueTotal / financialGoal) * 100;
         return {
             percent: percent.toFixed(1),
             visual: Math.min(100, percent)
         };
-    }, [monthRevenueTotal, monthlyGoal]);
+    }, [monthRevenueTotal, financialGoal]);
 
     const handleApplyCustomFilter = () => {
         setCustomStart(tempStart);
@@ -305,7 +306,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     <div className="mt-2 z-10">
                         <div className="flex items-end justify-between mb-2">
                             <h3 className="text-2xl font-black">{goalProgress.percent}%</h3>
-                            <span className="text-[10px] font-bold opacity-60">alvo: {formatCurrency(monthlyGoal)}</span>
+                            <span className="text-[10px] font-bold opacity-60">alvo: {formatCurrency(financialGoal)}</span>
                         </div>
                         <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mb-1">
                             <div 
