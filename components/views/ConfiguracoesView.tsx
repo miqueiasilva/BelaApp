@@ -163,20 +163,22 @@ const ConfiguracoesView: React.FC = () => {
 
     const handleSaveStudio = async () => {
         if (!user) return;
-        setIsSaving(true);
+        setIsSaving(true); // Trava o botão
+        
         try {
             let finalCoverUrl = studioData.cover_url;
             let finalProfileUrl = studioData.profile_url;
 
+            // 1. Upload de mídias se houver alteração
             if (pendingFiles.cover) finalCoverUrl = await uploadAsset(pendingFiles.cover, 'cover');
             if (pendingFiles.logo) finalProfileUrl = await uploadAsset(pendingFiles.logo, 'logo');
 
-            // CORREÇÃO DEFINITIVA: Payload com Redundância para compatibilidade de Schema
-            const payload = {
+            // 2. Preparação do Payload com Redundância Obrigatória
+            const updates = {
                 studio_id: user.id,
                 updated_at: new Date().toISOString(),
 
-                // 1. Identidade
+                // Identidade
                 studio_name: studioData.studio_name || '',
                 cnpj_cpf: studioData.cnpj_cpf || '',
                 description: studioData.presentation_text || '',
@@ -184,7 +186,7 @@ const ConfiguracoesView: React.FC = () => {
                 cover_url: finalCoverUrl,
                 profile_url: finalProfileUrl,
 
-                // 2. Redes Sociais (Garantia de Duplicidade para evitar erro 400)
+                // Redes Sociais (Mapeamento Redundante Definitivo)
                 instagram_handle: studioData.instagram_handle || '', 
                 instagram: studioData.instagram_handle || '',
                 whatsapp: studioData.phone_whatsapp || '',
@@ -194,7 +196,7 @@ const ConfiguracoesView: React.FC = () => {
                 website_url: studioData.website_url || '',
                 website: studioData.website_url || '',
 
-                // 3. Endereço (Detalhado)
+                // Endereço Detalhado
                 address_zip: studioData.address_zip || '',
                 address_street: studioData.address_street || '',
                 address_number: studioData.address_number || '',
@@ -202,7 +204,7 @@ const ConfiguracoesView: React.FC = () => {
                 address_city: studioData.address_city || '',
                 address_state: studioData.address_state || '',
                 
-                // 4. Financeiro e Horários
+                // Financeiro e Horários
                 monthly_revenue_goal: parseFloat(studioData.monthly_revenue_goal) || 0,
                 business_hours: studioData.business_hours || {}, 
                 social_links: {
@@ -212,19 +214,24 @@ const ConfiguracoesView: React.FC = () => {
                 }
             };
 
+            // 3. Persistência no Banco
             const { error } = await supabase
                 .from('studio_settings')
-                .upsert(payload, { onConflict: 'studio_id' });
+                .upsert(updates, { onConflict: 'studio_id' });
 
-            if (error) throw error;
+            if (error) throw error; // Força queda no catch se houver erro
 
-            showToast("Configurações atualizadas com sucesso!");
+            // 4. Sucesso
+            showToast("Configurações salvas com sucesso!");
             setPendingFiles({ cover: null, logo: null });
-            fetchData();
-        } catch (e: any) {
-            console.error("Erro crítico ao salvar:", e);
-            showToast(e.message || "Erro de Schema ou Conexão", "error");
+            fetchData(); // Sincroniza estado
+            
+        } catch (error: any) {
+            // 5. Erro
+            console.error("Erro crítico ao salvar configurações:", error);
+            showToast("Erro ao salvar: " + (error.message || "Erro de conexão"), "error");
         } finally {
+            // 6. DESTRAVA O BOTÃO (Garantia de UX)
             setIsSaving(false);
         }
     };
