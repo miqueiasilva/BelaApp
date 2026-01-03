@@ -309,7 +309,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (data) setTemplates(data);
     };
 
-    const handleLoadTemplate = () => {
+    const handleLoadTemplate = async () => {
         if (!selectedTemplateId) {
             alert("Selecione um modelo na lista primeiro!");
             return;
@@ -344,7 +344,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             return;
         }
 
-        // --- MELHORIA SENIOR: PREENCHIMENTO INTELIGENTE ---
+        // --- MELHORIA SENIOR: MOTOR DE PREENCHIMENTO INTELIGENTE ---
         
         // 1. Preparação dos Dados Atuais
         const hoje = new Date();
@@ -352,6 +352,27 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         const dataExtensa = `${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
         const cidadeData = `Igarassu - PE, ${dataExtensa}.`;
         const professionalName = user?.nome || "Profissional Responsável";
+
+        // --- MÓDULO DETETIVE: BUSCA DE VALOR DO SERVIÇO NA AGENDA ---
+        let valorServico = "___________"; // Padrão
+        try {
+            // Busca o agendamento de HOJE para este cliente no banco
+            const hojeIso = hoje.toISOString().split('T')[0];
+            const { data: agendaHoje } = await supabase
+                .from('appointments')
+                .select('value')
+                .eq('client_id', formData.id)
+                .gte('date', `${hojeIso}T00:00:00`)
+                .lte('date', `${hojeIso}T23:59:59`)
+                .neq('status', 'cancelado')
+                .maybeSingle();
+
+            if (agendaHoje && agendaHoje.value) {
+                valorServico = parseFloat(agendaHoje.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+            }
+        } catch (e) {
+            console.warn("Módulo Detetive: Falha ao cruzar dados da agenda.", e);
+        }
 
         // 2. Substituição de DATA (Padrão de localidade ou underscores)
         textToInsert = textToInsert.replace(/Igarassu - PE,.*?20\d{0,2}[.]?/gi, cidadeData);
@@ -362,11 +383,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             textToInsert = textToInsert.replace(/Nome:\s*_+/gi, `Nome: ${formData.nome}`);
         }
 
-        // 4. Substituição de VALOR (Destaque para edição)
-        textToInsert = textToInsert.replace(/Valor do Serviço:\s*R\$\s*_+/gi, "Valor do Serviço: R$ [DIGITE O VALOR]");
+        // 4. Substituição de VALOR (Integração com Agenda)
+        textToInsert = textToInsert.replace(
+            /Valor do Serviço:\s*R\$\s*_+/gi, 
+            `Valor do Serviço: R$ ${valorServico}`
+        );
 
         // 5. Substituição do BLOCO DE PROFISSIONAL (Assinatura nominada)
-        // Busca o cabeçalho do profissional e substitui o conteúdo até o próximo divisor lógico
         textToInsert = textToInsert.replace(
             /PROFISSIONAL RESPONSÁVEL:[\s\S]*?(?=\n\n|TESTEMUNHA|CLIENTE)/gi, 
             `PROFISSIONAL RESPONSÁVEL:\n${professionalName.toUpperCase()}\n(Validação Digital em ${dataExtensa})`
@@ -384,7 +407,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         });
         
         setSelectedTemplateId('');
-        alert(`Contrato preenchido automaticamente para o profissional: ${professionalName}`);
+        alert(`Contrato preenchido! Valor detectado na agenda: R$ ${valorServico}`);
     };
 
     const fetchPhotos = async () => {
