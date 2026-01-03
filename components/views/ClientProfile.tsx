@@ -321,6 +321,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
         let textToInsert = "";
 
+        // 1. Parser Robusto de Conteúdo
         if (typeof template.content === 'string') {
             textToInsert = template.content
                 .replace(/^"|"$/g, '') 
@@ -341,6 +342,21 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             return;
         }
 
+        // --- MELHORIA SENIOR: PREENCHIMENTO AUTOMÁTICO DE DATA ---
+        const hoje = new Date();
+        const dia = hoje.getDate();
+        const ano = hoje.getFullYear();
+        const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+        const mes = meses[hoje.getMonth()];
+        const dataFormatada = `Igarassu - PE, ${dia} de ${mes} de ${ano}.`;
+
+        // Substitui o placeholder de data (Igarassu - PE, ______ de ... de 20____.) pela data real
+        textToInsert = textToInsert.replace(
+            /Igarassu - PE,.*?20.*?(\.|\n)/gi, 
+            dataFormatada + '\n'
+        );
+
+        // 2. ATUALIZAÇÃO DO ESTADO USANDO PADRÃO FUNCIONAL
         setAnamnesis((prev: any) => {
             const current = prev.clinical_notes || "";
             const divider = current.trim() ? "\n\n---\n\n" : "";
@@ -352,7 +368,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         });
         
         setSelectedTemplateId('');
-        alert("Modelo inserido com sucesso! Role o campo de texto para ver o conteúdo.");
+        alert("Modelo inserido com sucesso!");
     };
 
     const fetchPhotos = async () => {
