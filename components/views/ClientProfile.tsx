@@ -310,53 +310,43 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     };
 
     const handleLoadTemplate = async () => {
-        if (!selectedTemplateId) {
-            alert("Selecione um modelo na lista primeiro!");
-            return;
-        }
+        if (!selectedTemplateId) return alert("Selecione um modelo!");
         
         const template = templates.find(t => String(t.id) === String(selectedTemplateId));
-        if (!template) {
-            alert("Erro: Modelo não encontrado.");
-            return;
-        }
+        if (!template) return;
+
+        // 1. PREPARAÇÃO DE DADOS
+        const hoje = new Date();
+        const dataCurta = hoje.toLocaleDateString('pt-BR');
+        const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+        const dataExtensa = `${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
+        
+        // Nome do Profissional (Prioridade: Contexto do Usuário Logado)
+        const nomeProfissional = user?.nome || user?.user_metadata?.full_name || user?.user_metadata?.name || "JACILENE FÉLIX";
 
         let textToInsert = "";
-
-        // 1. Parser Robusto de Conteúdo
         if (typeof template.content === 'string') {
             textToInsert = template.content
                 .replace(/^"|"$/g, '') 
                 .replace(/\\n/g, '\n')
                 .replace(/\\"/g, '"');
-        } 
-        else if (Array.isArray(template.content)) {
-            textToInsert = template.content
-                .map((item: any) => `• ${item.question || item.label || 'Campo'}\n   R: `)
-                .join('\n\n');
-        }
-        else if (typeof template.content === 'object' && template.content !== null) {
+        } else {
             textToInsert = JSON.stringify(template.content, null, 2);
         }
 
-        if (!textToInsert) {
-            alert("Atenção: Este modelo parece estar vazio.");
-            return;
+        // 2. SUBSTITUIÇÕES DE TEXTO (REGEX AGRESSIVO)
+
+        // A) DATA (Localidade)
+        textToInsert = textToInsert.replace(/Igarassu - PE,.*?20\d{0,2}[.]?/gi, `Igarassu - PE, ${dataExtensa}.`);
+
+        // B) CLIENTE (Nome)
+        if (formData.nome) {
+            textToInsert = textToInsert.replace(/Nome:\s*_+/gi, `Nome: ${formData.nome.toUpperCase()}`);
         }
 
-        // --- MELHORIA SENIOR: MOTOR DE PREENCHIMENTO INTELIGENTE ---
-        
-        // 1. Preparação dos Dados Atuais
-        const hoje = new Date();
-        const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-        const dataExtensa = `${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
-        const cidadeData = `Igarassu - PE, ${dataExtensa}.`;
-        const professionalName = user?.nome || "Profissional Responsável";
-
-        // --- MÓDULO DETETIVE: BUSCA DE VALOR DO SERVIÇO NA AGENDA ---
-        let valorServico = "___________"; // Padrão
+        // C) VALOR (Detetive Silencioso na Agenda)
+        let valorTexto = "__________";
         try {
-            // Busca o agendamento de HOJE para este cliente no banco
             const hojeIso = hoje.toISOString().split('T')[0];
             const { data: agendaHoje } = await supabase
                 .from('appointments')
@@ -368,38 +358,27 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 .maybeSingle();
 
             if (agendaHoje && agendaHoje.value) {
-                valorServico = parseFloat(agendaHoje.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+                valorTexto = parseFloat(agendaHoje.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
             }
         } catch (e) {
-            console.warn("Módulo Detetive: Falha ao cruzar dados da agenda.", e);
+            // Falha silenciosa para valor
+        }
+        textToInsert = textToInsert.replace(/Valor do Serviço: R\$[_ ]+/gi, `Valor do Serviço: R$ ${valorTexto} `);
+
+        // D) PROFISSIONAL (Correção de Assinatura)
+        const assinaturaBloco = /PROFISSIONAL RESPONSÁVEL[\s\S]*?(?=\n\n|_|TESTEMUNHA|CLIENTE)/gi;
+        const novaAssinatura = `PROFISSIONAL RESPONSÁVEL:\n${nomeProfissional.toUpperCase()}\n(Assinatura Digital validada em ${dataCurta} às ${hoje.getHours().toString().padStart(2, '0')}:${hoje.getMinutes().toString().padStart(2, '0')})`;
+        
+        if (assinaturaBloco.test(textToInsert)) {
+            textToInsert = textToInsert.replace(assinaturaBloco, novaAssinatura);
+        } else {
+            textToInsert += `\n\n${novaAssinatura}`;
         }
 
-        // 2. Substituição de DATA (Padrão de localidade ou underscores)
-        textToInsert = textToInsert.replace(/Igarassu - PE,.*?20\d{0,2}[.]?/gi, cidadeData);
-        textToInsert = textToInsert.replace(/_{2,}\s*de\s*_{2,}\s*de\s*20_{2,}/gi, dataExtensa);
-
-        // 3. Substituição de NOME DO CLIENTE
-        if (formData.nome) {
-            textToInsert = textToInsert.replace(/Nome:\s*_+/gi, `Nome: ${formData.nome}`);
-        }
-
-        // 4. Substituição de VALOR (Integração com Agenda)
-        textToInsert = textToInsert.replace(
-            /Valor do Serviço:\s*R\$\s*_+/gi, 
-            `Valor do Serviço: R$ ${valorServico}`
-        );
-
-        // 5. Substituição do BLOCO DE PROFISSIONAL (Assinatura nominada)
-        textToInsert = textToInsert.replace(
-            /PROFISSIONAL RESPONSÁVEL:[\s\S]*?(?=\n\n|TESTEMUNHA|CLIENTE)/gi, 
-            `PROFISSIONAL RESPONSÁVEL:\n${professionalName.toUpperCase()}\n(Validação Digital em ${dataExtensa})`
-        );
-
-        // 6. Atualização do Estado do Componente
+        // 3. ATUALIZAÇÃO DO ESTADO
         setAnamnesis((prev: any) => {
             const current = prev.clinical_notes || "";
             const divider = current.trim() ? "\n\n---\n\n" : "";
-            
             return {
                 ...prev,
                 clinical_notes: current + divider + textToInsert
@@ -407,7 +386,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         });
         
         setSelectedTemplateId('');
-        alert(`Contrato preenchido! Valor detectado na agenda: R$ ${valorServico}`);
     };
 
     const fetchPhotos = async () => {
