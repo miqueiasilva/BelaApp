@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -517,11 +518,39 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     const handleSaveAnamnesis = async () => {
         setIsSaving(true);
-        const payload = { ...anamnesis, client_id: client.id };
-        const { error } = await supabase.from('client_anamnesis').upsert(payload);
+        // FIX: Mapeamento explícito para Snake Case e limpeza de payload para evitar erro 400
+        const payload = { 
+            client_id: client.id,
+            has_allergy: anamnesis.has_allergy,
+            allergy_details: anamnesis.allergy_details,
+            is_pregnant: anamnesis.is_pregnant,
+            uses_meds: anamnesis.uses_meds,
+            meds_details: anamnesis.meds_details,
+            uses_acids: anamnesis.uses_acids,
+            acids_details: anamnesis.acids_details,
+            uses_roacutan: anamnesis.uses_roacutan,
+            roacutan_time: anamnesis.roacutan_time,
+            has_diabetes: anamnesis.has_diabetes,
+            has_keloid: anamnesis.has_keloid,
+            has_herpes: anamnesis.has_herpes,
+            uses_anticoagulants: anamnesis.uses_anticoagulants,
+            recent_botox: anamnesis.recent_botox,
+            has_autoimmune: anamnesis.has_autoimmune,
+            cancer_treatment: anamnesis.cancer_treatment,
+            has_dermatitis: anamnesis.has_dermatitis,
+            aspirin_use: anamnesis.aspirin_use,
+            photo_authorized: !!anamnesis.photo_authorized,
+            service_value: String(anamnesis.service_value || ''),
+            payment_method: String(anamnesis.payment_method || ''),
+            clinical_notes: anamnesis.clinical_notes,
+            signature_url: anamnesis.signature_url,
+            signed_at: anamnesis.signed_at
+        };
+        
+        const { error } = await supabase.from('client_anamnesis').upsert(payload, { onConflict: 'client_id' });
         setIsSaving(false);
         if (!error) setToast({ message: "Anamnese salva!", type: 'success' });
-        else setToast({ message: "Erro na anamnese.", type: 'error' });
+        else setToast({ message: "Erro na anamnese: " + error.message, type: 'error' });
     };
 
     const handleSaveSignature = async (dataUrl: string) => {
@@ -555,7 +584,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     client_id: client.id,
                     signature_url: publicUrl, 
                     signed_at: timestamp 
-                });
+                }, { onConflict: 'client_id' });
 
             if (dbError) throw dbError;
 
