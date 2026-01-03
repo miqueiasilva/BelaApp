@@ -296,16 +296,20 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     const handleLoadTemplate = () => {
         if (!selectedTemplateId) {
-            alert("Por favor, selecione um modelo na lista antes de inserir.");
+            alert("Selecione um modelo na lista primeiro!");
             return;
         }
         
-        const template = templates.find(t => t.id === Number(selectedTemplateId));
-        if (!template) return;
+        // CORREÇÃO CRÍTICA: Convertendo o ID para número para garantir o find
+        const template = templates.find(t => String(t.id) === String(selectedTemplateId));
+        if (!template) {
+            alert("Erro: Modelo não encontrado.");
+            return;
+        }
 
         let textToInsert = "";
 
-        // 1. Parser de Conteúdo (Suporta Contratos/String e Fichas/Array)
+        // 1. Parser Robusto de Conteúdo
         if (typeof template.content === 'string') {
             textToInsert = template.content
                 .replace(/^"|"$/g, '') 
@@ -322,11 +326,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         }
 
         if (!textToInsert) {
-            alert("Atenção: Este modelo está vazio.");
+            alert("Atenção: Este modelo parece estar vazio.");
             return;
         }
 
-        // 2. ATUALIZAÇÃO DO ESTADO CORRETO (anamnesis.clinical_notes)
+        // 2. ATUALIZAÇÃO DO ESTADO USANDO PADRÃO FUNCIONAL (Garante sincronia)
         setAnamnesis((prev: any) => {
             const current = prev.clinical_notes || "";
             const divider = current.trim() ? "\n\n---\n\n" : "";
@@ -339,8 +343,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         
         setSelectedTemplateId('');
         
-        // 3. Feedback Visual Garantido
-        alert("Modelo inserido com sucesso! Role a caixa de texto para visualizar o conteúdo.");
+        // 3. Feedback Visual solicitado para garantir que o usuário veja a ação
+        alert("Modelo inserido com sucesso! Role o campo de texto para ver o conteúdo.");
     };
 
     const fetchPhotos = async () => {
