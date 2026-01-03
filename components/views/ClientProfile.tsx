@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -20,7 +19,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Toast, { ToastType } from '../shared/Toast';
 import { jsPDF } from 'jspdf';
 
-// --- Função Auxiliar Obrigatória: Base64 para Blob ---
+// --- Funções Auxiliares Obrigatórias ---
 const dataURLtoBlob = (dataURL: string) => {
   const arr = dataURL.split(',');
   const mimeMatch = arr[0].match(/:(.*?);/);
@@ -33,6 +32,19 @@ const dataURLtoBlob = (dataURL: string) => {
     u8arr[n] = bstr.charCodeAt(n);
   }
   return new Blob([u8arr], { type: mime });
+};
+
+const getBase64FromUrl = async (url: string): Promise<string> => {
+  const data = await fetch(url);
+  const blob = await data.blob();
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(blob);
+    reader.onloadend = () => {
+      const base64data = reader.result;
+      resolve(base64data as string);
+    };
+  });
 };
 
 interface ClientProfileProps {
@@ -463,18 +475,46 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 y += 5;
             });
 
-            // 5. ASSINATURA VISUAL (Placeholder para assinatura validada)
+            // 5. ASSINATURA VISUAL
             if (anamnesis.signature_url) {
-                if (y > 240) { doc.addPage(); y = 20; }
-                y += 20;
-                doc.text("__________________________________________", pageWidth / 2, y, { align: 'center' });
-                y += 5;
-                doc.setFont("helvetica", "bold");
-                doc.text("ASSINATURA DO CLIENTE (VALIDADA DIGITALMENTE)", pageWidth / 2, y, { align: 'center' });
-                y += 5;
-                doc.setFont("helvetica", "normal");
-                doc.setFontSize(7);
-                doc.text(`Assinado em ${format(parseISO(anamnesis.signed_at), 'dd/MM/yyyy HH:mm')}`, pageWidth / 2, y, { align: 'center' });
+                try {
+                    // Tenta capturar a versão base64 para o PDF
+                    const base64Sig = await getBase64FromUrl(anamnesis.signature_url);
+                    
+                    // Verifica se precisa de nova página antes da assinatura
+                    if (y > 230) { doc.addPage(); y = 20; }
+                    
+                    y += 15;
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(10);
+                    doc.text("ASSINATURA DO CLIENTE (VALIDADA DIGITALMENTE):", pageWidth / 2, y, { align: 'center' });
+                    y += 5;
+                    
+                    // Inserção da imagem visual
+                    const imgWidth = 60;
+                    const imgHeight = 25;
+                    const xCenter = (pageWidth - imgWidth) / 2;
+                    doc.addImage(base64Sig, 'PNG', xCenter, y, imgWidth, imgHeight);
+                    
+                    y += imgHeight + 5;
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(7);
+                    doc.text(`Identificador de Segurança: ${anamnesis.signature_url.split('/').pop()}`, pageWidth / 2, y, { align: 'center' });
+                    y += 4;
+                    doc.text(`Assinado em ${format(parseISO(anamnesis.signed_at), 'dd/MM/yyyy HH:mm')}`, pageWidth / 2, y, { align: 'center' });
+                } catch (imgErr) {
+                    console.error("Falha ao injetar imagem no PDF:", imgErr);
+                    // Fallback para texto apenas se a imagem falhar por CORS ou rede
+                    if (y > 250) { doc.addPage(); y = 20; }
+                    y += 15;
+                    doc.text("__________________________________________", pageWidth / 2, y, { align: 'center' });
+                    y += 5;
+                    doc.setFont("helvetica", "bold");
+                    doc.text("ASSINATURA DIGITAL VINCULADA", pageWidth / 2, y, { align: 'center' });
+                    y += 5;
+                    doc.setFontSize(7);
+                    doc.text(`Timestamp: ${format(parseISO(anamnesis.signed_at), 'dd/MM/yyyy HH:mm')}`, pageWidth / 2, y, { align: 'center' });
+                }
             }
 
             // 6. RODAPÉ
