@@ -174,7 +174,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [isEditing, setIsEditing] = useState(isNew);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
-    // FIX: Added missing isLoading state to resolve "Cannot find name 'setIsLoading'" errors in handleGeneratePDF.
     const [isLoading, setIsLoading] = useState(false);
     const [activeTab, setActiveTab] = useState<'geral' | 'anamnese' | 'fotos' | 'historico'>('geral');
     const [zoomImage, setZoomImage] = useState<string | null>(null);
@@ -376,7 +375,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (assinaturaBloco.test(textToInsert)) {
             textToInsert = textToInsert.replace(assinaturaBloco, novaAssinatura);
         } else {
-            textToInsert += `\n\n${novaAssHook}`;
+            textToInsert += `\n\n${novaAssinatura}`;
         }
 
         // 3. ATUALIZAÇÃO DO ESTADO
@@ -393,21 +392,21 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         setToast({ message: "Contrato preenchido automaticamente!", type: 'success' });
     };
 
-    // FIX: Added logic inside handleGeneratePDF that now safely references isLoading via setIsLoading.
     const handleGeneratePDF = async () => {
         setIsLoading(true);
         try {
             const doc = new jsPDF();
             const margin = 20;
             let y = 20;
+            const pageWidth = doc.internal.pageSize.getWidth();
 
             // 1. CABEÇALHO
             doc.setFont("helvetica", "bold");
             doc.setFontSize(18);
-            doc.text("JACILENE FÉLIX STUDIO", 105, y, { align: 'center' });
+            doc.text("JACILENE FÉLIX STUDIO", pageWidth / 2, y, { align: 'center' });
             y += 10;
             doc.setFontSize(14);
-            doc.text("FICHA DE ANAMNESE E CONTRATO", 105, y, { align: 'center' });
+            doc.text("FICHA DE ANAMNESE E CONTRATO", pageWidth / 2, y, { align: 'center' });
             y += 15;
 
             // 2. DADOS DO CLIENTE
@@ -456,29 +455,31 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             doc.setFont("helvetica", "normal");
             doc.setFontSize(9);
             
-            const splitText = doc.splitTextToSize(anamnesis.clinical_notes || "Nenhum termo registrado.", 170);
+            const splitText = doc.splitTextToSize(anamnesis.clinical_notes || "Nenhum termo registrado.", pageWidth - (margin * 2));
             splitText.forEach((line: string) => {
                 if (y > 280) { doc.addPage(); y = 20; }
                 doc.text(line, margin, y);
                 y += 5;
             });
 
-            // 5. ASSINATURA VISUAL (Se existir)
+            // 5. ASSINATURA VISUAL (Placeholder para assinatura validada)
             if (anamnesis.signature_url) {
                 if (y > 240) { doc.addPage(); y = 20; }
-                y += 10;
-                doc.text("__________________________________________", 105, y, { align: 'center' });
+                y += 20;
+                doc.text("__________________________________________", pageWidth / 2, y, { align: 'center' });
                 y += 5;
                 doc.setFont("helvetica", "bold");
-                doc.text("ASSINATURA DO CLIENTE", 105, y, { align: 'center' });
-                // Nota: O jspdf exige processar a URL da imagem para blob antes de adicionar. 
-                // Para simplificar esta versão, focamos no texto validado.
+                doc.text("ASSINATURA DO CLIENTE (VALIDADA DIGITALMENTE)", pageWidth / 2, y, { align: 'center' });
+                y += 5;
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(7);
+                doc.text(`Assinado em ${format(parseISO(anamnesis.signed_at), 'dd/MM/yyyy HH:mm')}`, pageWidth / 2, y, { align: 'center' });
             }
 
             // 6. RODAPÉ
             const now = format(new Date(), "dd/MM/yyyy HH:mm");
             doc.setFontSize(7);
-            doc.text(`Gerado eletronicamente via BelareStudio em ${now}`, 105, 290, { align: 'center' });
+            doc.text(`Gerado eletronicamente via BelareStudio em ${now}`, pageWidth / 2, 290, { align: 'center' });
 
             // FINALIZAÇÃO (Share ou Save)
             const pdfBlob = doc.output('blob');
@@ -488,8 +489,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
                 await navigator.share({
                     files: [file],
-                    title: 'Contrato de Serviço - Jacilene Félix',
-                    text: 'Segue a ficha de anamnese e contrato assinada.'
+                    title: 'Contrato e Anamnese - Jacilene Félix',
+                    text: 'Documento assinado eletronicamente.'
                 });
             } else {
                 doc.save(fileName);
@@ -500,7 +501,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             console.error("PDF Error:", e);
             setToast({ message: "Erro ao gerar PDF.", type: 'error' });
         } finally {
-            // FIX: Successfully reset isLoading to false in the finally block.
             setIsLoading(false);
         }
     };
@@ -992,9 +992,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Observações Clínicas / Termos Adicionais</label>
                                             <button 
                                                 onClick={handleGeneratePDF}
-                                                className="text-[10px] font-black text-orange-600 uppercase tracking-widest flex items-center gap-2 px-3 py-1 bg-white border border-orange-200 rounded-lg hover:bg-orange-50 transition-colors"
+                                                disabled={isLoading}
+                                                className="text-[10px] font-black text-orange-600 uppercase tracking-widest flex items-center gap-2 px-3 py-1 bg-white border border-orange-200 rounded-lg hover:bg-orange-50 transition-colors disabled:opacity-50"
                                             >
-                                                <Share2 size={12} /> Compartilhar Contrato (PDF)
+                                                {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />}
+                                                Compartilhar Contrato (PDF)
                                             </button>
                                         </div>
                                         <textarea 
