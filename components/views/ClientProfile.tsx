@@ -6,7 +6,8 @@ import {
     CreditCard, Briefcase, Home, Map, Hash, Info, Settings, 
     Camera, Loader2, FileText, Activity, AlertCircle, Maximize2,
     Trash2, PenTool, Eraser, Check, Image as ImageIcon, Instagram,
-    Navigation, Smile, FilePlus, ChevronDown, HeartPulse, ShieldCheck
+    Navigation, Smile, FilePlus, ChevronDown, HeartPulse, ShieldCheck,
+    DollarSign
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -199,6 +200,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         has_dermatitis: false,
         aspirin_use: false,
         photo_authorized: true,
+        service_value: '',
+        payment_method: '',
         clinical_notes: '',
         signed_at: null,
         signature_url: null
@@ -335,7 +338,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
         // 2. SUBSTITUIÇÕES DE TEXTO (MOTOR DE MERGE INTELIGENTE)
 
-        // A) DATA E LOCALIDADE
+        // A) DATA E LOCALIDADE (Limpeza de pontos/underscores excedentes)
         textToInsert = textToInsert.replace(/Igarassu - PE,.*?20.*?(\.|_| )+/gi, `Igarassu - PE, ${dataExtensa}.`);
 
         // B) DADOS CADASTRAIS (REGEX AGRESSIVO)
@@ -355,24 +358,12 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         const statusFotoTexto = anamnesis.photo_authorized ? "AUTORIZO" : "NÃO AUTORIZO";
         textToInsert = textToInsert.replace(/\[STATUS_FOTO\]/gi, statusFotoTexto);
 
-        // D) VALOR (Detetive na Agenda)
-        let valorTexto = "__________";
-        try {
-            const hojeIso = hoje.toISOString().split('T')[0];
-            const { data: agendaHoje } = await supabase
-                .from('appointments')
-                .select('value')
-                .eq('client_id', formData.id)
-                .gte('date', `${hojeIso}T00:00:00`)
-                .lte('date', `${hojeIso}T23:59:59`)
-                .neq('status', 'cancelado')
-                .maybeSingle();
-
-            if (agendaHoje && agendaHoje.value) {
-                valorTexto = parseFloat(agendaHoje.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-            }
-        } catch (e) {}
-        textToInsert = textToInsert.replace(/Valor do Serviço: R\$[_ ]+/gi, `Valor do Serviço: R$ ${valorTexto} `);
+        // D) FINANCEIRO (VALOR E PAGAMENTO - PRIORIDADE PARA CAMPOS MANUAIS)
+        const displayValue = anamnesis.service_value || "__________";
+        const displayMethod = anamnesis.payment_method || "__________";
+        
+        textToInsert = textToInsert.replace(/(Valor do Serviço|Valor):\s*R\$?\s*[_ ]+/gi, `$1: R$ ${displayValue} `);
+        textToInsert = textToInsert.replace(/(Forma de )?Pagamento:\s*[_ ]+/gi, `$1Pagamento: ${displayMethod} `);
 
         // E) ASSINATURA E TESTEMUNHA
         const assinaturaBloco = /PROFISSIONAL RESPONSÁVEL[\s\S]*?(?=\n\n|CLIENTE)/gi;
@@ -761,10 +752,10 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
                     {activeTab === 'anamnese' && (
                         <div className="space-y-6 animate-in fade-in duration-500">
-                            <Card title="Checklist de Saúde (Anamnese Crítica)" icon={<HeartPulse size={20} className="text-rose-500" />}>
+                            <Card title="Checklist de Saúde & Consentimento" icon={<HeartPulse size={20} className="text-rose-500" />}>
                                 <div className="space-y-8">
                                     {/* SEÇÃO DE PRIVACIDADE E FOTOS */}
-                                    <div className="p-5 bg-orange-50 border-2 border-orange-100 rounded-3xl mb-8 flex items-center justify-between group hover:border-orange-300 transition-all">
+                                    <div className="p-5 bg-orange-50 border-2 border-orange-100 rounded-3xl mb-4 flex items-center justify-between group hover:border-orange-300 transition-all">
                                         <div className="flex items-center gap-4">
                                             <div className="p-3 bg-white rounded-2xl text-orange-500 shadow-sm border border-orange-100">
                                                 <ImageIcon size={20} />
@@ -778,6 +769,49 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             on={anamnesis.photo_authorized} 
                                             onClick={() => setAnamnesis({...anamnesis, photo_authorized: !anamnesis.photo_authorized})} 
                                         />
+                                    </div>
+
+                                    {/* NOVOS CAMPOS: VALOR E PAGAMENTO */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor Acordado (R$)</label>
+                                            <div className="relative group">
+                                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500">
+                                                    <DollarSign size={18} />
+                                                </div>
+                                                <input 
+                                                    type="text"
+                                                    value={anamnesis.service_value}
+                                                    onChange={(e) => setAnamnesis({...anamnesis, service_value: e.target.value})}
+                                                    placeholder="Ex: 350,00"
+                                                    className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-black text-slate-700 shadow-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
+                                            <div className="relative group">
+                                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500">
+                                                    <CreditCard size={18} />
+                                                </div>
+                                                <select 
+                                                    value={anamnesis.payment_method}
+                                                    onChange={(e) => setAnamnesis({...anamnesis, payment_method: e.target.value})}
+                                                    className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none appearance-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-bold text-slate-700 shadow-sm"
+                                                >
+                                                    <option value="">Selecione...</option>
+                                                    <option value="Pix">Pix</option>
+                                                    <option value="Dinheiro">Dinheiro</option>
+                                                    <option value="Cartão de Crédito">Cartão de Crédito</option>
+                                                    <option value="Cartão de Débito">Cartão de Débito</option>
+                                                    <option value="Parcelado">Parcelado</option>
+                                                    <option value="Transferência">Transferência</option>
+                                                </select>
+                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none">
+                                                    <ChevronDown size={16} />
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
