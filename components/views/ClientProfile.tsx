@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -365,9 +366,10 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         }
         textToInsert = textToInsert.replace(/Valor do Serviço: R\$[_ ]+/gi, `Valor do Serviço: R$ ${valorTexto} `);
 
-        // D) PROFISSIONAL (Correção de Assinatura)
-        const assinaturaBloco = /PROFISSIONAL RESPONSÁVEL[\s\S]*?(?=\n\n|_|TESTEMUNHA|CLIENTE)/gi;
-        const novaAssinatura = `PROFISSIONAL RESPONSÁVEL:\n${nomeProfissional.toUpperCase()}\n(Assinatura Digital validada em ${dataCurta} às ${hoje.getHours().toString().padStart(2, '0')}:${hoje.getMinutes().toString().padStart(2, '0')})`;
+        // D) PROFISSIONAL (CORREÇÃO DE LIMPEZA E ASSINATURA)
+        // Procura por "PROFISSIONAL RESPONSÁVEL", pega o texto e TAMBÉM os traços (____) se houverem
+        const assinaturaBloco = /PROFISSIONAL RESPONSÁVEL[\s\S]*?(?=\n\n|TESTEMUNHA|CLIENTE)/gi;
+        const novaAssinatura = `PROFISSIONAL RESPONSÁVEL:\n${nomeProfissional.toUpperCase()}\n(Assinatura Digital validada em ${dataCurta} às ${hoje.getHours().toString().padStart(2, '0')}:${hoje.getMinutes().toString().padStart(2, '0')})\n`;
         
         if (assinaturaBloco.test(textToInsert)) {
             textToInsert = textToInsert.replace(assinaturaBloco, novaAssinatura);
