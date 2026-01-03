@@ -184,6 +184,16 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         is_pregnant: false,
         uses_meds: false,
         meds_details: '',
+        has_diabetes: false,
+        diabetes_type: '',
+        uses_roacutan: false,
+        roacutan_time: '',
+        has_keloid: false,
+        uses_acids: false,
+        has_herpes: false,
+        has_autoimmune: false,
+        uses_anticoagulants: false,
+        recent_botox: false,
         clinical_notes: '',
         signed_at: null,
         signature_url: null
@@ -744,29 +754,39 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                         <div className="space-y-6 animate-in fade-in duration-500">
                             <Card title="Ficha de Saúde Estética" icon={<Activity size={18} />}>
                                 <div className="space-y-8">
-                                    {[
-                                        { key: 'has_allergy', label: 'Possui Alguma Alergia?', hasDetails: true, detailKey: 'allergy_details', placeholder: 'Cite substâncias...' },
-                                        { key: 'is_pregnant', label: 'Está Gestante ou Lactante?', hasDetails: false },
-                                        { key: 'uses_meds', label: 'Usa Medicamentos Contínuos?', hasDetails: true, detailKey: 'meds_details', placeholder: 'Quais?' }
-                                    ].map(q => (
-                                        <div key={q.key} className="space-y-4 border-b border-slate-50 pb-6 last:border-0">
-                                            <div className="flex items-center justify-between">
-                                                <p className="font-bold text-slate-700">{q.label}</p>
-                                                <ToggleSwitch on={anamnesis[q.key]} onClick={() => setAnamnesis({...anamnesis, [q.key]: !anamnesis[q.key]})} />
-                                            </div>
-                                            {q.hasDetails && anamnesis[q.key] && (
-                                                <div className="animate-in slide-in-from-left-2 duration-300">
-                                                    <textarea 
-                                                        value={anamnesis[q.detailKey]}
-                                                        onChange={(e) => setAnamnesis({...anamnesis, [q.detailKey]: e.target.value})}
-                                                        placeholder={q.placeholder}
-                                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-rose-100 focus:border-rose-400"
-                                                        rows={2}
-                                                    />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+                                        {[
+                                            { key: 'has_allergy', label: 'Possui Alguma Alergia?', hasDetails: true, detailKey: 'allergy_details', placeholder: 'Cite substâncias...' },
+                                            { key: 'is_pregnant', label: 'Está Gestante ou Lactante?', hasDetails: false },
+                                            { key: 'uses_meds', label: 'Usa Medicamentos Contínuos?', hasDetails: true, detailKey: 'meds_details', placeholder: 'Quais?' },
+                                            { key: 'has_diabetes', label: 'Possui Diabetes?', hasDetails: true, detailKey: 'diabetes_type', placeholder: 'Tipo I ou II?' },
+                                            { key: 'uses_roacutan', label: 'Usa ou usou Roacutan?', hasDetails: true, detailKey: 'roacutan_time', placeholder: 'Há quanto tempo usa/parou?' },
+                                            { key: 'has_keloid', label: 'Possui Quelóide?', hasDetails: false },
+                                            { key: 'uses_acids', label: 'Uso de Ácidos na face?', hasDetails: false },
+                                            { key: 'has_herpes', label: 'Histórico de Herpes Labial?', hasDetails: false },
+                                            { key: 'has_autoimmune', label: 'Doenças Autoimunes?', hasDetails: false },
+                                            { key: 'uses_anticoagulants', label: 'Uso de Anticoagulantes?', hasDetails: false },
+                                            { key: 'recent_botox', label: 'Fez Botox recentemente? (6 meses)', hasDetails: false }
+                                        ].map(q => (
+                                            <div key={q.key} className="space-y-3 pb-4 border-b border-slate-50 last:border-0 md:border-b-0">
+                                                <div className="flex items-center justify-between gap-4">
+                                                    <p className="font-bold text-slate-700 text-sm">{q.label}</p>
+                                                    <ToggleSwitch on={anamnesis[q.key]} onClick={() => setAnamnesis({...anamnesis, [q.key]: !anamnesis[q.key]})} />
                                                 </div>
-                                            )}
-                                        </div>
-                                    ))}
+                                                {q.hasDetails && anamnesis[q.key] && (
+                                                    <div className="animate-in slide-in-from-top-2 duration-300">
+                                                        <textarea 
+                                                            value={anamnesis[q.detailKey]}
+                                                            onChange={(e) => setAnamnesis({...anamnesis, [q.detailKey]: e.target.value})}
+                                                            placeholder={q.placeholder}
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs font-medium text-slate-600 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                                                            rows={1}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
 
                                     <div className="pt-4 space-y-4">
                                         <div className="flex flex-col sm:flex-row items-end gap-3 p-4 bg-orange-50 rounded-2xl border border-orange-100">
