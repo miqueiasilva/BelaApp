@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -39,7 +38,7 @@ interface ClientProfileProps {
     onSave: (client: any) => Promise<void>;
 }
 
-// --- Componente Interno: Assinatura Digital Corrigido ---
+// --- Componente Interno: Assinatura Digital ---
 const SignaturePad = ({ onSave, isSaving }: { onSave: (dataUrl: string) => void, isSaving: boolean }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
@@ -111,7 +110,6 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (dataUrl: string) => void,
             alert("Por favor, assine antes de confirmar.");
             return;
         }
-        // Captura o dataURL (base64) para enviar ao pai
         const dataUrl = canvasRef.current.toDataURL('image/png');
         onSave(dataUrl);
     };
@@ -131,7 +129,7 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (dataUrl: string) => void,
                     onTouchMove={(e) => { e.preventDefault(); draw(e); }}
                     onTouchEnd={() => setIsDrawing(false)}
                 />
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-none text-[8px] font-black text-slate-300 uppercase tracking-[0.4em] z-0">
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-none text-[8px] font-black text-slate-300 uppercase tracking-[0.4em] z-0 text-center w-full">
                     Documento Assinado Digitalmente via BelareStudio
                 </div>
             </div>
@@ -322,7 +320,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
         const dataExtensa = `${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
         
-        // Nome do Profissional (Prioridade: Contexto do Usuário Logado)
+        // Nome do Profissional (Prioridade: Usuário Logado)
         const nomeProfissional = user?.nome || user?.user_metadata?.full_name || user?.user_metadata?.name || "JACILENE FÉLIX";
 
         let textToInsert = "";
@@ -335,10 +333,10 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             textToInsert = JSON.stringify(template.content, null, 2);
         }
 
-        // 2. SUBSTITUIÇÕES DE TEXTO (REGEX AGRESSIVO)
+        // 2. SUBSTITUIÇÕES DE TEXTO (REGEX REFINADO)
 
-        // A) DATA (Localidade)
-        textToInsert = textToInsert.replace(/Igarassu - PE,.*?20\d{0,2}[.]?/gi, `Igarassu - PE, ${dataExtensa}.`);
+        // A) DATA (Limpeza de pontos/underscores excedentes)
+        textToInsert = textToInsert.replace(/Igarassu - PE,.*?20.*?(\.|_| )+/gi, `Igarassu - PE, ${dataExtensa}.`);
 
         // B) CLIENTE (Nome)
         if (formData.nome) {
@@ -362,14 +360,16 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 valorTexto = parseFloat(agendaHoje.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
             }
         } catch (e) {
-            // Falha silenciosa para valor
+            // Silencioso
         }
         textToInsert = textToInsert.replace(/Valor do Serviço: R\$[_ ]+/gi, `Valor do Serviço: R$ ${valorTexto} `);
 
-        // D) PROFISSIONAL (CORREÇÃO DE LIMPEZA E ASSINATURA)
-        // Procura por "PROFISSIONAL RESPONSÁVEL", pega o texto e TAMBÉM os traços (____) se houverem
-        const assinaturaBloco = /PROFISSIONAL RESPONSÁVEL[\s\S]*?(?=\n\n|TESTEMUNHA|CLIENTE)/gi;
-        const novaAssinatura = `PROFISSIONAL RESPONSÁVEL:\n${nomeProfissional.toUpperCase()}\n(Assinatura Digital validada em ${dataCurta} às ${hoje.getHours().toString().padStart(2, '0')}:${hoje.getMinutes().toString().padStart(2, '0')})\n`;
+        // D) PROFISSIONAL (Assinatura Digital + Testemunha)
+        const assinaturaBloco = /PROFISSIONAL RESPONSÁVEL[\s\S]*?(?=\n\n|CLIENTE)/gi;
+        
+        const timestampFormatado = `${hoje.getHours().toString().padStart(2, '0')}:${hoje.getMinutes().toString().padStart(2, '0')}`;
+        
+        const novaAssinatura = `PROFISSIONAL RESPONSÁVEL:\n${nomeProfissional.toUpperCase()}\n(Assinatura Digital validada em ${dataCurta} às ${timestampFormatado})\n\n________________________________________________\nTESTEMUNHA (Opcional)\nCPF:\n`;
         
         if (assinaturaBloco.test(textToInsert)) {
             textToInsert = textToInsert.replace(assinaturaBloco, novaAssinatura);
