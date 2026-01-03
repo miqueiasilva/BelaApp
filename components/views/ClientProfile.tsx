@@ -340,7 +340,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         const dataExtensa = `${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
         
         const nomeProfissional = user?.nome || user?.user_metadata?.full_name || user?.user_metadata?.name || "JACILENE FÉLIX";
-        const emailProfissional = user?.email || "E-mail não identificado";
+        const emailProfissional = user?.email || user?.user_metadata?.email || "E-mail não identificado";
 
         let textToInsert = "";
         if (typeof template.content === 'string') {
@@ -381,12 +381,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         textToInsert = textToInsert.replace(/(Valor do Serviço|Valor):\s*R\$?\s*[_ ]+/gi, `$1: R$ ${displayValue} `);
         textToInsert = textToInsert.replace(/(Forma de )?Pagamento:\s*[_ ]+/gi, `$1Pagamento: ${displayMethod} `);
 
-        // E) ASSINATURA E TESTEMUNHA (Incluindo E-mail para rastreabilidade)
-        const assinaturaBloco = /PROFISSIONAL RESPONSÁVEL[\s\S]*?(?=\n\n|CLIENTE)/gi;
+        // E) ASSINATURA E TESTEMUNHA (Inclusão de E-mail para Rastreabilidade Digital)
+        const assinaturaBloco = /PROFISSIONAL RESPONSÁVEL[\s\S]*?(?=\n\n|CLIENTE|TESTEMUNHA)/gi;
         const timestampFormatado = `${hoje.getHours().toString().padStart(2, '0')}:${hoje.getMinutes().toString().padStart(2, '0')}`;
         
-        // NOVO FORMATO DE ASSINATURA COM E-MAIL (ID)
-        const novaAssinatura = `PROFISSIONAL RESPONSÁVEL:\n${nomeProfissional.toUpperCase()}\n(ID: ${emailProfissional})\n(Assinatura Digital validada em ${dataCurta} às ${timestampFormatado})\n\n________________________________________________\nTESTEMUNHA (Opcional)\nCPF:\n`;
+        const novaAssinatura = `PROFISSIONAL RESPONSÁVEL:\n${nomeProfissional.toUpperCase()}\n(ID Digital: ${emailProfissional})\n(Assinatura Digital validada em ${dataCurta} às ${timestampFormatado})\n\n________________________________________________\nTESTEMUNHA (Opcional)\nCPF:\n`;
         
         if (assinaturaBloco.test(textToInsert)) {
             textToInsert = textToInsert.replace(assinaturaBloco, novaAssinatura);
@@ -882,7 +881,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} disabled={!isEditing} icon={User} span="md:col-span-2" />
                                     <EditField label="Apelido" name="apelido" value={formData.apelido} onChange={handleInputChange} disabled={!isEditing} icon={Smile} />
                                     <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} disabled={!isEditing} placeholder="000.000.000-00" icon={CreditCard} />
-                                    <EditField label="RG" name="rg" value={formData.rg} onChange={handleInputChange} disabled={!isEditing} placeholder="00.000.000-0" icon={CreditCard} />
+                                    <EditField label="RG" name="rg" value={formData.rg} onChange={handleInputChange} disabled={!isEditing} placeholder="000.000.000-0" icon={CreditCard} />
                                     <EditField label="Data de Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} disabled={!isEditing} icon={Calendar} />
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Sexo</label>
