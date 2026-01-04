@@ -7,7 +7,7 @@ import {
     Camera, Loader2, FileText, Activity, AlertCircle, Maximize2,
     Trash2, PenTool, Eraser, Check, Image as ImageIcon, Instagram,
     Navigation, Smile, FilePlus, ChevronDown, HeartPulse, ShieldCheck,
-    DollarSign, Share2
+    DollarSign, Share2, ClipboardCheck
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -219,7 +219,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         payment_method: '',
         clinical_notes: '',
         signed_at: null,
-        signature_url: null
+        signature_url: null,
+        // Novos campos técnicos
+        phototype: '',
+        pigment_details: '',
+        lot_info: '',
+        needle_details: '',
+        technique_applied: ''
     });
     const [templates, setTemplates] = useState<any[]>([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
@@ -470,9 +476,23 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 doc.text(line, margin, y);
                 y += 5;
             });
-            y += 10;
+            y += 8;
 
-            // 4. CONTRATO (TEXTO LONGO)
+            // 4. FICHA TÉCNICA DO PROCEDIMENTO (Novo bloco)
+            doc.setFont("helvetica", "bold");
+            doc.text("FICHA TÉCNICA DO PROCEDIMENTO", margin, y);
+            y += 7;
+            doc.setFont("helvetica", "normal");
+            const techLine1 = `Fototipo: ${anamnesis.phototype || '---'} | Técnica: ${anamnesis.technique_applied || '---'}`;
+            const techLine2 = `Pigmento: ${anamnesis.pigment_details || '---'}`;
+            const techLine3 = `Lote/Validade: ${anamnesis.lot_info || '---'} | Agulha: ${anamnesis.needle_details || '---'}`;
+            
+            doc.text(techLine1, margin, y); y += 5;
+            doc.text(techLine2, margin, y); y += 5;
+            doc.text(techLine3, margin, y);
+            y += 12;
+
+            // 5. CONTRATO (TEXTO LONGO)
             doc.setFont("helvetica", "bold");
             doc.text("TERMOS DO CONTRATO E CIÊNCIA", margin, y);
             y += 7;
@@ -486,27 +506,20 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 y += 5;
             });
 
-            // 5. ASSINATURA VISUAL
+            // 6. ASSINATURA VISUAL
             if (anamnesis.signature_url) {
                 try {
-                    // Tenta capturar a versão base64 para o PDF
                     const base64Sig = await getBase64FromUrl(anamnesis.signature_url);
-                    
-                    // Verifica se precisa de nova página antes da assinatura
                     if (y > 230) { doc.addPage(); y = 20; }
-                    
                     y += 15;
                     doc.setFont("helvetica", "bold");
                     doc.setFontSize(10);
                     doc.text("ASSINATURA DO CLIENTE (VALIDADA DIGITALMENTE):", pageWidth / 2, y, { align: 'center' });
                     y += 5;
-                    
-                    // Inserção da imagem visual
                     const imgWidth = 60;
                     const imgHeight = 25;
                     const xCenter = (pageWidth - imgWidth) / 2;
                     doc.addImage(base64Sig, 'PNG', xCenter, y, imgWidth, imgHeight);
-                    
                     y += imgHeight + 5;
                     doc.setFont("helvetica", "normal");
                     doc.setFontSize(7);
@@ -515,7 +528,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     doc.text(`Assinado em ${format(parseISO(anamnesis.signed_at), 'dd/MM/yyyy HH:mm')}`, pageWidth / 2, y, { align: 'center' });
                 } catch (imgErr) {
                     console.error("Falha ao injetar imagem no PDF:", imgErr);
-                    // Fallback para texto apenas se a imagem falhar por CORS ou rede
                     if (y > 250) { doc.addPage(); y = 20; }
                     y += 15;
                     doc.text("__________________________________________", pageWidth / 2, y, { align: 'center' });
@@ -528,12 +540,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 }
             }
 
-            // 6. RODAPÉ
+            // 7. RODAPÉ
             const now = format(new Date(), "dd/MM/yyyy HH:mm");
             doc.setFontSize(7);
             doc.text(`Gerado eletronicamente via BelareStudio em ${now}`, pageWidth / 2, 290, { align: 'center' });
 
-            // FINALIZAÇÃO (Share ou Save)
             const pdfBlob = doc.output('blob');
             const fileName = `Contrato_${formData.nome.replace(/\s+/g, '_')}.pdf`;
 
@@ -569,7 +580,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     const handleSaveAnamnesis = async () => {
         setIsSaving(true);
-        // FIX: Mapeamento explícito para Snake Case e limpeza de payload para evitar erro 400
         const payload = { 
             client_id: client.id,
             has_allergy: anamnesis.has_allergy,
@@ -595,7 +605,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             payment_method: String(anamnesis.payment_method || ''),
             clinical_notes: anamnesis.clinical_notes,
             signature_url: anamnesis.signature_url,
-            signed_at: anamnesis.signed_at
+            signed_at: anamnesis.signed_at,
+            // Persistindo novos campos
+            phototype: anamnesis.phototype,
+            pigment_details: anamnesis.pigment_details,
+            lot_info: anamnesis.lot_info,
+            needle_details: anamnesis.needle_details,
+            technique_applied: anamnesis.technique_applied
         };
         
         const { error } = await supabase.from('client_anamnesis').upsert(payload, { onConflict: 'client_id' });
@@ -966,7 +982,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         />
                                     </div>
 
-                                    {/* NOVOS CAMPOS: VALOR E PAGAMENTO */}
+                                    {/* FINANCEIRO */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor Acordado (R$)</label>
@@ -984,7 +1000,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             </div>
                                         </div>
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px) font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
                                             <div className="relative group">
                                                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500">
                                                     <CreditCard size={18} />
@@ -1009,6 +1025,55 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         </div>
                                     </div>
 
+                                    {/* NOVA SEÇÃO: AVALIAÇÃO TÉCNICA (PROFISSIONAL) */}
+                                    <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-6">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <ClipboardCheck className="text-orange-500" size={18} />
+                                            <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest">Avaliação Técnica (Profissional)</h4>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Fototipo</label>
+                                                <select 
+                                                    value={anamnesis.phototype} 
+                                                    onChange={(e) => setAnamnesis({...anamnesis, phototype: e.target.value})}
+                                                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50"
+                                                >
+                                                    <option value="">Selecione</option>
+                                                    <option value="1">Fototipo 1 (Muito Clara)</option>
+                                                    <option value="2">Fototipo 2 (Clara)</option>
+                                                    <option value="3">Fototipo 3 (Morena Clara)</option>
+                                                    <option value="4">Fototipo 4 (Morena Moderada)</option>
+                                                    <option value="5">Fototipo 5 (Morena Escura)</option>
+                                                    <option value="6">Fototipo 6 (Negra)</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Técnica Aplicada</label>
+                                                <select 
+                                                    value={anamnesis.technique_applied} 
+                                                    onChange={(e) => setAnamnesis({...anamnesis, technique_applied: e.target.value})}
+                                                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50"
+                                                >
+                                                    <option value="">Selecione</option>
+                                                    <option value="Fio a Fio">Fio a Fio</option>
+                                                    <option value="Shadow">Shadow</option>
+                                                    <option value="Híbrida">Híbrida</option>
+                                                    <option value="Labial Full">Labial Full</option>
+                                                    <option value="Neutralização">Neutralização</option>
+                                                    <option value="Outra">Outra</option>
+                                                </select>
+                                            </div>
+
+                                            <EditField label="Cor / Pigmento" name="pigment_details" value={anamnesis.pigment_details} onChange={(e: any) => setAnamnesis({...anamnesis, pigment_details: e.target.value})} placeholder="Ex: RB Kollors - Jambo" />
+                                            <EditField label="Lote / Validade" name="lot_info" value={anamnesis.lot_info} onChange={(e: any) => setAnamnesis({...anamnesis, lot_info: e.target.value})} placeholder="Ex: Lote 123 - Val 2027" />
+                                            <EditField label="Agulha / Lâmina" name="needle_details" value={anamnesis.needle_details} onChange={(e: any) => setAnamnesis({...anamnesis, needle_details: e.target.value})} placeholder="Ex: 1 Ponta - 0.30mm" span="md:col-span-2" />
+                                        </div>
+                                    </div>
+
+                                    {/* CHECKLIST MÉDICO */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
                                         {[
                                             { key: 'is_pregnant', label: 'Gestante ou Lactante?', hasDetails: false },
@@ -1045,6 +1110,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         ))}
                                     </div>
 
+                                    {/* TEMPLATES E NOTAS */}
                                     <div className="pt-4 space-y-4">
                                         <div className="flex flex-col sm:flex-row items-end gap-3 p-4 bg-orange-50 rounded-2xl border border-orange-100">
                                             <div className="flex-1 w-full space-y-1.5">
@@ -1093,6 +1159,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         />
                                     </div>
 
+                                    {/* ASSINATURA */}
                                     <div className="pt-6 border-t border-slate-100">
                                         <div className="flex justify-between items-end mb-4">
                                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
