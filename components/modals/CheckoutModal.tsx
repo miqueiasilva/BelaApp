@@ -133,7 +133,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- Lógica de Finalização de Recebimento ---
+    // --- Lógica de Finalização de Recebimento (SMART OVERWRITE) ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione um método de pagamento.", type: 'error' });
@@ -142,64 +142,63 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         setIsLoading(true);
 
-        // --- BUGFIX CRÍTICO: CAPTURA E VALIDAÇÃO DO PROFISSIONAL ---
+        // --- CAPTURA E VALIDAÇÃO DO PROFISSIONAL ---
         const professionalIdToSave = sanitizeUuid(appointment?.professional_id);
         
-        console.log('[FINANCEIRO] Iniciando gravação de venda:', {
-            appointment_id: appointment.id,
-            professional_id: professionalIdToSave,
-            service: appointment.service_name,
-            total: appointment.price
-        });
-
         if (!professionalIdToSave) {
             console.error('[FINANCEIRO] Erro: Tentativa de venda sem ID de profissional vinculado.');
             setToast({ 
-                message: "Erro crítico: Nenhum profissional vinculado a este atendimento. Verifique o cadastro na agenda.", 
+                message: "Erro crítico: Nenhum profissional vinculado a este atendimento.", 
                 type: 'error' 
             });
             setIsLoading(false);
             return;
         }
-        // -----------------------------------------------------------
 
         try {
-            // 1. Montagem do Payload Financeiro Completo com Sanitização de UUIDs
+            // LOGICA SMART OVERWRITE:
+            // 1. Limpar pagamentos antigos vinculados a este agendamento para evitar duplicidade no caixa
+            console.log(`[FINANCEIRO] Limpando registros antigos para agendamento #${appointment.id}...`);
+            await supabase
+                .from('financial_transactions')
+                .delete()
+                .eq('appointment_id', appointment.id);
+
+            // 2. Montagem do novo Payload Financeiro
             const financialUpdate = {
-                amount: appointment.price, // Valor Bruto
-                net_value: financialMetrics.netValue, // Valor Líquido (Crucial para Comissões)
-                tax_rate: financialMetrics.rate, // Porcentagem da taxa aplicada
+                amount: appointment.price, 
+                net_value: financialMetrics.netValue, 
+                tax_rate: financialMetrics.rate, 
                 description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
                 type: 'income',
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: sanitizeUuid(currentMethod.id),
-                professional_id: professionalIdToSave, // Uso da variável validada
+                professional_id: professionalIdToSave,
                 client_id: sanitizeUuid(appointment.client_id),
-                appointment_id: appointment.id,
+                appointment_id: appointment.id, // Vínculo crucial para Smart Overwrite
                 installments: installments,
                 status: 'paid',
                 date: new Date().toISOString()
             };
 
-            // 2. Execução das operações atômicas no banco
-            const [apptResult, finResult] = await Promise.all([
-                // Marca agendamento como CONCLUÍDO
+            // 3. Execução das operações de gravação e atualização de status
+            console.log('[FINANCEIRO] Gravando novo pagamento...');
+            const [finResult, apptResult] = await Promise.all([
+                supabase
+                    .from('financial_transactions')
+                    .insert([financialUpdate]),
+                
                 supabase
                     .from('appointments')
                     .update({ status: 'concluido' })
-                    .eq('id', appointment.id),
-                
-                // Registra a transação no fluxo de caixa (Onde o ID do profissional é obrigatório para comissão)
-                supabase
-                    .from('financial_transactions')
-                    .insert([financialUpdate])
+                    .eq('id', appointment.id)
             ]);
 
-            if (apptResult.error) throw apptResult.error;
             if (finResult.error) throw finResult.error;
+            if (apptResult.error) throw apptResult.error;
 
-            setToast({ message: "Venda realizada com sucesso! 💰", type: 'success' });
+            setToast({ message: "Pagamento processado com sucesso! 💰", type: 'success' });
             
             setTimeout(() => {
                 onSuccess();
@@ -208,7 +207,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         } catch (error: any) {
             console.error("[FINANCEIRO] Erro fatal ao processar checkout:", error);
-            setToast({ message: `Erro ao finalizar: ${error.message || "Erro de integridade de dados"}`, type: 'error' });
+            setToast({ message: `Erro ao finalizar: ${error.message || "Falha de comunicação com o banco"}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }
@@ -314,7 +313,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                     <select 
                                         value={selectedMethodId}
                                         onChange={(e) => setSelectedMethodId(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none appearance-none focus:ring-4 focus:ring-orange-50"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none appearance-none focus:ring-4 focus:ring-orange-100"
                                     >
                                         {filteredMethods.map(m => (
                                             <option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>
@@ -332,7 +331,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                         <select 
                                             value={installments}
                                             onChange={(e) => setInstallments(parseInt(e.target.value))}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none appearance-none focus:ring-4 focus:ring-orange-50"
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none appearance-none focus:ring-4 focus:ring-orange-100"
                                         >
                                             <option value={1}>À vista (1x)</option>
                                             {Array.from({ length: currentMethod.max_installments - 1 }, (_, i) => i + 2).map(n => (
