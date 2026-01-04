@@ -2,38 +2,95 @@
 import React, { useState, useEffect } from 'react';
 import { 
     CreditCard, Plus, Trash2, Save, X, Loader2, 
-    Smartphone, Banknote, Percent, Info, ChevronRight,
-    ArrowLeft, CheckCircle2
+    Smartphone, Banknote, ArrowLeft, CheckCircle2, AlertCircle, Info
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import ToggleSwitch from '../shared/ToggleSwitch';
+import Toast, { ToastType } from '../shared/Toast';
+
+interface PaymentMethod {
+    id?: number;
+    name: string;
+    type: 'credit' | 'debit' | 'pix' | 'money';
+    rate_cash: number;
+    rate_installment_12x: number;
+    is_active: boolean;
+}
 
 const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-    const [methods, setMethods] = useState<any[]>([]);
+    const [methods, setMethods] = useState<PaymentMethod[]>([]);
     const [loading, setLoading] = useState(true);
-    const [editingMethod, setEditingMethod] = useState<any | null>(null);
+    const [editingMethod, setEditingMethod] = useState<PaymentMethod | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     const fetchMethods = async () => {
         setLoading(true);
-        const { data } = await supabase.from('payment_methods_config').select('*').order('name');
-        if (data) setMethods(data);
-        setLoading(false);
+        try {
+            const { data, error } = await supabase
+                .from('payment_methods_config')
+                .select('*')
+                .order('name');
+            
+            if (error) throw error;
+            if (data) setMethods(data);
+        } catch (err: any) {
+            console.error("Erro ao buscar métodos:", err.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     useEffect(() => { fetchMethods(); }, []);
 
-    const handleSave = async () => {
-        if (!editingMethod.name) return alert("Dê um nome ao método.");
+    const handleSaveMethod = async () => {
+        if (!editingMethod || !editingMethod.name) {
+            setToast({ message: "O nome do método é obrigatório.", type: 'error' });
+            return;
+        }
+
         setIsSaving(true);
-        const { error } = await supabase
-            .from('payment_methods_config')
-            .upsert(editingMethod);
-        
-        setIsSaving(false);
-        if (!error) {
+        try {
+            const payload = {
+                id: editingMethod.id, // Se for nulo, o Supabase trata como Insert
+                name: editingMethod.name,
+                type: editingMethod.type,
+                rate_cash: Number(editingMethod.rate_cash) || 0,
+                rate_installment_12x: Number(editingMethod.rate_installment_12x) || 0,
+                is_active: editingMethod.is_active
+            };
+
+            const { error } = await supabase
+                .from('payment_methods_config')
+                .upsert(payload);
+
+            if (error) throw error;
+
+            setToast({ message: "Configuração salva com sucesso!", type: 'success' });
             setEditingMethod(null);
             fetchMethods();
+        } catch (err: any) {
+            setToast({ message: `Erro ao salvar: ${err.message}`, type: 'error' });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDelete = async (id: number) => {
+        if (!confirm("Deseja excluir este método de pagamento permanentemente?")) return;
+        
+        try {
+            const { error } = await supabase
+                .from('payment_methods_config')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+            setToast({ message: "Método removido.", type: 'info' });
+            fetchMethods();
+            setEditingMethod(null);
+        } catch (err: any) {
+            setToast({ message: "Erro ao excluir método.", type: 'error' });
         }
     };
 
@@ -46,161 +103,175 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500 text-left">
-            <header className="flex items-center justify-between mb-8">
-                <button onClick={onBack} className="flex items-center gap-2 text-slate-400 hover:text-slate-800 font-bold transition-colors">
-                    <ArrowLeft size={20} /> Voltar ao Menu
-                </button>
+        <div className="space-y-6 animate-in fade-in duration-500 text-left pb-20">
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+            {/* Cabeçalho com botão Voltar */}
+            <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+                <div className="flex items-center gap-4">
+                    <button 
+                        onClick={onBack} 
+                        className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-500 hover:text-orange-500 hover:border-orange-200 transition-all shadow-sm group"
+                    >
+                        <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+                    </button>
+                    <div>
+                        <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter leading-tight">Pagamentos & Taxas</h2>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Configuração financeira do PDV</p>
+                    </div>
+                </div>
                 <button 
-                    onClick={() => setEditingMethod({ name: '', type: 'credit', fee_at_sight: 0, allow_installments: false, installment_fees: {} })}
-                    className="bg-orange-500 text-white px-6 py-2.5 rounded-xl font-black text-sm flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95"
+                    onClick={() => setEditingMethod({ name: '', type: 'credit', rate_cash: 0, rate_installment_12x: 0, is_active: true })}
+                    className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95"
                 >
                     <Plus size={18} /> Novo Método
                 </button>
             </header>
 
             {loading ? (
-                <div className="py-20 flex flex-col items-center justify-center text-slate-400">
-                    <Loader2 className="animate-spin mb-4" />
-                    <p className="text-[10px] font-black uppercase tracking-widest">Sincronizando taxas...</p>
+                <div className="py-24 flex flex-col items-center justify-center text-slate-400">
+                    <Loader2 className="animate-spin mb-4 text-orange-500" size={32} />
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">Sincronizando taxas...</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {methods.map(method => (
                         <div 
                             key={method.id}
                             onClick={() => setEditingMethod(method)}
-                            className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all cursor-pointer group"
+                            className={`bg-white p-6 rounded-[32px] border-2 transition-all cursor-pointer group relative overflow-hidden ${method.is_active ? 'border-slate-100 hover:border-orange-200 hover:shadow-xl' : 'border-slate-100 opacity-60'}`}
                         >
                             <div className="flex justify-between items-start mb-4">
                                 <div className="p-3 bg-slate-50 rounded-2xl group-hover:bg-orange-50 group-hover:text-orange-600 transition-colors">
                                     {getIcon(method.type)}
                                 </div>
-                                <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{method.type}</span>
+                                <div className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter ${method.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                    {method.is_active ? 'Ativo' : 'Pausado'}
+                                </div>
                             </div>
-                            <h3 className="font-black text-slate-800 text-lg leading-tight">{method.name}</h3>
-                            <div className="mt-4 flex items-center justify-between">
+                            <h3 className="font-black text-slate-800 text-lg leading-tight group-hover:text-orange-600 transition-colors">{method.name}</h3>
+                            <div className="mt-6 flex items-center justify-between border-t border-slate-50 pt-4">
                                 <div className="space-y-0.5">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Taxa à vista</p>
-                                    <p className="font-black text-orange-600">{method.fee_at_sight}%</p>
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Taxa à vista</p>
+                                    <p className="text-sm font-black text-slate-700">{method.rate_cash}%</p>
                                 </div>
-                                <div className="text-right space-y-0.5">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Parcelas</p>
-                                    <p className="text-xs font-bold text-slate-600">{method.allow_installments ? 'Ativo' : 'Não'}</p>
-                                </div>
+                                {method.type === 'credit' && (
+                                    <div className="text-right space-y-0.5">
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Máx (12x)</p>
+                                        <p className="text-sm font-black text-orange-600">{method.rate_installment_12x}%</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ))}
                 </div>
             )}
 
-            {/* Modal de Edição (Drawer Style) */}
+            {/* Modal de Edição */}
             {editingMethod && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-white/20">
                         <header className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Configurar Método</h2>
-                            <button onClick={() => setEditingMethod(null)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><X size={24} /></button>
+                            <div>
+                                <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Configurar Método</h2>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Ajuste de taxas operacionais</p>
+                            </div>
+                            <button onClick={() => setEditingMethod(null)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-all"><X size={24} /></button>
                         </header>
 
-                        <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar text-left">
-                            <div className="space-y-4">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nome de Exibição (Ex: Master)</label>
+                        <div className="p-8 space-y-6 text-left">
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Nome do Método (Ex: Visa)</label>
+                                <input 
+                                    value={editingMethod.name}
+                                    onChange={e => setEditingMethod({...editingMethod, name: e.target.value})}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all shadow-inner"
+                                    placeholder="Nome do cartão ou método"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tipo de Transação</label>
+                                    <select 
+                                        value={editingMethod.type}
+                                        onChange={e => setEditingMethod({...editingMethod, type: e.target.value as any})}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-orange-100"
+                                    >
+                                        <option value="credit">Crédito</option>
+                                        <option value="debit">Débito</option>
+                                        <option value="pix">PIX</option>
+                                        <option value="money">Dinheiro</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Taxa à Vista (%)</label>
                                     <input 
-                                        value={editingMethod.name}
-                                        onChange={e => setEditingMethod({...editingMethod, name: e.target.value})}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 font-bold outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400"
+                                        type="number"
+                                        step="0.01"
+                                        value={editingMethod.rate_cash}
+                                        onChange={e => setEditingMethod({...editingMethod, rate_cash: parseFloat(e.target.value)})}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-black text-emerald-600 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 transition-all shadow-inner"
                                     />
                                 </div>
+                            </div>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tipo</label>
-                                        <select 
-                                            value={editingMethod.type}
-                                            onChange={e => setEditingMethod({...editingMethod, type: e.target.value})}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 font-bold outline-none"
-                                        >
-                                            <option value="credit">Crédito</option>
-                                            <option value="debit">Débito</option>
-                                            <option value="pix">PIX</option>
-                                            <option value="money">Dinheiro</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Taxa à Vista (%)</label>
-                                        <input 
-                                            type="number"
-                                            value={editingMethod.fee_at_sight}
-                                            onChange={e => setEditingMethod({...editingMethod, fee_at_sight: parseFloat(e.target.value)})}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 font-black text-orange-600 outline-none"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center justify-between p-5 bg-slate-50 rounded-[28px] border border-slate-200">
-                                    <div>
-                                        <p className="font-black text-slate-700 text-sm">Permitir Parcelamento?</p>
-                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Exibir opções de 2x a 12x</p>
-                                    </div>
-                                    <ToggleSwitch 
-                                        on={editingMethod.allow_installments} 
-                                        onClick={() => setEditingMethod({...editingMethod, allow_installments: !editingMethod.allow_installments})} 
+                            {editingMethod.type === 'credit' && (
+                                <div className="space-y-1.5 animate-in slide-in-from-top-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Taxa Máxima Parcelado (12x %)</label>
+                                    <input 
+                                        type="number"
+                                        step="0.01"
+                                        value={editingMethod.rate_installment_12x}
+                                        onChange={e => setEditingMethod({...editingMethod, rate_installment_12x: parseFloat(e.target.value)})}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-black text-orange-600 outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-50 transition-all shadow-inner"
                                     />
                                 </div>
+                            )}
 
-                                {editingMethod.allow_installments && (
-                                    <div className="space-y-3 animate-in slide-in-from-top-4 duration-300">
-                                        <p className="text-[10px] font-black text-orange-500 uppercase tracking-[0.2em] mb-4 text-center">Configuração de Taxas por Parcela</p>
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                            {[2,3,4,5,6,7,8,9,10,11,12].map(p => (
-                                                <div key={p} className="bg-white border border-slate-100 rounded-2xl p-3 shadow-sm">
-                                                    <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">{p}x (%)</label>
-                                                    <input 
-                                                        type="number"
-                                                        placeholder="0.00"
-                                                        value={editingMethod.installment_fees?.[p] || ''}
-                                                        onChange={(e) => {
-                                                            const fees = { ...(editingMethod.installment_fees || {}) };
-                                                            fees[p] = parseFloat(e.target.value);
-                                                            setEditingMethod({...editingMethod, installment_fees: fees});
-                                                        }}
-                                                        className="w-full bg-slate-50 border-transparent rounded-lg px-2 py-1.5 text-xs font-black text-slate-700 focus:bg-white focus:border-orange-200 transition-all outline-none"
-                                                    />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
+                            <div className="flex items-center justify-between p-5 bg-slate-50 rounded-3xl border border-slate-200 mt-2">
+                                <div>
+                                    <p className="font-black text-slate-700 text-sm">Método Ativo?</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Habilita o uso no caixa (PDV)</p>
+                                </div>
+                                <ToggleSwitch 
+                                    on={editingMethod.is_active} 
+                                    onClick={() => setEditingMethod({...editingMethod, is_active: !editingMethod.is_active})} 
+                                />
                             </div>
                         </div>
 
-                        <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
+                        <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-3">
+                            {editingMethod.id && (
+                                <button 
+                                    onClick={() => handleDelete(editingMethod.id!)}
+                                    className="p-4 bg-white border border-slate-200 text-rose-500 rounded-2xl hover:bg-rose-50 transition-all shadow-sm active:scale-90"
+                                    title="Remover permanentemente"
+                                >
+                                    <Trash2 size={24} />
+                                </button>
+                            )}
                             <button 
-                                onClick={async () => {
-                                    if(confirm("Excluir este método?")) {
-                                        await supabase.from('payment_methods_config').delete().eq('id', editingMethod.id);
-                                        setEditingMethod(null);
-                                        fetchMethods();
-                                    }
-                                }}
-                                className="p-4 bg-white border border-slate-200 text-rose-500 rounded-2xl hover:bg-rose-50 transition-all shadow-sm"
-                            >
-                                <Trash2 size={24} />
-                            </button>
-                            <button 
-                                onClick={handleSave}
+                                onClick={handleSaveMethod}
                                 disabled={isSaving}
-                                className="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+                                className="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                             >
-                                {isSaving ? <Loader2 className="animate-spin" /> : <Save size={20} />}
+                                {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
                                 Salvar Configuração
                             </button>
                         </footer>
                     </div>
                 </div>
             )}
+            
+            {/* Aviso informativo */}
+            <div className="bg-blue-50 border border-blue-100 p-5 rounded-3xl flex gap-4 max-w-2xl mx-auto">
+                {/* FIX: Info component is now correctly imported and accessible */}
+                <Info className="text-blue-500 flex-shrink-0" size={24} />
+                <p className="text-xs text-blue-700 leading-relaxed font-medium">
+                    As taxas configuradas aqui são utilizadas pelo sistema para calcular automaticamente o valor líquido a receber em cada fechamento de caixa. Certifique-se de que os valores conferem com os da sua adquirente.
+                </p>
+            </div>
         </div>
     );
 };
