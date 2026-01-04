@@ -14,10 +14,10 @@ interface PaymentMethod {
     name: string;
     type: 'credit' | 'debit' | 'pix' | 'money';
     brand?: string;
-    rate_cash: number;
+    rate_cash: number | string; // Permitir string temporária para edição (UX fix)
     allow_installments: boolean;
     max_installments: number;
-    installment_rates: Record<string, number>;
+    installment_rates: Record<string, number | string>; // Permitir string temporária para edição
     is_active: boolean;
 }
 
@@ -53,42 +53,45 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     useEffect(() => { fetchMethods(); }, []);
 
-    // --- BUGFIX: Lógica de Salvamento Consolidada ---
+    // --- Lógica de Salvamento com Sanitização de Dados ---
     const handleSaveMethod = async () => {
         if (!editingMethod) return;
 
-        // 1. Validação de Campos Obrigatórios
-        if (!editingMethod.name.trim()) {
-            alert("O nome do método (Adquirente) é obrigatório.");
+        // 1. Validação
+        if (!editingMethod.name.trim() || !editingMethod.type) {
+            alert("Preencha o nome e o tipo do método.");
             return;
         }
 
         setIsSaving(true);
         try {
-            // 2. Preparação do Objeto de Taxas (JSONB)
-            // Filtramos apenas as parcelas permitidas pelo max_installments selecionado
+            // 2. Montagem do Objeto de Taxas Parceladas (JSONB)
             const finalRates: Record<string, number> = {};
-            
             if (editingMethod.type === 'credit' && editingMethod.allow_installments) {
                 for (let i = 2; i <= editingMethod.max_installments; i++) {
                     const rateValue = editingMethod.installment_rates[i.toString()];
-                    finalRates[i.toString()] = parseFloat(String(rateValue)) || 0;
+                    // Converte string para float apenas no salvamento
+                    finalRates[i.toString()] = parseFloat(String(rateValue || 0));
                 }
             }
 
             // 3. Montagem do Payload Final
-            const payload = {
-                id: editingMethod.id, // Se for nulo, o Supabase trata como INSERT
+            const payload: any = {
                 name: editingMethod.name,
                 type: editingMethod.type,
                 brand: (editingMethod.type === 'credit' || editingMethod.type === 'debit') ? editingMethod.brand : null,
-                rate_cash: parseFloat(String(editingMethod.rate_cash)) || 0,
-                allow_installments: editingMethod.type === 'credit' ? editingMethod.allow_installments : false,
-                max_installments: editingMethod.type === 'credit' && editingMethod.allow_installments ? Number(editingMethod.max_installments) : 1,
-                installment_rates: finalRates,
+                rate_cash: parseFloat(String(editingMethod.rate_cash || 0)),
                 is_active: editingMethod.is_active,
+                allow_installments: editingMethod.type === 'credit' ? editingMethod.allow_installments : false,
+                max_installments: (editingMethod.type === 'credit' && editingMethod.allow_installments) ? parseInt(String(editingMethod.max_installments)) : 1,
+                installment_rates: (editingMethod.type === 'credit' && editingMethod.allow_installments) ? finalRates : {},
                 updated_at: new Date().toISOString()
             };
+
+            // Se for edição, anexa o ID
+            if (editingMethod.id) {
+                payload.id = editingMethod.id;
+            }
 
             const { error } = await supabase
                 .from('payment_methods_config')
@@ -96,13 +99,12 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             if (error) throw error;
 
-            // 4. Sucesso e Reset
-            alert('Configurações salvas com sucesso!');
+            alert('Taxas salvas com sucesso!');
             setEditingMethod(null);
             fetchMethods();
         } catch (err: any) {
-            console.error("Erro crítico ao salvar:", err);
-            alert(`Erro ao salvar no banco de dados: ${err.message}`);
+            console.error("Erro ao salvar:", err);
+            alert('Erro ao salvar: ' + err.message);
         } finally {
             setIsSaving(false);
         }
@@ -132,7 +134,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             ...editingMethod,
             installment_rates: {
                 ...editingMethod.installment_rates,
-                [installment.toString()]: parseFloat(value) || 0
+                [installment.toString()]: value // Mantém como string para permitir edição fluida
             }
         });
     };
@@ -168,7 +170,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         name: '', 
                         type: 'credit', 
                         brand: 'VISA', 
-                        rate_cash: 0, 
+                        rate_cash: '', 
                         allow_installments: false,
                         max_installments: 2,
                         installment_rates: {},
@@ -239,7 +241,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </div>
             )}
 
-            {/* Modal de Edição (Corrigido para disparar handleSaveMethod) */}
+            {/* Modal de Edição */}
             {editingMethod && (
                 <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[200] flex items-center justify-center p-4">
                     <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200 border border-white/20">
@@ -304,8 +306,11 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                     <div className="relative">
                                         <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
                                         <input 
-                                            type="number" step="0.01" value={editingMethod.rate_cash}
-                                            onChange={e => setEditingMethod({...editingMethod, rate_cash: parseFloat(e.target.value) || 0})}
+                                            type="number" 
+                                            step="0.01" 
+                                            value={editingMethod.rate_cash || ''}
+                                            placeholder="0.00"
+                                            onChange={e => setEditingMethod({...editingMethod, rate_cash: e.target.value})}
                                             className="w-full pl-10 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-black text-emerald-600 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50"
                                         />
                                     </div>
@@ -358,7 +363,8 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                                         <div key={n} className="flex flex-col gap-1.5">
                                                             <label className="text-[10px] font-black text-slate-500 uppercase ml-1">{n}x (em %)</label>
                                                             <input 
-                                                                type="number" step="0.01"
+                                                                type="number" 
+                                                                step="0.01"
                                                                 value={editingMethod.installment_rates[n.toString()] || ''}
                                                                 onChange={e => handleRateChange(n, e.target.value)}
                                                                 className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 font-bold text-slate-700 focus:ring-4 focus:ring-orange-50 focus:border-orange-200 outline-none"
