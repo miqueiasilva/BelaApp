@@ -2,8 +2,7 @@
 import React from 'react';
 import { 
     Store, Palette, Banknote, CalendarX, CreditCard, 
-    ClipboardList, Tag, MessageSquare, Armchair, ChevronRight,
-    FileText, Sparkles
+    Tag, Armchair, ChevronRight, Home, LayoutGrid, Sparkles
 } from 'lucide-react';
 
 interface SettingsItem {
@@ -11,6 +10,8 @@ interface SettingsItem {
     icon: any;
     label: string;
     description: string;
+    iconColor: string;
+    iconBg: string;
     action: () => void;
 }
 
@@ -25,105 +26,108 @@ const SettingsHub: React.FC<SettingsHubProps> = ({ onNavigate, onTopLevelNavigat
             id: 'profile', 
             icon: Store, 
             label: 'Perfil do Negócio', 
-            description: 'Dados da empresa, logotipo, banner e endereços', 
+            description: 'Logotipo, banner, horários e endereços da empresa', 
+            iconColor: 'text-blue-600',
+            iconBg: 'bg-blue-50',
             action: () => onNavigate('profile')
         },
         { 
             id: 'payments', 
             icon: CreditCard, 
-            label: 'Formas de Pagamento', 
-            description: 'Configurar taxas de cartão, PIX e parcelamentos', 
+            label: 'Pagamentos & Taxas', 
+            description: 'Configurar taxas de cartão, PIX e regras de parcelamento', 
+            iconColor: 'text-emerald-600',
+            iconBg: 'bg-emerald-50',
             action: () => onNavigate('payments')
-        },
-        { 
-            id: 'team', 
-            icon: Banknote, 
-            label: 'Comissões e Equipe', 
-            description: 'Gerenciar colaboradores e regras de repasse', 
-            action: () => onTopLevelNavigate('equipe')
-        },
-        { 
-            id: 'blocks', 
-            icon: CalendarX, 
-            label: 'Indisponibilidades', 
-            description: 'Bloqueios de agenda, feriados e folgas', 
-            action: () => onTopLevelNavigate('agenda')
-        },
-        { 
-            id: 'documents', 
-            icon: FileText, 
-            label: 'Fichas e Contratos', 
-            description: 'Modelos de anamnese e termos de consentimento', 
-            action: () => onTopLevelNavigate('clientes')
-        },
-        { 
-            id: 'messages', 
-            icon: MessageSquare, 
-            label: 'Envio de Mensagens', 
-            description: 'Automações de WhatsApp e lembretes', 
-            action: () => onTopLevelNavigate('whatsapp')
         },
         { 
             id: 'theme', 
             icon: Palette, 
             label: 'Tema do Sistema', 
-            description: 'Personalizar cores e identidade da agenda online', 
+            description: 'Cores, fontes e identidade visual do seu estúdio', 
+            iconColor: 'text-pink-600',
+            iconBg: 'bg-pink-50',
             action: () => onNavigate('theme')
         },
         { 
             id: 'resources', 
             icon: Armchair, 
             label: 'Controle de Recursos', 
-            description: 'Salas, macas e equipamentos compartilhados', 
+            description: 'Gerenciar salas, macas e equipamentos', 
+            iconColor: 'text-indigo-600',
+            iconBg: 'bg-indigo-50',
             action: () => onNavigate('resources')
         },
         { 
             id: 'discounts', 
             icon: Tag, 
             label: 'Cupons e Descontos', 
-            description: 'Campanhas promocionais e regras de fidelidade', 
+            description: 'Criar promoções e regras de fidelidade', 
+            iconColor: 'text-purple-600',
+            iconBg: 'bg-purple-50',
             action: () => onNavigate('discounts')
+        },
+        { 
+            id: 'blocks', 
+            icon: CalendarX, 
+            label: 'Indisponibilidades', 
+            description: 'Bloqueios de agenda, feriados e folgas da equipe', 
+            iconColor: 'text-rose-600',
+            iconBg: 'bg-rose-50',
+            action: () => onNavigate('blocks')
+        },
+        { 
+            id: 'dashboard', 
+            icon: Home, 
+            label: 'Voltar ao Início', 
+            description: 'Retornar para o painel de indicadores principal', 
+            iconColor: 'text-slate-600',
+            iconBg: 'bg-slate-50',
+            action: () => onTopLevelNavigate('dashboard')
         },
     ];
 
     return (
-        <div className="max-w-2xl mx-auto bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col divide-y divide-slate-100">
-                {menuItems.map((item) => (
-                    <button
-                        key={item.id}
-                        onClick={item.action}
-                        className="flex items-center gap-5 p-5 hover:bg-slate-50 transition-all text-left group active:bg-orange-50/30"
-                    >
-                        {/* Ícone à Esquerda */}
-                        <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-white group-hover:text-orange-500 group-hover:shadow-sm transition-all border border-transparent group-hover:border-orange-100">
-                            <item.icon size={22} />
-                        </div>
+        <div className="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="bg-white shadow-sm border border-slate-200 rounded-[28px] overflow-hidden">
+                <div className="flex flex-col divide-y divide-slate-100">
+                    {menuItems.map((item) => (
+                        <button
+                            key={item.id}
+                            onClick={item.action}
+                            className="flex items-center gap-4 p-5 hover:bg-slate-50 transition-all text-left group active:bg-orange-50/30"
+                        >
+                            {/* Ícone à Esquerda com fundo colorido */}
+                            <div className={`flex-shrink-0 w-12 h-12 rounded-2xl ${item.iconBg} ${item.iconColor} flex items-center justify-center transition-transform group-hover:scale-105`}>
+                                <item.icon size={24} />
+                            </div>
 
-                        {/* Textos Centralizados */}
-                        <div className="flex-1 min-w-0">
-                            <h3 className="font-bold text-slate-800 text-sm leading-tight group-hover:text-orange-600 transition-colors">
-                                {item.label}
-                            </h3>
-                            <p className="text-xs text-slate-400 font-medium mt-0.5 leading-tight truncate">
-                                {item.description}
-                            </p>
-                        </div>
+                            {/* Conteúdo Central */}
+                            <div className="flex-1 min-w-0">
+                                <h3 className="font-bold text-slate-800 text-sm md:text-base leading-tight group-hover:text-orange-600 transition-colors">
+                                    {item.label}
+                                </h3>
+                                <p className="text-xs text-slate-400 font-medium mt-0.5 leading-tight line-clamp-1">
+                                    {item.description}
+                                </p>
+                            </div>
 
-                        {/* Chevron à Direita */}
-                        <div className="flex-shrink-0 text-slate-200 group-hover:text-orange-500 group-hover:translate-x-1 transition-all">
-                            <ChevronRight size={18} strokeWidth={3} />
-                        </div>
-                    </button>
-                ))}
+                            {/* Seta indicativa à Direita */}
+                            <div className="flex-shrink-0 text-slate-200 group-hover:text-orange-500 group-hover:translate-x-1 transition-all">
+                                <ChevronRight size={20} strokeWidth={3} />
+                            </div>
+                        </button>
+                    ))}
+                </div>
             </div>
             
-            {/* Rodapé do Hub */}
-            <div className="p-6 bg-slate-50/50 border-t border-slate-100 text-center">
-                <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] flex items-center justify-center gap-2">
-                    <Sparkles size={12} className="text-orange-300" />
-                    BelareStudio Gestão Enterprise
-                </p>
+            {/* Rodapé institucional do Hub */}
+            <div className="mt-8 flex flex-col items-center justify-center opacity-30 gap-2">
+                <div className="flex items-center gap-2">
+                    <Sparkles size={14} className="text-orange-400" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">BelareStudio Enterprise</span>
+                </div>
+                <p className="text-[9px] font-bold text-slate-400">Versão 2.4.0 • Built with JaciBot AI</p>
             </div>
         </div>
     );
