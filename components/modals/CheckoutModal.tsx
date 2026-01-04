@@ -9,6 +9,14 @@ import { supabase } from '../../services/supabaseClient';
 import { PaymentMethod as PaymentMethodType } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
 
+// Helper de formatação de moeda BRL
+const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+    }).format(value);
+};
+
 // Interface interna para métodos de pagamento configurados
 interface DBPaymentMethod {
     id: number;
@@ -95,7 +103,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
     // 4. Cálculos Financeiros (Taxas e Líquido)
     const financialMetrics = useMemo(() => {
-        if (!currentMethod) return { rate: 0, netValue: appointment.price };
+        if (!currentMethod) return { rate: 0, netValue: appointment.price, installmentValue: appointment.price };
 
         let rate = 0;
         if (installments === 1) {
@@ -206,7 +214,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                             <div className="text-right">
                                 <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total</p>
                                 <p className="text-3xl font-black text-emerald-400 tracking-tighter">
-                                    R$ {appointment.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    {formatCurrency(appointment.price)}
                                 </p>
                             </div>
                         </div>
@@ -279,7 +287,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                     </div>
                                     {installments > 1 && (
                                         <p className="text-xs font-black text-orange-600 ml-2 mt-2">
-                                            {installments}x de R$ {financialMetrics.installmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                            {installments}x de {formatCurrency(financialMetrics.installmentValue)}
                                         </p>
                                     )}
                                 </div>
@@ -305,7 +313,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                     <span className="text-xs font-bold text-slate-500">Recebimento Líquido</span>
                                 </div>
                                 <span className="text-sm font-black text-slate-700">
-                                    R$ {financialMetrics.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    {formatCurrency(financialMetrics.netValue)}
                                 </span>
                             </div>
                         </div>
