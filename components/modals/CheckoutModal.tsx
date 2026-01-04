@@ -18,9 +18,18 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
+// --- HELPER DE SEGURANÇA PARA UUID ---
+// Garante que o banco de dados receba 'null' em vez de "0" ou strings vazias em colunas UUID
+const sanitizeUuid = (id: any) => {
+    if (!id || id === '0' || id === 0 || id === 'null' || id === 'undefined' || String(id).trim() === '') {
+        return null;
+    }
+    return id;
+};
+
 // Interface interna para métodos de pagamento configurados
 interface DBPaymentMethod {
-    id: number;
+    id: number | string;
     name: string;
     type: 'credit' | 'debit' | 'pix' | 'money';
     brand: string;
@@ -36,11 +45,11 @@ interface CheckoutModalProps {
     onClose: () => void;
     appointment: {
         id: number;
-        client_id?: number;
+        client_id?: number | string;
         client_name: string;
         service_name: string;
         price: number;
-        professional_id: number; // ID obrigatório para remuneração
+        professional_id: number | string; // ID obrigatório para remuneração
         professional_name: string;
     };
     onSuccess: () => void;
@@ -133,7 +142,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         setIsLoading(true);
         try {
-            // 1. Montagem do Payload Financeiro Completo
+            // 1. Montagem do Payload Financeiro Completo com Sanitização de UUIDs
             const financialUpdate = {
                 amount: appointment.price, // Valor Bruto
                 net_value: financialMetrics.netValue, // Valor Líquido (Crucial para Comissões)
@@ -142,11 +151,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 type: 'income',
                 category: 'servico',
                 payment_method: selectedCategory,
-                payment_method_id: currentMethod.id,
-                professional_id: appointment.professional_id, // Vínculo para remuneração
-                installments: installments,
+                payment_method_id: sanitizeUuid(currentMethod.id), // FIX: Erro UUID "0"
+                professional_id: sanitizeUuid(appointment.professional_id), // FIX: Erro UUID "0"
+                client_id: sanitizeUuid(appointment.client_id), // FIX: Erro UUID "0"
                 appointment_id: appointment.id,
-                client_id: appointment.client_id || null,
+                installments: installments,
                 status: 'paid',
                 date: new Date().toISOString()
             };
@@ -175,7 +184,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         } catch (error: any) {
             console.error("Erro ao processar checkout:", error);
-            setToast({ message: `Erro ao finalizar: ${error.message}`, type: 'error' });
+            setToast({ message: `Erro ao finalizar: ${error.message || "Erro de integridade de dados"}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }
