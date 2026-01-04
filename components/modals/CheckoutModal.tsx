@@ -141,6 +141,28 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         }
 
         setIsLoading(true);
+
+        // --- BUGFIX CRÍTICO: CAPTURA E VALIDAÇÃO DO PROFISSIONAL ---
+        const professionalIdToSave = sanitizeUuid(appointment?.professional_id);
+        
+        console.log('[FINANCEIRO] Iniciando gravação de venda:', {
+            appointment_id: appointment.id,
+            professional_id: professionalIdToSave,
+            service: appointment.service_name,
+            total: appointment.price
+        });
+
+        if (!professionalIdToSave) {
+            console.error('[FINANCEIRO] Erro: Tentativa de venda sem ID de profissional vinculado.');
+            setToast({ 
+                message: "Erro crítico: Nenhum profissional vinculado a este atendimento. Verifique o cadastro na agenda.", 
+                type: 'error' 
+            });
+            setIsLoading(false);
+            return;
+        }
+        // -----------------------------------------------------------
+
         try {
             // 1. Montagem do Payload Financeiro Completo com Sanitização de UUIDs
             const financialUpdate = {
@@ -151,9 +173,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 type: 'income',
                 category: 'servico',
                 payment_method: selectedCategory,
-                payment_method_id: sanitizeUuid(currentMethod.id), // FIX: Erro UUID "0"
-                professional_id: sanitizeUuid(appointment.professional_id), // FIX: Erro UUID "0"
-                client_id: sanitizeUuid(appointment.client_id), // FIX: Erro UUID "0"
+                payment_method_id: sanitizeUuid(currentMethod.id),
+                professional_id: professionalIdToSave, // Uso da variável validada
+                client_id: sanitizeUuid(appointment.client_id),
                 appointment_id: appointment.id,
                 installments: installments,
                 status: 'paid',
@@ -162,11 +184,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
             // 2. Execução das operações atômicas no banco
             const [apptResult, finResult] = await Promise.all([
+                // Marca agendamento como CONCLUÍDO
                 supabase
                     .from('appointments')
                     .update({ status: 'concluido' })
                     .eq('id', appointment.id),
                 
+                // Registra a transação no fluxo de caixa (Onde o ID do profissional é obrigatório para comissão)
                 supabase
                     .from('financial_transactions')
                     .insert([financialUpdate])
@@ -183,7 +207,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             }, 1000);
 
         } catch (error: any) {
-            console.error("Erro ao processar checkout:", error);
+            console.error("[FINANCEIRO] Erro fatal ao processar checkout:", error);
             setToast({ message: `Erro ao finalizar: ${error.message || "Erro de integridade de dados"}`, type: 'error' });
         } finally {
             setIsLoading(false);
