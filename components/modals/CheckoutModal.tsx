@@ -152,34 +152,41 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 6. FINALIZAÇÃO (LÓGICA UNBLOCKED & AUTO-COMISSÃO) ---
+    // --- 6. FINALIZAÇÃO (BLINDAGEM JIT - JUST IN TIME) ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
             return;
         }
 
-        // --- MOTOR DE DECISÃO DE PROFISSIONAL (VERDADE ABSOLUTA) ---
+        setIsLoading(true);
+
+        // --- MOTOR DE BUSCA ATÔMICA (Bypass de Estado React) ---
         let finalProfessionalId = selectedProfessionalId;
 
-        // Se o select manual estiver vazio, recorre ao agendamento (Auto-Comissão)
-        if (!isRealUUID(finalProfessionalId) && appointment) {
-            if (isRealUUID(appointment.professional_id)) {
-                finalProfessionalId = String(appointment.professional_id);
-                console.log("[CHECKOUT] Usando professional_id do agendamento original.");
-            } 
-            else if (appointment.professional_name && dbProfessionals.length > 0) {
-                const fallback = dbProfessionals.find(p => 
-                    p.name.trim().toLowerCase() === appointment.professional_name.trim().toLowerCase()
-                );
-                if (fallback) {
-                    finalProfessionalId = fallback.id;
-                    console.log("[CHECKOUT] Usando fallback por nome do agendamento.");
+        // Se o estado estiver vazio, realizamos uma busca direta no servidor ANTES de processar
+        if (!isRealUUID(finalProfessionalId) && appointment?.professional_name) {
+            console.log("[CHECKOUT] JIT: Buscando profissional diretamente no banco para garantir comissão...");
+            try {
+                const { data: directMatch } = await supabase
+                    .from('professionals')
+                    .select('id')
+                    .ilike('name', appointment.professional_name.trim())
+                    .maybeSingle();
+                
+                if (directMatch?.id) {
+                    finalProfessionalId = String(directMatch.id);
+                    console.log("[CHECKOUT] JIT: Sucesso! ID recuperado:", finalProfessionalId);
                 }
+            } catch (err) {
+                console.error("[CHECKOUT] Falha na busca JIT:", err);
             }
         }
 
-        setIsLoading(true);
+        // Fallback final para o ID do agendamento se ainda estiver nulo
+        if (!isRealUUID(finalProfessionalId) && isRealUUID(appointment.professional_id)) {
+            finalProfessionalId = String(appointment.professional_id);
+        }
 
         try {
             // Prevenção de Conflitos: Deletar duplicatas
@@ -208,11 +215,12 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const { error: apptError } = await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
             if (apptError) throw apptError;
 
-            // Feedback dinâmico: Se não identificamos ninguém, avisamos sutilmente mas confirmamos o dinheiro
+            // Feedback dinâmico
             if (!isRealUUID(finalProfessionalId)) {
-                setToast({ message: "Venda registrada! (Sem profissional vinculado)", type: 'success' });
+                console.warn("[CHECKOUT] Venda registrada sem vínculo de profissional.");
+                setToast({ message: "Venda registrada! (Sem profissional identificado)", type: 'success' });
             } else {
-                setToast({ message: "Venda e Comissão registradas! 💰", type: 'success' });
+                setToast({ message: "Venda e Comissão registradas com sucesso! 💰", type: 'success' });
             }
 
             setTimeout(() => { onSuccess(); onClose(); }, 800);
