@@ -130,7 +130,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 5. FINALIZAÇÃO COM BUSCA APROXIMADA (BUGFIX DEFINITIVO LOOKUP) ---
+    // --- 5. FINALIZAÇÃO (HOTFIX: REMOVIDO BLOQUEIO DE ID) ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
@@ -140,55 +140,45 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         setIsLoading(true);
 
         // A) TENTATIVA 1: ID original do objeto
-        let finalProfId = appointment?.professional_id;
+        let finalProfId: string | null = isRealUUID(appointment?.professional_id) ? String(appointment.professional_id) : null;
         
-        // B) TENTATIVA 2: Se o ID for inválido (legado/nulo), iniciamos BUSCA APROXIMADA
-        if (!isRealUUID(finalProfId)) {
+        // B) TENTATIVA 2: Se o ID for inválido, tentamos BUSCA APROXIMADA
+        if (!finalProfId) {
             const nameRef = appointment?.professional_name?.trim();
             
             if (nameRef) {
-                // Pega o primeiro nome para uma busca mais flexível (evita erros de sobrenome/espaços)
                 const firstName = nameRef.split(' ')[0].trim();
-                console.log(`[CHECKOUT] Iniciando busca flexível por primeiro nome: "${firstName}"...`);
+                console.log(`[CHECKOUT] Buscando profissional: "${firstName}"...`);
                 
-                // Busca registros que comecem com o primeiro nome informado
-                const { data: candidates, error: searchError } = await supabase
+                const { data: candidates } = await supabase
                     .from('professionals')
                     .select('id, name')
                     .ilike('name', `${firstName}%`);
 
                 if (candidates && candidates.length > 0) {
-                    // Refinamento: Se houver mais de um, tenta o que mais se parece com o nome completo
-                    // Caso contrário, pega o primeiro da lista para não travar a venda
                     const bestMatch = candidates.find(c => 
                         c.name.toLowerCase().includes(nameRef.toLowerCase())
                     ) || candidates[0];
 
                     if (bestMatch?.id && isRealUUID(bestMatch.id)) {
-                        finalProfId = bestMatch.id;
-                        console.log(`[CHECKOUT] ID Encontrado via Busca Flexível: ${finalProfId} (${bestMatch.name})`);
+                        finalProfId = String(bestMatch.id);
+                        console.log(`[CHECKOUT] Profissional identificado: ${bestMatch.name}`);
                     }
-                } else {
-                    console.warn(`[CHECKOUT] ALERTA: Tabela professionals parece vazia ou inacessível via RLS para o nome "${firstName}".`);
                 }
             }
         }
         
-        // C) TRAVA DE SEGURANÇA FINAL: Se não resolveu o UUID, abortamos para proteger a comissão
-        if (!isRealUUID(finalProfId)) {
-            setToast({ 
-                message: `Erro Crítico: O profissional "${appointment.professional_name}" não foi identificado. Verifique se o nome está escrito corretamente no cadastro de Equipe.`, 
-                type: 'error' 
-            });
-            setIsLoading(false);
-            return;
+        // C) HOTFIX: REMOVIDO O 'RETURN' (Aborta o bloqueio). 
+        // Se não achou o ID, salvamos como null para permitir o recebimento do dinheiro.
+        if (!finalProfId) {
+            console.warn(`[CHECKOUT] AVISO: Venda sem vínculo de profissional. Motivo: "${appointment.professional_name}" não localizado.`);
         }
 
         try {
             // Limpa lançamentos prévios do mesmo agendamento para evitar duplicidade
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
-            // Payload com UUID Validado
+            // Payload: professional_id agora aceita NULL
             const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -198,7 +188,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: finalProfId, // UUID Sanitizado e Validado
+                professional_id: finalProfId, // Pode ser UUID ou null (Hotfix)
                 client_id: isRealUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
@@ -218,8 +208,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             setTimeout(() => { onSuccess(); onClose(); }, 1000);
 
         } catch (error: any) {
-            console.error("[CHECKOUT] Falha Crítica de Gravação:", error);
-            setToast({ message: `Erro de integridade: ${error.message}`, type: 'error' });
+            console.error("[CHECKOUT] Falha ao gravar venda:", error);
+            setToast({ message: `Erro ao salvar venda: ${error.message}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }
@@ -244,7 +234,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
                             <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Smart Lookup Ativado</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Check-out de Atendimento</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
