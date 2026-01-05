@@ -4,7 +4,7 @@ import {
     X, CheckCircle, Wallet, CreditCard, Banknote, 
     Smartphone, Loader2, ShoppingCart, ArrowRight,
     ChevronDown, Info, Percent, Layers, AlertTriangle,
-    User, Receipt
+    User, Receipt, UserCheck
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
@@ -54,6 +54,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [dbPaymentMethods, setDbPaymentMethods] = useState<DBPaymentMethod[]>([]);
 
     // Estados de Seleção UI
+    const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>('');
     const [selectedCategory, setSelectedCategory] = useState<'pix' | 'money' | 'credit' | 'debit'>('pix');
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
@@ -70,7 +71,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         setIsFetching(true);
         try {
             const [profsRes, methodsRes] = await Promise.all([
-                supabase.from('professionals').select('id, name').eq('active', true),
+                supabase.from('professionals').select('id, name').eq('active', true).order('name'),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
             ]);
 
@@ -80,10 +81,34 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             setDbProfessionals(profsRes.data || []);
             setDbPaymentMethods(methodsRes.data || []);
 
+            // Pré-seleção de pagamento
             if (methodsRes.data && methodsRes.data.length > 0) {
                 const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
                 if (firstPix) setSelectedMethodId(firstPix.id);
             }
+
+            // --- LÓGICA DE SMART MATCH DO PROFISSIONAL ---
+            let matchedId = '';
+            
+            // Tentativa A: O agendamento já tem um UUID válido?
+            if (isRealUUID(appointment?.professional_id)) {
+                matchedId = String(appointment.professional_id);
+            } 
+            // Tentativa B: Busca por nome no array carregado
+            else if (appointment?.professional_name && profsRes.data) {
+                const nameRef = appointment.professional_name.trim().toLowerCase();
+                const found = profsRes.data.find(p => p.name.trim().toLowerCase() === nameRef);
+                if (found) matchedId = found.id;
+                else {
+                    // Fallback: Busca por primeiro nome
+                    const firstName = nameRef.split(' ')[0];
+                    const fuzzyFound = profsRes.data.find(p => p.name.trim().toLowerCase().startsWith(firstName));
+                    if (fuzzyFound) matchedId = fuzzyFound.id;
+                }
+            }
+
+            setSelectedProfessionalId(matchedId);
+
         } catch (err: any) {
             console.error("[CHECKOUT] Erro na carga:", err);
             setToast({ message: "Erro ao sincronizar com o servidor.", type: 'error' });
@@ -130,55 +155,25 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 5. FINALIZAÇÃO (HOTFIX: REMOVIDO BLOQUEIO DE ID) ---
+    // --- 5. FINALIZAÇÃO ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
             return;
         }
 
+        if (!selectedProfessionalId) {
+            const confirmHouse = window.confirm("Nenhum profissional selecionado para comissão. Deseja registrar como 'Venda da Casa'?");
+            if (!confirmHouse) return;
+        }
+
         setIsLoading(true);
 
-        // A) TENTATIVA 1: ID original do objeto
-        let finalProfId: string | null = isRealUUID(appointment?.professional_id) ? String(appointment.professional_id) : null;
-        
-        // B) TENTATIVA 2: Se o ID for inválido, tentamos BUSCA APROXIMADA
-        if (!finalProfId) {
-            const nameRef = appointment?.professional_name?.trim();
-            
-            if (nameRef) {
-                const firstName = nameRef.split(' ')[0].trim();
-                console.log(`[CHECKOUT] Buscando profissional: "${firstName}"...`);
-                
-                const { data: candidates } = await supabase
-                    .from('professionals')
-                    .select('id, name')
-                    .ilike('name', `${firstName}%`);
-
-                if (candidates && candidates.length > 0) {
-                    const bestMatch = candidates.find(c => 
-                        c.name.toLowerCase().includes(nameRef.toLowerCase())
-                    ) || candidates[0];
-
-                    if (bestMatch?.id && isRealUUID(bestMatch.id)) {
-                        finalProfId = String(bestMatch.id);
-                        console.log(`[CHECKOUT] Profissional identificado: ${bestMatch.name}`);
-                    }
-                }
-            }
-        }
-        
-        // C) HOTFIX: REMOVIDO O 'RETURN' (Aborta o bloqueio). 
-        // Se não achou o ID, salvamos como null para permitir o recebimento do dinheiro.
-        if (!finalProfId) {
-            console.warn(`[CHECKOUT] AVISO: Venda sem vínculo de profissional. Motivo: "${appointment.professional_name}" não localizado.`);
-        }
-
         try {
-            // Limpa lançamentos prévios do mesmo agendamento para evitar duplicidade
+            // Limpa lançamentos prévios do agendamento
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
-            // Payload: professional_id agora aceita NULL
+            // Payload: professional_id usa o estado controlado pelo dropdown
             const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -188,7 +183,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: finalProfId, // Pode ser UUID ou null (Hotfix)
+                professional_id: isRealUUID(selectedProfessionalId) ? selectedProfessionalId : null,
                 client_id: isRealUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
@@ -234,16 +229,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
                             <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Check-out de Atendimento</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência de Comissões</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
                 </header>
 
                 <main className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                    {/* Resumo do Serviço */}
                     <div className="bg-slate-900 rounded-[32px] p-6 text-white shadow-xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-8 opacity-5"><ShoppingCart size={120} /></div>
-                        <div className="relative z-10 space-y-4">
+                        <div className="relative z-10 space-y-1">
                             <div className="flex justify-between items-start">
                                 <div>
                                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{appointment.service_name}</p>
@@ -254,15 +250,38 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                     <p className="text-3xl font-black text-emerald-400 tracking-tighter">{formatCurrency(appointment.price)}</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 pt-3 border-t border-white/10">
-                                <User size={14} className="text-orange-400" />
-                                <p className="text-[11px] font-bold text-white/80">{appointment.professional_name}</p>
-                            </div>
                         </div>
                     </div>
 
+                    {/* SELETOR DE PROFISSIONAL (UPGRADE UI) */}
+                    <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1.5">
+                            <UserCheck size={12} className="text-orange-500" />
+                            1. Responsável pela Comissão
+                        </label>
+                        <div className="relative group">
+                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors pointer-events-none">
+                                <User size={18} />
+                            </div>
+                            <select 
+                                value={selectedProfessionalId}
+                                onChange={(e) => setSelectedProfessionalId(e.target.value)}
+                                className="w-full pl-12 pr-10 py-4 bg-slate-50 border border-slate-200 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-bold text-slate-700 cursor-pointer shadow-sm"
+                            >
+                                <option value="">--- VENDA DA CASA (Sem Profissional) ---</option>
+                                {dbProfessionals.map(prof => (
+                                    <option key={prof.id} value={prof.id}>{prof.name}</option>
+                                ))}
+                            </select>
+                            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">
+                                <ChevronDown size={18} />
+                            </div>
+                        </div>
+                        <p className="text-[9px] text-slate-400 font-medium ml-2">Confirme quem executou o serviço para garantir o cálculo correto da remuneração.</p>
+                    </div>
+
                     <div className="space-y-3">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">1. Método de Recebimento</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">2. Método de Recebimento</label>
                         <div className="grid grid-cols-4 gap-2">
                             {categories.map((cat) => (
                                 <button
@@ -282,7 +301,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     ) : filteredMethods.length > 0 ? (
                         <div className="space-y-4 animate-in slide-in-from-top-2">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">2. Operadora / Taxa</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">3. Operadora / Taxa</label>
                                 <div className="relative">
                                     <select 
                                         value={selectedMethodId}
@@ -299,7 +318,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
                             {currentMethod?.type === 'credit' && currentMethod.allow_installments && (
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">3. Parcelas</label>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">4. Parcelas</label>
                                     <div className="relative">
                                         <select 
                                             value={installments}
