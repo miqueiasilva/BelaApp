@@ -18,16 +18,14 @@ const formatCurrency = (value: number) => {
 };
 
 /**
- * Validador de UUID: Ignora IDs de mock, strings curtas, nulos ou o famigerado '0'
+ * Validador Estrito de UUID: Garante que a string tenha o formato/tamanho de um UUID real
+ * e rejeita explicitamente IDs de mock como "0", "1", "5", etc.
  */
-const isValidUuid = (id: any): boolean => {
+const isRealUuid = (id: any): boolean => {
     if (!id) return false;
     const sid = String(id).trim();
-    // Rejeita explicitamente valores comuns de erro/mock
-    if (sid === '0' || sid === 'null' || sid === 'undefined' || sid === '') return false;
-    // UUIDs reais do Supabase/Postgres têm 36 caracteres (ex: 550e8400-e29b-41d4-a716-446655440000)
-    // Usamos > 10 como margem de segurança contra IDs numéricos simples
-    return sid.length > 10;
+    // UUIDs reais do Supabase têm 36 caracteres. Usamos > 20 como margem de segurança total.
+    return sid.length > 20 && sid !== 'undefined' && sid !== 'null';
 };
 
 // --- INTERFACES ---
@@ -87,7 +85,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 setDbProfessionals(profsRes.data || []);
                 setDbPaymentMethods(methodsRes.data || []);
 
-                if (methodsRes.data) {
+                if (methodsRes.data && methodsRes.data.length > 0) {
                     const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
                     if (firstPix) setSelectedMethodId(firstPix.id);
                 }
@@ -136,7 +134,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 4. FINALIZAÇÃO COM WATERFALL DE RECUPERAÇÃO DE ID ---
+    // --- 4. FINALIZAÇÃO COM SANITIZAÇÃO AGRESSIVA (BUGFIX UUID) ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
@@ -145,30 +143,36 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         setIsLoading(true);
 
-        // --- LÓGICA BLINDADA DE RECUPERAÇÃO DE ID (WATERFALL) ---
-        let finalProfessionalId = null;
+        // --- LÓGICA DE RECUPERAÇÃO DE ID BLINDADA ---
+        let safeProfessionalId = null;
 
-        // A) Tenta extrair o ID original do agendamento (SÓ se for um UUID válido, ignorando '0')
-        if (isValidUuid(appointment?.professional_id)) {
-            finalProfessionalId = appointment.professional_id;
-        }
-
-        // B) SMART LOOKUP: Se o ID for '0', nulo ou inválido, buscamos o UUID real na lista do banco pelo nome
-        if (!finalProfessionalId && appointment.professional_name && dbProfessionals.length > 0) {
+        // 1. Prioridade: Smart Lookup pelo Nome (Garante o UUID vindo do DB)
+        if (appointment?.professional_name && dbProfessionals.length > 0) {
             const targetName = appointment.professional_name.toLowerCase().trim();
             const found = dbProfessionals.find(p => p.name?.toLowerCase().trim() === targetName);
-            
             if (found) {
-                console.log(`[CHECKOUT] Sucesso: ID '${appointment.professional_id}' ignorado. UUID '${found.id}' recuperado para profissional '${appointment.professional_name}'`);
-                finalProfessionalId = found.id;
+                safeProfessionalId = found.id;
+                console.log(`[CHECKOUT] Smart Lookup Sucesso: UUID '${safeProfessionalId}' encontrado para '${appointment.professional_name}'`);
             }
         }
 
-        // Validação de segurança final
-        if (!finalProfessionalId) {
-            console.error('[CHECKOUT] Falha Crítica: ID do profissional não resolvido.', { rawId: appointment.professional_id, name: appointment.professional_name });
+        // 2. Fallback: Tenta o ID do objeto, MAS SÓ SE FOR UM UUID REAL (Evita o erro "5")
+        if (!safeProfessionalId && isRealUuid(appointment?.professional_id)) {
+            safeProfessionalId = appointment.professional_id;
+        }
+
+        // Debug Log de Auditoria
+        console.log('[CHECKOUT] Payload Audit:', { 
+            safeProfessionalId, 
+            originalId: appointment.professional_id,
+            isOriginalValid: isRealUuid(appointment.professional_id),
+            method: currentMethod.id
+        });
+
+        // Bloqueio de Segurança Final
+        if (!safeProfessionalId) {
             setToast({ 
-                message: `Erro: O profissional "${appointment.professional_name}" não foi encontrado no sistema com um ID válido. Verifique o cadastro da equipe.`, 
+                message: `Erro de Dados: O profissional "${appointment.professional_name}" não possui um identificador válido no banco.`, 
                 type: 'error' 
             });
             setIsLoading(false);
@@ -176,10 +180,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         }
 
         try {
-            // 1. Limpa lançamentos prévios (Evita duplicidade)
+            // Limpa lançamentos duplicados
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
-            // 2. Prepara o payload com os IDs reais validados
+            // Montagem do payload usando APENAS variáveis sanitizadas
             const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -189,15 +193,14 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: finalProfessionalId, // UUID Real garantido aqui
-                client_id: isValidUuid(appointment.client_id) ? appointment.client_id : null,
+                professional_id: safeProfessionalId, // UUID Sanitizado Garantido
+                client_id: isRealUuid(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
                 status: 'paid',
                 date: new Date().toISOString()
             };
 
-            // 3. Persistência
             const [finRes, apptRes] = await Promise.all([
                 supabase.from('financial_transactions').insert([payload]),
                 supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id)
@@ -210,8 +213,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             setTimeout(() => { onSuccess(); onClose(); }, 1000);
 
         } catch (error: any) {
-            console.error("[CHECKOUT] Erro fatal:", error);
-            setToast({ message: `Erro no banco: ${error.message}`, type: 'error' });
+            console.error("[CHECKOUT] Falha Crítica de Gravação:", error);
+            setToast({ message: `Erro de integridade: ${error.message}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }
@@ -235,8 +238,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
-                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Validação Inteligente de ID</p>
+                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Finalizar Venda</h2>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Proteção contra IDs legados ativa</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
@@ -264,7 +267,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     </div>
 
                     <div className="space-y-3">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">1. Forma de Pagamento</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">1. Escolha como recebeu</label>
                         <div className="grid grid-cols-4 gap-2">
                             {categories.map((cat) => (
                                 <button
@@ -284,7 +287,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     ) : filteredMethods.length > 0 ? (
                         <div className="space-y-4 animate-in slide-in-from-top-2">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">2. Operadora / Bandeira</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">2. Operadora / Taxa</label>
                                 <div className="relative">
                                     <select 
                                         value={selectedMethodId}
@@ -301,7 +304,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
                             {currentMethod?.type === 'credit' && currentMethod.allow_installments && (
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">3. Parcelamento</label>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">3. Parcelas</label>
                                     <div className="relative">
                                         <select 
                                             value={installments}
@@ -309,7 +312,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                             className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none appearance-none focus:ring-4 focus:ring-orange-100"
                                         >
                                             <option value={1}>À vista (1x)</option>
-                                            {Array.from({ length: currentMethod.max_installments - 1 }, (_, i) => i + 2).map(n => (
+                                            {Array.from({ length: (currentMethod.max_installments || 1) - 1 }, (_, i) => i + 2).map(n => (
                                                 <option key={n} value={n}>{n} Vezes</option>
                                             ))}
                                         </select>
