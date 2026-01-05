@@ -67,12 +67,12 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return typeof id === 'string' && sid.length > 20 && sid !== 'undefined' && sid !== 'null';
     };
 
-    // 2. FETCH DE DADOS REAIS (Atualizado para team_members)
+    // 2. FETCH DE DADOS REAIS (Correção: Removido filtro de coluna inexistente 'active')
     const loadSystemData = async () => {
         setIsFetching(true);
         try {
             const [profsRes, methodsRes] = await Promise.all([
-                supabase.from('team_members').select('id, name').eq('active', true).order('name'),
+                supabase.from('team_members').select('id, name').order('name'),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
             ]);
 
