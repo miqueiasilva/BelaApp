@@ -4,7 +4,7 @@ import {
     X, CheckCircle, Wallet, CreditCard, Banknote, 
     Smartphone, Loader2, ShoppingCart, ArrowRight,
     ChevronDown, Info, Percent, Layers, AlertTriangle,
-    User, Receipt, UserCheck
+    User, Receipt, UserCheck, UserPlus
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
@@ -81,34 +81,16 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             setDbProfessionals(profsRes.data || []);
             setDbPaymentMethods(methodsRes.data || []);
 
-            // Pré-seleção de pagamento
+            // Lógica de Pré-Seleção do Profissional do Agendamento
+            if (isRealUUID(appointment?.professional_id)) {
+                setSelectedProfessionalId(String(appointment.professional_id));
+            }
+
+            // Pré-seleção de pagamento padrão (Pix)
             if (methodsRes.data && methodsRes.data.length > 0) {
                 const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
                 if (firstPix) setSelectedMethodId(firstPix.id);
             }
-
-            // --- LÓGICA DE SMART MATCH DO PROFISSIONAL ---
-            let matchedId = '';
-            
-            // Tentativa A: O agendamento já tem um UUID válido?
-            if (isRealUUID(appointment?.professional_id)) {
-                matchedId = String(appointment.professional_id);
-            } 
-            // Tentativa B: Busca por nome no array carregado
-            else if (appointment?.professional_name && profsRes.data) {
-                const nameRef = appointment.professional_name.trim().toLowerCase();
-                const found = profsRes.data.find(p => p.name.trim().toLowerCase() === nameRef);
-                if (found) matchedId = found.id;
-                else {
-                    // Fallback: Busca por primeiro nome
-                    const firstName = nameRef.split(' ')[0];
-                    const fuzzyFound = profsRes.data.find(p => p.name.trim().toLowerCase().startsWith(firstName));
-                    if (fuzzyFound) matchedId = fuzzyFound.id;
-                }
-            }
-
-            setSelectedProfessionalId(matchedId);
-
         } catch (err: any) {
             console.error("[CHECKOUT] Erro na carga:", err);
             setToast({ message: "Erro ao sincronizar com o servidor.", type: 'error' });
@@ -155,25 +137,26 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 5. FINALIZAÇÃO ---
+    // --- 5. FINALIZAÇÃO COM SELEÇÃO MANUAL ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
             return;
         }
 
-        if (!selectedProfessionalId) {
-            const confirmHouse = window.confirm("Nenhum profissional selecionado para comissão. Deseja registrar como 'Venda da Casa'?");
-            if (!confirmHouse) return;
+        // BLOQUEIO CRÍTICO: Não permite venda sem profissional selecionado
+        if (!isRealUUID(selectedProfessionalId)) {
+            setToast({ message: "ERRO: Selecione quem executou o serviço para a comissão!", type: 'error' });
+            return;
         }
 
         setIsLoading(true);
 
         try {
-            // Limpa lançamentos prévios do agendamento
+            // Limpa lançamentos prévios do mesmo agendamento para evitar duplicidade
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
-            // Payload: professional_id usa o estado controlado pelo dropdown
+            // Payload 100% amarrado ao Estado do Dropdown
             const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -183,7 +166,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: isRealUUID(selectedProfessionalId) ? selectedProfessionalId : null,
+                professional_id: selectedProfessionalId, // UUID Garantido pela seleção manual
                 client_id: isRealUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
@@ -229,17 +212,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
                             <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência de Comissões</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Fluxo de Caixa Garantido</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
                 </header>
 
                 <main className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                    {/* Resumo do Serviço */}
+                    {/* Card de Resumo do Atendimento */}
                     <div className="bg-slate-900 rounded-[32px] p-6 text-white shadow-xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-8 opacity-5"><ShoppingCart size={120} /></div>
-                        <div className="relative z-10 space-y-1">
+                        <div className="relative z-10 space-y-4">
                             <div className="flex justify-between items-start">
                                 <div>
                                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{appointment.service_name}</p>
@@ -253,11 +236,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                     </div>
 
-                    {/* SELETOR DE PROFISSIONAL (UPGRADE UI) */}
+                    {/* SELETOR MANUAL DE PROFISSIONAL (UPGRADE OBRIGATÓRIO) */}
                     <div className="space-y-1.5">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1.5">
                             <UserCheck size={12} className="text-orange-500" />
-                            1. Responsável pela Comissão
+                            1. Quem recebe a comissão?
                         </label>
                         <div className="relative group">
                             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors pointer-events-none">
@@ -265,10 +248,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                             </div>
                             <select 
                                 value={selectedProfessionalId}
-                                onChange={(e) => setSelectedProfessionalId(e.target.value)}
-                                className="w-full pl-12 pr-10 py-4 bg-slate-50 border border-slate-200 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-bold text-slate-700 cursor-pointer shadow-sm"
+                                onChange={(e) => {
+                                    console.log("[CHECKOUT] Seleção manual:", e.target.value);
+                                    setSelectedProfessionalId(e.target.value);
+                                }}
+                                className={`w-full pl-12 pr-10 py-4 bg-slate-50 border-2 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold cursor-pointer shadow-sm ${!selectedProfessionalId ? 'border-orange-200 text-slate-400' : 'border-slate-100 text-slate-700'}`}
                             >
-                                <option value="">--- VENDA DA CASA (Sem Profissional) ---</option>
+                                <option value="">-- SELECIONE O PROFISSIONAL --</option>
                                 {dbProfessionals.map(prof => (
                                     <option key={prof.id} value={prof.id}>{prof.name}</option>
                                 ))}
@@ -277,9 +263,14 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                 <ChevronDown size={18} />
                             </div>
                         </div>
-                        <p className="text-[9px] text-slate-400 font-medium ml-2">Confirme quem executou o serviço para garantir o cálculo correto da remuneração.</p>
+                        {!selectedProfessionalId && (
+                            <p className="text-[9px] text-rose-500 font-bold ml-2 animate-pulse flex items-center gap-1">
+                                <AlertTriangle size={10} /> Campo obrigatório para garantir o pagamento.
+                            </p>
+                        )}
                     </div>
 
+                    {/* SELETOR DE PAGAMENTO */}
                     <div className="space-y-3">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">2. Método de Recebimento</label>
                         <div className="grid grid-cols-4 gap-2">
@@ -360,7 +351,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl transition-all">Cancelar</button>
                     <button
                         onClick={handleFinalize}
-                        disabled={isLoading || !currentMethod}
+                        disabled={isLoading || !currentMethod || !selectedProfessionalId}
                         className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
