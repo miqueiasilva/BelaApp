@@ -15,7 +15,8 @@ interface ProfessionalDetailProps {
     onSave: () => void;
 }
 
-const DAYS_OF_WEEK = [
+// FIX: Renamed DAYS_OF_WEEK to DAYS_ORDER to resolve "Cannot find name 'DAYS_ORDER'" error on line 362.
+const DAYS_ORDER = [
     { key: 'monday', label: 'Segunda-feira' },
     { key: 'tuesday', label: 'Terça-feira' },
     { key: 'wednesday', label: 'Quarta-feira' },
@@ -50,7 +51,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 email: (initialProf as any).email || '',
                 phone: (initialProf as any).phone || '',
                 birth_date: (initialProf as any).birth_date || '',
-                commission_rate: (initialProf as any).commission_rate ?? 0,
+                commission_rate: (initialProf as any).commission_rate ?? 30, // Default 30% if new
                 permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
                 services_enabled: (initialProf as any).services_enabled || [],
                 work_schedule: (initialProf as any).work_schedule || {},
@@ -87,8 +88,9 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             // 3. Update local state and DB immediately for photo
             setProf({ ...prof, photo_url: publicUrl });
             
+            // MIGRADO: De 'professionals' para 'team_members'
             const { error: updateError } = await supabase
-                .from('professionals')
+                .from('team_members')
                 .update({ photo_url: publicUrl })
                 .eq('id', prof.id);
 
@@ -110,7 +112,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         setIsLoading(true);
         
         try {
-            // Prepare Payload: Clean data to avoid Postgres constraints errors
+            // Preparação do Payload conforme regra de negócio
             const payload = {
                 name: prof.name || 'Sem nome',
                 role: prof.role || 'Profissional',
@@ -119,19 +121,20 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 cpf: prof.cpf || null,
                 bio: prof.bio || null,
                 active: !!prof.active,
-                // Critical: Convert empty date strings to NULL
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
-                // Critical: Ensure numbers are not NaN
-                commission_rate: isNaN(parseFloat(prof.commission_rate)) ? 0 : parseFloat(prof.commission_rate),
-                // JSON Fields
+                // REGRA CRÍTICA: Garante que a taxa é salva como float decimal
+                commission_rate: parseFloat(String(prof.commission_rate || 0)),
+                // Campos JSON
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
                 work_schedule: prof.work_schedule,
-                photo_url: prof.photo_url
+                photo_url: prof.photo_url,
+                online_booking: !!prof.online_booking
             };
 
+            // MIGRADO: De 'professionals' para 'team_members'
             const { error } = await supabase
-                .from('professionals')
+                .from('team_members')
                 .update(payload)
                 .eq('id', prof.id);
 
@@ -154,7 +157,12 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         
         setIsLoading(true);
         try {
-            const { error } = await supabase.from('professionals').delete().eq('id', prof.id);
+            // MIGRADO: De 'professionals' para 'team_members'
+            const { error } = await supabase
+                .from('team_members')
+                .delete()
+                .eq('id', prof.id);
+                
             if (error) throw error;
             onBack();
         } catch (error: any) {
@@ -204,7 +212,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     }
 
     return (
-        <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans">
+        <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans text-left">
             {/* Header */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-20 shadow-sm">
                 <div className="flex items-center gap-4">
@@ -254,7 +262,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 </div>
             </div>
 
-            <main className="flex-1 overflow-y-auto p-6">
+            <main className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                 <div className="max-w-5xl mx-auto">
                     
                     {/* TAB: PERFIL */}
@@ -333,10 +341,10 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                             }`}
                                         >
                                             <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="w-2 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: service.color }}></div>
+                                                <div className="w-2 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: service.cor_hex || '#f97316' }}></div>
                                                 <div className="overflow-hidden">
-                                                    <p className={`font-bold text-sm truncate ${isEnabled ? 'text-orange-900' : 'text-slate-700'}`}>{service.name}</p>
-                                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{service.duration} min</p>
+                                                    <p className={`font-bold text-sm truncate ${isEnabled ? 'text-orange-900' : 'text-slate-700'}`}>{service.nome}</p>
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{service.duracao_min} min</p>
                                                 </div>
                                             </div>
                                             {isEnabled && <CheckCircle size={18} className="text-orange-500 flex-shrink-0" />}
@@ -347,12 +355,12 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </Card>
                     )}
 
-                    {/* TAB: HORARIOS (SPLIT SHIFT UI) */}
+                    {/* TAB: HORARIOS */}
                     {activeTab === 'horarios' && (
                         <Card title="Grade Semanal com Intervalos" className="animate-in fade-in duration-300">
                             <p className="text-xs text-slate-500 mb-6 -mt-2">Defina os horários de início, pausa para almoço e encerramento para cada dia.</p>
                             <div className="space-y-4">
-                                {DAYS_OF_WEEK.map(day => {
+                                {DAYS_ORDER.map(day => {
                                     const config = prof.work_schedule[day.key] || { 
                                         active: false, 
                                         start: '09:00', 
@@ -396,7 +404,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                                         </div>
                                                     </div>
 
-                                                    {/* CAFÉ DIVIDER */}
                                                     <div className="flex items-center justify-center p-2.5 bg-orange-50 text-orange-500 rounded-full" title="Intervalo">
                                                         <Coffee size={16} strokeWidth={3} />
                                                     </div>
@@ -442,20 +449,21 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                     {activeTab === 'comissoes' && (
                         <Card title="Repasse e Produtividade" className="animate-in fade-in duration-300 max-w-2xl mx-auto">
                             <div className="p-8 bg-gradient-to-br from-orange-50 to-orange-100 rounded-3xl border border-orange-200 mb-6">
-                                <label className="block text-xs font-black text-orange-800 uppercase mb-4 tracking-widest">Comissão Padrão (%)</label>
-                                <div className="flex items-center gap-8">
+                                <label className="block text-xs font-black text-orange-800 uppercase mb-4 tracking-widest text-center">Comissão Padrão (%)</label>
+                                <div className="flex flex-col md:flex-row items-center gap-8 justify-center">
                                     <div className="relative">
                                         <input 
                                             type="number" 
+                                            step="0.01"
                                             value={prof.commission_rate}
                                             onChange={e => setProf({...prof, commission_rate: e.target.value})}
-                                            className="w-40 border-2 border-orange-300 rounded-3xl px-6 py-5 text-5xl font-black text-orange-600 outline-none focus:border-orange-500 bg-white shadow-inner"
+                                            className="w-40 border-2 border-orange-300 rounded-3xl px-6 py-5 text-5xl font-black text-orange-600 outline-none focus:border-orange-500 bg-white shadow-inner text-center"
                                         />
                                         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-2xl font-black text-orange-300">%</span>
                                     </div>
-                                    <div className="space-y-1 flex-1">
+                                    <div className="space-y-1 flex-1 text-center md:text-left">
                                         <p className="text-lg font-bold text-orange-900">Ganhos Diretos</p>
-                                        <p className="text-xs text-orange-700 font-medium">Este percentual é aplicado sobre o valor bruto de cada serviço realizado.</p>
+                                        <p className="text-xs text-orange-700 font-medium">Este percentual é utilizado como base para o cálculo das remunerações mensais do colaborador.</p>
                                     </div>
                                 </div>
                             </div>

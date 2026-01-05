@@ -40,8 +40,9 @@ const EquipeView: React.FC = () => {
         }, 8000);
 
         try {
+            // MIGRADO: De 'professionals' para 'team_members'
             const { data, error: sbError } = await supabase
-                .from('professionals')
+                .from('team_members')
                 .select('*')
                 .order('name', { ascending: true })
                 .abortSignal(abortControllerRef.current.signal);
@@ -71,7 +72,19 @@ const EquipeView: React.FC = () => {
 
     const handleCreateNew = async () => {
         try {
-            const { data, error } = await supabase.from('professionals').insert([{ name: 'Novo Profissional', role: 'Colaborador', active: true, online_booking: true, commission_rate: 30 }]).select().single();
+            // MIGRADO: De 'professionals' para 'team_members'
+            const { data, error } = await supabase
+                .from('team_members')
+                .insert([{ 
+                    name: 'Novo Profissional', 
+                    role: 'Colaborador', 
+                    active: true, 
+                    online_booking: true, 
+                    commission_rate: 30.00 
+                }])
+                .select()
+                .single();
+
             if (error) throw error;
             if (isMounted.current) {
                 setSelectedProf(data as any);
@@ -83,10 +96,15 @@ const EquipeView: React.FC = () => {
         }
     };
 
-    const handleToggleActive = async (e: React.MouseEvent, id: number, currentStatus: boolean) => {
+    const handleToggleActive = async (e: React.MouseEvent, id: number | string, currentStatus: boolean) => {
         e.stopPropagation();
         try {
-            const { error } = await supabase.from('professionals').update({ active: !currentStatus }).eq('id', id);
+            // MIGRADO: De 'professionals' para 'team_members'
+            const { error } = await supabase
+                .from('team_members')
+                .update({ active: !currentStatus })
+                .eq('id', id);
+
             if (error) throw error;
             if (isMounted.current) {
                 setProfessionals(prev => prev.map(p => p.id === id ? { ...p, active: !currentStatus } : p));
