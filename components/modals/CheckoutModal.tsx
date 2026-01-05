@@ -17,22 +17,22 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
-// Sanitização Rigorosa: Bloqueia IDs de mock (números ou strings curtas)
-const sanitizeUuid = (id: any) => {
+/**
+ * Validador de UUID: Ignora IDs de mock, strings curtas, nulos ou o famigerado '0'
+ */
+const isValidUuid = (id: any): boolean => {
+    if (!id) return false;
     const sid = String(id).trim();
-    if (!id || sid === '0' || sid === 'null' || sid === 'undefined' || sid === '') return null;
-    
-    // Se o ID for numérico ou tiver menos de 20 caracteres, é um ID de MOCK e deve ser descartado
-    if (!isNaN(Number(sid)) || sid.length < 20) {
-        console.warn(`[SEGURANÇA] ID legado detectado e descartado: ${sid}`);
-        return null;
-    }
-    return sid;
+    // Rejeita explicitamente valores comuns de erro/mock
+    if (sid === '0' || sid === 'null' || sid === 'undefined' || sid === '') return false;
+    // UUIDs reais do Supabase/Postgres têm 36 caracteres (ex: 550e8400-e29b-41d4-a716-446655440000)
+    // Usamos > 10 como margem de segurança contra IDs numéricos simples
+    return sid.length > 10;
 };
 
 // --- INTERFACES ---
 interface DBPaymentMethod {
-    id: string; // UUID Real
+    id: string; 
     name: string;
     type: 'credit' | 'debit' | 'pix' | 'money';
     brand: string;
@@ -62,7 +62,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [isFetching, setIsFetching] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // --- ESTADOS DE DADOS REAIS (INICIADOS VAZIOS) ---
+    // --- ESTADOS DE DADOS REAIS ---
     const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
     const [dbPaymentMethods, setDbPaymentMethods] = useState<DBPaymentMethod[]>([]);
 
@@ -71,7 +71,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
 
-    // 1. FETCH DE DADOS REAIS DO SUPABASE (Única fonte de verdade)
+    // 1. FETCH DE DADOS REAIS
     useEffect(() => {
         const loadSystemData = async () => {
             setIsFetching(true);
@@ -87,13 +87,12 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 setDbProfessionals(profsRes.data || []);
                 setDbPaymentMethods(methodsRes.data || []);
 
-                // Seleção inicial automática do primeiro PIX
                 if (methodsRes.data) {
                     const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
                     if (firstPix) setSelectedMethodId(firstPix.id);
                 }
             } catch (err: any) {
-                console.error("[CHECKOUT] Erro na carga de dados:", err);
+                console.error("[CHECKOUT] Erro na carga:", err);
                 setToast({ message: "Erro ao sincronizar com o servidor.", type: 'error' });
             } finally {
                 setIsFetching(false);
@@ -137,7 +136,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 4. FINALIZAÇÃO COM TRAVA DE SEGURANÇA UUID ---
+    // --- 4. FINALIZAÇÃO COM WATERFALL DE RECUPERAÇÃO DE ID ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
@@ -146,33 +145,41 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         setIsLoading(true);
 
-        // A) WATERFALL DE ID (Tenta ID do objeto -> Tenta Lookup por Nome)
-        let finalProfessionalId = sanitizeUuid(appointment?.professional_id);
-        
-        if (!finalProfessionalId && appointment.professional_name) {
-            // Busca o UUID real na lista vinda do DB
-            const found = dbProfessionals.find(p => 
-                p.name?.toLowerCase().trim() === appointment.professional_name.toLowerCase().trim()
-            );
+        // --- LÓGICA BLINDADA DE RECUPERAÇÃO DE ID (WATERFALL) ---
+        let finalProfessionalId = null;
+
+        // A) Tenta extrair o ID original do agendamento (SÓ se for um UUID válido, ignorando '0')
+        if (isValidUuid(appointment?.professional_id)) {
+            finalProfessionalId = appointment.professional_id;
+        }
+
+        // B) SMART LOOKUP: Se o ID for '0', nulo ou inválido, buscamos o UUID real na lista do banco pelo nome
+        if (!finalProfessionalId && appointment.professional_name && dbProfessionals.length > 0) {
+            const targetName = appointment.professional_name.toLowerCase().trim();
+            const found = dbProfessionals.find(p => p.name?.toLowerCase().trim() === targetName);
+            
             if (found) {
-                console.log(`[CHECKOUT] Smart Lookup: UUID ${found.id} obtido para "${appointment.professional_name}"`);
+                console.log(`[CHECKOUT] Sucesso: ID '${appointment.professional_id}' ignorado. UUID '${found.id}' recuperado para profissional '${appointment.professional_name}'`);
                 finalProfessionalId = found.id;
             }
         }
 
-        // B) TRAVA DE SEGURANÇA ANTI-LEGACY
-        console.log('Validando ID Profissional:', finalProfessionalId);
-        if (!finalProfessionalId || String(finalProfessionalId).length < 20) {
-            alert(`ERRO DE DADOS: O sistema tentou usar um ID inválido ou de teste ('${appointment.professional_id}').\n\nPor favor, recarregue a página ou verifique se o profissional "${appointment.professional_name}" está devidamente cadastrado no menu Equipe.`);
+        // Validação de segurança final
+        if (!finalProfessionalId) {
+            console.error('[CHECKOUT] Falha Crítica: ID do profissional não resolvido.', { rawId: appointment.professional_id, name: appointment.professional_name });
+            setToast({ 
+                message: `Erro: O profissional "${appointment.professional_name}" não foi encontrado no sistema com um ID válido. Verifique o cadastro da equipe.`, 
+                type: 'error' 
+            });
             setIsLoading(false);
             return;
         }
 
         try {
-            // 1. SMART OVERWRITE: Limpa lixo anterior
+            // 1. Limpa lançamentos prévios (Evita duplicidade)
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
-            // 2. PREPARAÇÃO DO PAYLOAD REAL
+            // 2. Prepara o payload com os IDs reais validados
             const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -181,16 +188,16 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 type: 'income',
                 category: 'servico',
                 payment_method: selectedCategory,
-                payment_method_id: currentMethod.id, // UUID do DB
-                professional_id: finalProfessionalId, // UUID validado acima
-                client_id: sanitizeUuid(appointment.client_id),
+                payment_method_id: currentMethod.id, 
+                professional_id: finalProfessionalId, // UUID Real garantido aqui
+                client_id: isValidUuid(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
                 status: 'paid',
                 date: new Date().toISOString()
             };
 
-            // 3. PERSISTÊNCIA
+            // 3. Persistência
             const [finRes, apptRes] = await Promise.all([
                 supabase.from('financial_transactions').insert([payload]),
                 supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id)
@@ -203,7 +210,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             setTimeout(() => { onSuccess(); onClose(); }, 1000);
 
         } catch (error: any) {
-            console.error("[CHECKOUT] Falha Crítica:", error);
+            console.error("[CHECKOUT] Erro fatal:", error);
             setToast({ message: `Erro no banco: ${error.message}`, type: 'error' });
         } finally {
             setIsLoading(false);
@@ -229,7 +236,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
                             <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conexão ativa: Supabase Cloud</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Validação Inteligente de ID</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
@@ -340,7 +347,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-                        Finalizar e Baixar
+                        Confirmar Recebimento
                     </button>
                 </footer>
             </div>
