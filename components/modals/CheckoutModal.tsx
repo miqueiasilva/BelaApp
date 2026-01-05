@@ -9,23 +9,12 @@ import {
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
 
-// --- HELPERS DE FORMATAÇÃO E SEGURANÇA ---
+// --- HELPERS DE FORMATAÇÃO ---
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: 'BRL',
     }).format(value);
-};
-
-/**
- * Validador Estrito de UUID: Garante que a string tenha o formato/tamanho de um UUID real
- * e rejeita explicitamente IDs de mock como "0", "1", "5", etc.
- */
-const isRealUuid = (id: any): boolean => {
-    if (!id) return false;
-    const sid = String(id).trim();
-    // UUIDs reais do Supabase têm 36 caracteres. Usamos > 20 como margem de segurança total.
-    return sid.length > 20 && sid !== 'undefined' && sid !== 'null';
 };
 
 // --- INTERFACES ---
@@ -69,38 +58,46 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
 
-    // 1. FETCH DE DADOS REAIS
-    useEffect(() => {
-        const loadSystemData = async () => {
-            setIsFetching(true);
-            try {
-                const [profsRes, methodsRes] = await Promise.all([
-                    supabase.from('professionals').select('id, name').eq('active', true),
-                    supabase.from('payment_methods_config').select('*').eq('is_active', true)
-                ]);
+    // 1. VERIFICADOR ESTREITO DE UUID
+    const isRealUUID = (id: any): boolean => {
+        if (!id) return false;
+        const sid = String(id).trim();
+        // UUIDs reais (v4) possuem 36 caracteres. Rejeitamos explicitamente IDs curtos (mock).
+        return typeof id === 'string' && sid.length > 20 && sid !== 'undefined' && sid !== 'null';
+    };
 
-                if (profsRes.error) throw profsRes.error;
-                if (methodsRes.error) throw methodsRes.error;
+    // 2. FETCH DE DADOS REAIS
+    const loadSystemData = async () => {
+        setIsFetching(true);
+        try {
+            const [profsRes, methodsRes] = await Promise.all([
+                supabase.from('professionals').select('id, name').eq('active', true),
+                supabase.from('payment_methods_config').select('*').eq('is_active', true)
+            ]);
 
-                setDbProfessionals(profsRes.data || []);
-                setDbPaymentMethods(methodsRes.data || []);
+            if (profsRes.error) throw profsRes.error;
+            if (methodsRes.error) throw methodsRes.error;
 
-                if (methodsRes.data && methodsRes.data.length > 0) {
-                    const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
-                    if (firstPix) setSelectedMethodId(firstPix.id);
-                }
-            } catch (err: any) {
-                console.error("[CHECKOUT] Erro na carga:", err);
-                setToast({ message: "Erro ao sincronizar com o servidor.", type: 'error' });
-            } finally {
-                setIsFetching(false);
+            setDbProfessionals(profsRes.data || []);
+            setDbPaymentMethods(methodsRes.data || []);
+
+            if (methodsRes.data && methodsRes.data.length > 0) {
+                const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
+                if (firstPix) setSelectedMethodId(firstPix.id);
             }
-        };
+        } catch (err: any) {
+            console.error("[CHECKOUT] Erro na carga:", err);
+            setToast({ message: "Erro ao sincronizar com o servidor.", type: 'error' });
+        } finally {
+            setIsFetching(false);
+        }
+    };
 
+    useEffect(() => {
         if (isOpen) loadSystemData();
     }, [isOpen]);
 
-    // 2. FILTRAGEM DINÂMICA
+    // 3. FILTRAGEM DINÂMICA DE MÉTODOS
     const filteredMethods = useMemo(() => {
         return dbPaymentMethods.filter(m => m.type === selectedCategory);
     }, [dbPaymentMethods, selectedCategory]);
@@ -118,7 +115,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return dbPaymentMethods.find(m => m.id === selectedMethodId);
     }, [dbPaymentMethods, selectedMethodId]);
 
-    // 3. CÁLCULOS
+    // 4. CÁLCULOS FINANCEIROS
     const financialMetrics = useMemo(() => {
         if (!currentMethod) return { rate: 0, netValue: appointment.price };
         
@@ -134,7 +131,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 4. FINALIZAÇÃO COM SANITIZAÇÃO AGRESSIVA (BUGFIX UUID) ---
+    // --- 5. FINALIZAÇÃO COM RECUPERAÇÃO INTELIGENTE DE ID (BUGFIX COMISSÃO) ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
@@ -143,36 +140,38 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         setIsLoading(true);
 
-        // --- LÓGICA DE RECUPERAÇÃO DE ID BLINDADA ---
-        let safeProfessionalId = null;
+        // A) GARANTIA DE CARREGAMENTO: Se a lista de profissionais sumiu, recarrega agora
+        let activeProfs = dbProfessionals;
+        if (activeProfs.length === 0) {
+            const { data } = await supabase.from('professionals').select('id, name').eq('active', true);
+            if (data) activeProfs = data;
+        }
 
-        // 1. Prioridade: Smart Lookup pelo Nome (Garante o UUID vindo do DB)
-        if (appointment?.professional_name && dbProfessionals.length > 0) {
-            const targetName = appointment.professional_name.toLowerCase().trim();
-            const found = dbProfessionals.find(p => p.name?.toLowerCase().trim() === targetName);
-            if (found) {
-                safeProfessionalId = found.id;
-                console.log(`[CHECKOUT] Smart Lookup Sucesso: UUID '${safeProfessionalId}' encontrado para '${appointment.professional_name}'`);
+        // B) LÓGICA DE RECUPERAÇÃO (WATERFALL)
+        let finalProfId = appointment?.professional_id;
+        
+        // Se o ID for inválido (ex: '5', '0', null), tentamos buscar pelo Nome
+        if (!isRealUUID(finalProfId)) {
+            const nameToMatch = appointment?.professional_name?.toLowerCase().trim();
+            
+            if (nameToMatch && activeProfs.length > 0) {
+                console.log(`[CHECKOUT] ID '${finalProfId}' inválido. Tentando match por nome: '${nameToMatch}'`);
+                
+                const matchedProf = activeProfs.find(p => 
+                    p.name?.toLowerCase().trim() === nameToMatch
+                );
+
+                if (matchedProf && isRealUUID(matchedProf.id)) {
+                    finalProfId = matchedProf.id;
+                    console.log(`[CHECKOUT] UUID Recuperado via Nome: ${finalProfId}`);
+                }
             }
         }
-
-        // 2. Fallback: Tenta o ID do objeto, MAS SÓ SE FOR UM UUID REAL (Evita o erro "5")
-        if (!safeProfessionalId && isRealUuid(appointment?.professional_id)) {
-            safeProfessionalId = appointment.professional_id;
-        }
-
-        // Debug Log de Auditoria
-        console.log('[CHECKOUT] Payload Audit:', { 
-            safeProfessionalId, 
-            originalId: appointment.professional_id,
-            isOriginalValid: isRealUuid(appointment.professional_id),
-            method: currentMethod.id
-        });
-
-        // Bloqueio de Segurança Final
-        if (!safeProfessionalId) {
+        
+        // C) TRAVA DE SEGURANÇA: Se não achou UUID, bloqueia para não perder comissão
+        if (!isRealUUID(finalProfId)) {
             setToast({ 
-                message: `Erro de Dados: O profissional "${appointment.professional_name}" não possui um identificador válido no banco.`, 
+                message: `Erro: Não foi possível identificar o profissional "${appointment.professional_name}" no banco de dados. Verifique o cadastro para garantir a comissão.`, 
                 type: 'error' 
             });
             setIsLoading(false);
@@ -183,7 +182,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             // Limpa lançamentos duplicados
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
-            // Montagem do payload usando APENAS variáveis sanitizadas
+            // Payload 100% UUID-Safe
             const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -193,8 +192,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: safeProfessionalId, // UUID Sanitizado Garantido
-                client_id: isRealUuid(appointment.client_id) ? appointment.client_id : null,
+                professional_id: finalProfId, // UUID Real garantido aqui
+                client_id: isRealUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
                 status: 'paid',
@@ -213,7 +212,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             setTimeout(() => { onSuccess(); onClose(); }, 1000);
 
         } catch (error: any) {
-            console.error("[CHECKOUT] Falha Crítica de Gravação:", error);
+            console.error("[CHECKOUT] Falha Crítica:", error);
             setToast({ message: `Erro de integridade: ${error.message}`, type: 'error' });
         } finally {
             setIsLoading(false);
@@ -238,8 +237,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
-                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Finalizar Venda</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Proteção contra IDs legados ativa</p>
+                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Identificação de Equipe Ativa</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
@@ -267,7 +266,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     </div>
 
                     <div className="space-y-3">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">1. Escolha como recebeu</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">1. Método de Recebimento</label>
                         <div className="grid grid-cols-4 gap-2">
                             {categories.map((cat) => (
                                 <button
@@ -350,7 +349,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-                        Confirmar Recebimento
+                        Finalizar e Baixar
                     </button>
                 </footer>
             </div>
