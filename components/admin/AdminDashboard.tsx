@@ -81,13 +81,21 @@ const AppointmentCard: React.FC<{ app: Appointment }> = ({ app }) => {
     const startMinutes = app.start.getHours() * 60 + app.start.getMinutes();
     const endMinutes = app.end.getHours() * 60 + app.end.getMinutes();
 
-    const top = ((startMinutes - START_HOUR * 60) / MINUTES_IN_ROW) * ROW_HEIGHT_PX;
-    const height = ((endMinutes - startMinutes) / MINUTES_IN_ROW) * ROW_HEIGHT_PX;
+    const rawTop = ((startMinutes - START_HOUR * 60) / MINUTES_IN_ROW) * ROW_HEIGHT_PX;
+    const rawHeight = ((endMinutes - startMinutes) / MINUTES_IN_ROW) * ROW_HEIGHT_PX;
     
     return (
         <div
-            className={`absolute w-[95%] left-1/2 -translate-x-1/2 p-2 rounded-lg border text-[11px] leading-tight cursor-pointer hover:ring-2 hover:ring-[#705336] transition-all duration-200 ${statusClasses[app.status]}`}
-            style={{ top: `${top}px`, height: `${height - 4}px` }}
+            className={`absolute p-2 rounded-none border text-[11px] leading-tight cursor-pointer hover:ring-2 hover:ring-[#705336] transition-all duration-200 ${statusClasses[app.status]}`}
+            style={{ 
+                top: `${rawTop}px`, 
+                height: `calc(${rawHeight}px + 10px)`,
+                margin: '-5px',
+                width: 'calc(100% + 10px)',
+                left: '0px',
+                zIndex: 10,
+                position: 'absolute'
+            }}
         >
             <p className="font-bold truncate">{format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}</p>
             {/* FIX: Use 'nome' property from Client type instead of 'name'. */}
