@@ -1,3 +1,4 @@
+
 {
   "name": "bela-app",
   "private": true,
@@ -27,7 +28,9 @@
     "@google/genai": "^0.2.0",
     "papaparse": "^5.5.2",
     "xlsx": "^0.18.5",
-    "jspdf": "^2.5.1"
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.2",
+    "file-saver": "^2.0.5"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",

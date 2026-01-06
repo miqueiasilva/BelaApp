@@ -12,10 +12,10 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Card from '../shared/Card';
 import SafePie from '../charts/SafePie';
 import SafeBar from '../charts/SafeBar';
-import { mockTransactions, initialAppointments, professionals } from '../../data/mockData';
+import { mockTransactions, professionals } from '../../data/mockData';
 import { supabase } from '../../services/supabaseClient';
 
-// Bibliotecas de Exportação
+// Bibliotecas de Exportação (Browser-only)
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -112,8 +112,9 @@ const reportsRegistry: ReportDefinition[] = [
 ];
 
 const RelatoriosView: React.FC = () => {
-    // --- Hydration Safety ---
+    // 1. SAFE HYDRATION GUARD
     const [isMounted, setIsMounted] = useState(false);
+    
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedReport, setSelectedReport] = useState<ReportDefinition | null>(null);
@@ -125,22 +126,22 @@ const RelatoriosView: React.FC = () => {
         setIsMounted(true);
     }, []);
 
-    // Navegação de Data
+    // Monthly Navigation
     const handlePrevMonth = () => setCurrentDate(prev => addMonths(prev, -1));
     const handleNextMonth = () => setCurrentDate(prev => addMonths(prev, 1));
 
-    // Cálculos de KPI para a Visão Geral
+    // KPI Calculations
     const stats = useMemo(() => {
         const income = mockTransactions
-            .filter(t => t.type === 'receita' && isSameMonth(new Date(t.date), currentDate))
+            .filter(t => (t.type === 'receita' || t.type === 'income') && isSameMonth(new Date(t.date), currentDate))
             .reduce((sum, t) => sum + t.amount, 0);
         const expense = mockTransactions
-            .filter(t => t.type === 'despesa' && isSameMonth(new Date(t.date), currentDate))
+            .filter(t => (t.type === 'despesa' || t.type === 'expense') && isSameMonth(new Date(t.date), currentDate))
             .reduce((sum, t) => sum + t.amount, 0);
         return { income, expense, profit: income - expense };
     }, [currentDate]);
 
-    // Motor de Busca para Exportação
+    // Data Engine
     const handleSelectReport = async (report: ReportDefinition) => {
         setIsLoading(true);
         setSelectedReport(report);
@@ -179,7 +180,7 @@ const RelatoriosView: React.FC = () => {
         }, {} as any);
     }, [previewData, selectedReport]);
 
-    // Funções de Exportação
+    // EXPORT LOGIC
     const exportToExcel = () => {
         if (!previewData.length || !selectedReport) return;
         setIsExporting(true);
@@ -195,7 +196,9 @@ const RelatoriosView: React.FC = () => {
             const ws = XLSX.utils.json_to_sheet(exportRows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Dados");
-            XLSX.writeFile(wb, `BelareStudio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.xlsx`);
+            XLSX.writeFile(wb, `Relatorio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.xlsx`);
+        } catch (e) {
+            console.error("Excel Export Error:", e);
         } finally {
             setIsExporting(false);
         }
@@ -239,13 +242,15 @@ const RelatoriosView: React.FC = () => {
                 styles: { fontSize: 8, cellPadding: 2.5 },
                 alternateRowStyles: { fillColor: [250, 250, 250] }
             });
-            doc.save(`BelareStudio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.pdf`);
+            doc.save(`Relatorio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.pdf`);
+        } catch (e) {
+            console.error("PDF Export Error:", e);
         } finally {
             setIsExporting(false);
         }
     };
 
-    // --- INTERRUPTOR DE SEGURANÇA CONTRA ERRO #418 ---
+    // 2. HYDRATION GUARD RETURN
     if (!isMounted) return null;
 
     return (
@@ -291,7 +296,7 @@ const RelatoriosView: React.FC = () => {
                         onClick={() => setActiveTab('export')}
                         className={`flex items-center gap-2 px-6 py-2 text-[10px] font-black uppercase tracking-tighter rounded-xl transition-all ${activeTab === 'export' ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
                     >
-                        <Table size={14} /> Central de Exportação
+                        <Table size={14} /> Exportação
                     </button>
                 </div>
             </header>
@@ -299,9 +304,10 @@ const RelatoriosView: React.FC = () => {
             <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-7xl mx-auto space-y-8 pb-20">
                     
+                    {/* DASHBOARD VIEW */}
                     {activeTab === 'overview' && (
                         <div className="space-y-8 animate-in fade-in duration-500">
-                            {/* KPI Grid - Usando <div> para garantir aninhamento válido */}
+                            {/* SEMANTIC FIX: Use <div> instead of <p> for block elements inside cards */}
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div className="bg-white p-5 border-l-4 border-l-emerald-500 rounded-2xl shadow-sm">
                                     <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Faturamento Bruto</div>
@@ -351,6 +357,7 @@ const RelatoriosView: React.FC = () => {
                         </div>
                     )}
 
+                    {/* EXPORT CENTRAL */}
                     {activeTab === 'export' && !selectedReport && (
                         <div className="space-y-6 animate-in slide-in-from-bottom-6 duration-500">
                             <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 leading-none">Selecione o detalhamento contábil para baixar</h2>
@@ -373,7 +380,7 @@ const RelatoriosView: React.FC = () => {
                                             {report.description}
                                         </div>
                                         <div className="mt-auto flex items-center justify-between text-orange-500 font-black text-[10px] uppercase tracking-widest">
-                                            <span>Visualizar Tabela</span>
+                                            <span>Visualizar Dados</span>
                                             <ArrowRight size={16} />
                                         </div>
                                     </div>
@@ -382,6 +389,7 @@ const RelatoriosView: React.FC = () => {
                         </div>
                     )}
 
+                    {/* DATA PREVIEW & DOWNLOADS */}
                     {selectedReport && (
                         <div className="space-y-6 animate-in zoom-in-95 duration-300">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
@@ -396,7 +404,7 @@ const RelatoriosView: React.FC = () => {
                                     </button>
                                     <div>
                                         <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase leading-none">{selectedReport.title}</h2>
-                                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{previewData.length} registros sincronizados</div>
+                                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{previewData.length} registros encontrados</div>
                                     </div>
                                 </div>
                                 
@@ -415,22 +423,21 @@ const RelatoriosView: React.FC = () => {
                                         disabled={isExporting || previewData.length === 0}
                                         className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-slate-800 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-slate-900 shadow-lg shadow-slate-200 transition-all active:scale-95 disabled:opacity-50"
                                     >
-                                        <FileText size={18} /> Baixar PDF
+                                        <FileText size={18} /> Gerar PDF
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Tabela de Preview */}
                             <div className="bg-white rounded-[40px] border border-slate-200 shadow-xl overflow-hidden min-h-[400px] flex flex-col">
                                 {isLoading ? (
                                     <div className="py-32 flex flex-col items-center justify-center text-slate-400">
                                         <Loader2 className="animate-spin text-orange-500 mb-4" size={48} strokeWidth={3} />
-                                        <div className="font-black uppercase tracking-widest text-[10px]">Lendo base de dados contábil...</div>
+                                        <div className="font-black uppercase tracking-widest text-[10px]">Aguarde, processando banco...</div>
                                     </div>
                                 ) : previewData.length === 0 ? (
                                     <div className="py-32 text-center">
                                         <AlertTriangle size={64} className="text-slate-100 mx-auto mb-4" />
-                                        <div className="text-slate-400 font-black uppercase tracking-widest text-xs">Sem movimentação registrada neste período.</div>
+                                        <div className="text-slate-400 font-black uppercase tracking-widest text-xs">Sem dados disponíveis para este período.</div>
                                     </div>
                                 ) : (
                                     <>
@@ -459,10 +466,9 @@ const RelatoriosView: React.FC = () => {
                                             </table>
                                         </div>
                                         
-                                        {/* Rodapé de Totais */}
                                         {previewTotals && (
                                             <div className="bg-slate-50 border-t-2 border-slate-100 px-6 py-5 flex flex-wrap justify-end gap-12 items-center">
-                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Sumário da Exportação:</span>
+                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Totais Consolidados:</span>
                                                 {selectedReport.columns.map(col => {
                                                     if (previewTotals[col.key] !== undefined) {
                                                         return (
