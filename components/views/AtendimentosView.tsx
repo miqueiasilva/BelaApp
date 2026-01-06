@@ -89,7 +89,7 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT (TÉCNICA NEGATIVE MARGIN BURST) ---
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT (TÉCNICA SANGRIA / BLEED) ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number, serviceColor: string) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot; 
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
@@ -100,22 +100,18 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number, servic
 
     return { 
         position: 'absolute' as const,
-        // Técnica Burst: Margem negativa força o preenchimento além do padding do pai
-        margin: '-5px',
-        // O top é ajustado para compensar a margem negativa superior (-5px)
-        top: `${rawTop}px`,
-        left: '0px',
-        right: '0px',
-        // Largura e altura expandidas para cobrir o "estouro" das margens (5px esquerda + 5px direita = 10px)
-        width: 'calc(100% + 10px)',
-        height: `calc(${rawHeight}px + 10px)`,
-        zIndex: 10,
+        top: `${rawTop - 1}px`,       // Sangria superior (tapa a borda)
+        left: '-1px',                 // Sangria esquerda
+        width: 'calc(100% + 2px)',    // Expansão lateral para cobrir border-right do pai
+        height: `${rawHeight + 2}px`, // Expansão vertical para cobrir bordas superior e inferior
+        zIndex: 20,                   // Z-index elevado para garantir sobreposição da grade
+        margin: '0px',
         borderTop: `1px solid ${serviceColor}`
     };
 };
 
 const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
-    const baseClasses = "rounded-none shadow-sm border-l-[6px] p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card";
+    const baseClasses = "rounded-none shadow-sm border-l-[6px] p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0";
     
     if (viewMode === 'pagamento') {
         const isPaid = app.status === 'concluido'; 

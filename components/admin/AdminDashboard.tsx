@@ -88,13 +88,13 @@ const AppointmentCard: React.FC<{ app: Appointment }> = ({ app }) => {
         <div
             className={`absolute p-2 rounded-none border text-[11px] leading-tight cursor-pointer hover:ring-2 hover:ring-[#705336] transition-all duration-200 ${statusClasses[app.status]}`}
             style={{ 
-                top: `${rawTop}px`, 
-                height: `calc(${rawHeight}px + 10px)`,
-                margin: '-5px',
-                width: 'calc(100% + 10px)',
-                left: '0px',
-                zIndex: 10,
-                position: 'absolute'
+                position: 'absolute',
+                top: `${rawTop - 1}px`, 
+                left: '-1px',
+                width: 'calc(100% + 2px)',
+                height: `${rawHeight + 2}px`,
+                margin: '0px',
+                zIndex: 20
             }}
         >
             <p className="font-bold truncate">{format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}</p>
@@ -237,7 +237,7 @@ const AdminDashboard: React.FC = () => {
 
                             {/* Professional Columns */}
                             {filteredProfessionals.map(prof => (
-                                <div key={prof.id} className="relative border-r border-slate-200">
+                                <div key={prof.id} className="relative !p-0 !m-0 border-r border-slate-200">
                                     {timeSlots.map((_, index) => (
                                         <div key={index} className="h-10 border-b border-dashed border-slate-200"></div>
                                     ))}
