@@ -238,15 +238,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     }, [resources]);
 
-    // --- FEATURE: Busca de Equipe com Filtro de Visibilidade ---
+    // --- CRITICAL FIX: Busca de Equipe (Modo Seguro Sem Colunas Inexistentes) ---
     const fetchResources = async () => {
         try {
-            console.log('Sincronizando equipe (Respeitando Visibilidade)...');
+            console.log('Sincronizando equipe (Modo de Segurança)...');
             
-            // 1. SELECT SEGURO: Adicionado show_in_calendar
+            // SELECT LIMPO: Apenas colunas garantidas no banco
             const { data, error } = await supabase
                 .from('team_members')
-                .select('id, name, photo_url, role, order_index, services_enabled, active, show_in_calendar') 
+                .select('id, name, photo_url, role, active, show_in_calendar') 
                 .eq('active', true)
                 .order('name'); 
 
@@ -256,23 +256,25 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             }
             
             if (data && isMounted.current) {
-                // 2. FILTRAGEM CLIENT-SIDE: Mostra se não for falso (trata nulos como visíveis por padrão)
-                const visibleMembers = data.filter((p: any) => p.show_in_calendar !== false);
+                // FILTRAGEM CLIENT-SIDE: Mostra se não for falso (trata null como visível)
+                const visibleMembers = data.filter((m: any) => m.show_in_calendar !== false);
 
                 const mapped = visibleMembers.map((p: any) => ({
                     id: p.id,
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role,
-                    order_index: p.order_index || 0,
-                    services_enabled: p.services_enabled || [] 
+                    // Fallbacks para campos removidos do select
+                    order_index: 0,
+                    services_enabled: [] 
                 }));
                 setResources(mapped);
+                console.log('Equipe carregada:', mapped.length, 'profissionais visíveis.');
             }
         } catch (e: any) { 
-            console.error('Erro ao buscar equipe:', e);
+            console.error('Erro fatal ao buscar equipe:', e);
             if (isMounted.current) {
-                setToast({ message: 'Erro ao carregar colunas da agenda.', type: 'error' });
+                setToast({ message: 'Falha na conexão com a equipe.', type: 'error' });
             }
         }
     };
