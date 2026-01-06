@@ -819,6 +819,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             setToast({ message: 'Falha na comunicação com o banco.', type: 'error' });
                         }
                     }} 
+                    /* FIX: Replaced non-existent onUpdateStatus name with handleUpdateStatus */
                     onUpdateStatus={handleUpdateStatus} 
                 />
             )}
