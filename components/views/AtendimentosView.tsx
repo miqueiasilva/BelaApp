@@ -8,7 +8,6 @@ import {
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
     CheckCircle2, Scissors
 } from 'lucide-react';
-// FIX: Added missing startOfDay and endOfDay imports from date-fns.
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
@@ -193,6 +192,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
+    const gridScrollRef = useRef<HTMLDivElement>(null); // FIX: Referência para controle de scroll horizontal
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
@@ -291,6 +291,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         else if (periodType === 'Mês') setCurrentDate(prev => addMonths(prev, direction));
     };
 
+    // FIX: Lógica de rolagem horizontal vinculada ao container de scroll
+    const scrollHorizontal = (direction: 'left' | 'right') => {
+        if (gridScrollRef.current) {
+            const amount = colWidth + 20; // largura da coluna + margem estimada
+            gridScrollRef.current.scrollBy({
+                left: direction === 'left' ? -amount : amount,
+                behavior: 'smooth'
+            });
+        }
+    };
+
     const columns = useMemo<DynamicColumn[]>(() => {
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -355,7 +366,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </header>
 
-            <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
+            <div 
+                ref={gridScrollRef}
+                className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar"
+            >
                 <div className="min-w-fit">
                     <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]"><Maximize2 size={16} className="text-slate-300" /></div>
@@ -368,11 +382,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                         {col.subtitle && <span className="text-[9px] text-slate-400 font-bold uppercase">{col.subtitle}</span>}
                                     </div>
                                 </div>
-                                {/* RESTAURAÇÃO: Setas de navegação de equipe no header */}
+                                {/* FIX: Handlers de scroll vinculados às setas horizontais */}
                                 {periodType === 'Dia' && col.type === 'professional' && (
-                                    <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500"><ChevronLeft size={14} /></button>
-                                        <button className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500"><ChevronRight size={14} /></button>
+                                    <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); scrollHorizontal('left'); }}
+                                            className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"
+                                        >
+                                            <ChevronLeft size={14} />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); scrollHorizontal('right'); }}
+                                            className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"
+                                        >
+                                            <ChevronRight size={14} />
+                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -404,7 +428,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </div>
 
-            {/* RESTAURAÇÃO: Context Menu Completo */}
+            {/* Context Menu Completo */}
             {selectionMenu && (
                 <>
                     <div className="fixed inset-0 z-50" onClick={() => setSelectionMenu(null)} />
