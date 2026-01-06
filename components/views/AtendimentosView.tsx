@@ -23,8 +23,8 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const START_HOUR = 8;
 const END_HOUR = 20; 
-const SLOT_PX_HEIGHT = 80; // Altura para 30 minutos (h-20 no Tailwind)
-const CARD_TOP_OFFSET = 0;  // Alinhamento exato com a linha da grade
+const SLOT_PX_HEIGHT = 80; // Corresponde a h-20 (80px real)
+const CARD_TOP_OFFSET = 0; 
 
 const STATUS_PRIORITY: Record<string, number> = {
     'em_atendimento': 1,
@@ -89,17 +89,28 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
-    const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
+    const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot; // ex: 80px / 30min = 2.66px/min
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
+    
     const top = (startMinutesSinceDayStart * pixelsPerMinute) + CARD_TOP_OFFSET;
-    const height = (durationMinutes * pixelsPerMinute) - 4; // -4px para respiro entre cards
-    return { top: `${top}px`, height: `${height}px` };
+    const height = (durationMinutes * pixelsPerMinute); 
+
+    return { 
+        top: `${top}px`, 
+        height: `${height + 1}px`, // +1px para cobrir a borda inferior da linha
+        marginTop: '-1px',         // Deslocamento para cobrir a borda superior da linha
+        zIndex: 10,
+        position: 'absolute' as const
+    };
 };
 
 const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
-    const baseClasses = "absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer z-10 hover:brightness-95 transition-all overflow-hidden flex flex-col group/card";
+    // Nota: Removido mx-1 para garantir preenchimento total lateral também, caso desejado. Mantido p-1.5 para respiro interno do texto.
+    const baseClasses = "left-0 right-0 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card";
+    
     if (viewMode === 'pagamento') {
         const isPaid = app.status === 'concluido'; 
         if (isPaid) return `${baseClasses} bg-emerald-50 border-emerald-500 text-emerald-900`;
@@ -586,7 +597,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             {isConfigModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
-                    <div className="relative w-full max-w-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200">
+                    <div className="relative w-full max-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200">
                         <header className="flex justify-between items-center mb-8"><h3 className="font-extrabold text-slate-800">Grade</h3><button onClick={() => setIsConfigModalOpen(false)}><X size={20} /></button></header>
                         <div className="space-y-4">
                             <label className="text-sm font-black text-slate-700 uppercase">Largura: {colWidth}px</label>
