@@ -238,17 +238,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     }, [resources]);
 
-    // --- CRITICAL FIX: Busca de Equipe (Modo Seguro Sem Colunas Inexistentes) ---
+    // --- FEATURE UPGRADE: Busca de Equipe com Ordenação Personalizada ---
     const fetchResources = async () => {
         try {
-            console.log('Sincronizando equipe (Modo de Segurança)...');
+            console.log('Sincronizando equipe (Ordenação Personalizada)...');
             
-            // SELECT LIMPO: Apenas colunas garantidas no banco
+            // 1. SELECT: Incluído order_index para garantir a lógica de ordenação
             const { data, error } = await supabase
                 .from('team_members')
-                .select('id, name, photo_url, role, active, show_in_calendar') 
+                .select('id, name, photo_url, role, active, show_in_calendar, order_index') 
                 .eq('active', true)
-                .order('name'); 
+                .order('order_index', { ascending: true }); // 2. ORDENAÇÃO: Respeita o index administrativo
 
             if (error) {
                 console.error('Erro Supabase:', error);
@@ -256,7 +256,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             }
             
             if (data && isMounted.current) {
-                // FILTRAGEM CLIENT-SIDE: Mostra se não for falso (trata null como visível)
+                // 3. FILTRAGEM: Mantém a regra de visibilidade (nulos ou true = visível)
                 const visibleMembers = data.filter((m: any) => m.show_in_calendar !== false);
 
                 const mapped = visibleMembers.map((p: any) => ({
@@ -264,17 +264,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role,
-                    // Fallbacks para campos removidos do select
-                    order_index: 0,
+                    order_index: p.order_index || 0,
                     services_enabled: [] 
                 }));
                 setResources(mapped);
-                console.log('Equipe carregada:', mapped.length, 'profissionais visíveis.');
+                console.log('Equipe carregada na ordem personalizada:', mapped.length, 'profissionais.');
             }
         } catch (e: any) { 
             console.error('Erro fatal ao buscar equipe:', e);
             if (isMounted.current) {
-                setToast({ message: 'Falha na conexão com a equipe.', type: 'error' });
+                setToast({ message: 'Erro ao organizar colunas da agenda.', type: 'error' });
             }
         }
     };
