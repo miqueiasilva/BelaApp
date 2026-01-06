@@ -17,19 +17,6 @@ const statusMap: Record<AppointmentStatus, { label: string; color: string; bg: s
     em_espera: { label: 'Em Espera', color: 'text-slate-600', bg: 'bg-slate-100' }
 };
 
-// Hierarquia Visual (CASE WHEN Logic)
-const STATUS_PRIORITY: Record<string, number> = {
-    'em_atendimento': 1,
-    'chegou': 2,
-    'confirmado_whatsapp': 3,
-    'confirmado': 4,
-    'agendado': 5,
-    'em_espera': 6,
-    'concluido': 7,
-    'faltou': 8,
-    'cancelado': 9
-};
-
 interface TodayScheduleWidgetProps {
     onNavigate: (view: any) => void;
     appointments: any[];
@@ -38,16 +25,15 @@ interface TodayScheduleWidgetProps {
 
 const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, appointments, dateLabel = 'Hoje' }) => {
     
-    // Aplicação da Ordenação Hierárquica por Status e então Tempo
+    // LOGICA DE ORDENAÇÃO: Cronológica Decrescente (O mais futuro/recente primeiro)
     const activeApps = [...appointments]
         .filter(app => app.status !== 'cancelado' && app.status !== 'bloqueado')
         .sort((a, b) => {
-            const prioA = STATUS_PRIORITY[a.status] || 99;
-            const prioB = STATUS_PRIORITY[b.status] || 99;
-            if (prioA !== prioB) return prioA - prioB;
-            return new Date(a.date).getTime() - new Date(b.date).getTime();
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            return dateB - dateA; // B - A = Ordem Decrescente
         })
-        .slice(0, 10); // Aumentado levemente o limite para suportar períodos maiores
+        .slice(0, 10);
 
     return (
         <div className="bg-white rounded-[24px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-full min-h-[400px]">
