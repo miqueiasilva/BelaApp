@@ -112,7 +112,7 @@ const reportsRegistry: ReportDefinition[] = [
 ];
 
 const RelatoriosView: React.FC = () => {
-    // --- Hydration Fix: Client-Side Only Mounting ---
+    // --- Hydration Safety ---
     const [isMounted, setIsMounted] = useState(false);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -125,11 +125,11 @@ const RelatoriosView: React.FC = () => {
         setIsMounted(true);
     }, []);
 
-    // Monthly Navigation
+    // Navegação de Data
     const handlePrevMonth = () => setCurrentDate(prev => addMonths(prev, -1));
     const handleNextMonth = () => setCurrentDate(prev => addMonths(prev, 1));
 
-    // Dashboard Stats calculation (safe mock fallback)
+    // Cálculos de KPI para a Visão Geral
     const stats = useMemo(() => {
         const income = mockTransactions
             .filter(t => t.type === 'receita' && isSameMonth(new Date(t.date), currentDate))
@@ -140,7 +140,7 @@ const RelatoriosView: React.FC = () => {
         return { income, expense, profit: income - expense };
     }, [currentDate]);
 
-    // Data Engine for Export Central
+    // Motor de Busca para Exportação
     const handleSelectReport = async (report: ReportDefinition) => {
         setIsLoading(true);
         setSelectedReport(report);
@@ -161,7 +161,7 @@ const RelatoriosView: React.FC = () => {
             if (error) throw error;
             setPreviewData(data || []);
         } catch (e: any) {
-            console.error("Report Engine Error:", e.message);
+            console.error("Relatorios Error:", e.message);
             setPreviewData([]);
         } finally {
             setIsLoading(false);
@@ -179,8 +179,7 @@ const RelatoriosView: React.FC = () => {
         }, {} as any);
     }, [previewData, selectedReport]);
 
-    // EXPORT MOTORS
-
+    // Funções de Exportação
     const exportToExcel = () => {
         if (!previewData.length || !selectedReport) return;
         setIsExporting(true);
@@ -196,7 +195,7 @@ const RelatoriosView: React.FC = () => {
             const ws = XLSX.utils.json_to_sheet(exportRows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Dados");
-            XLSX.writeFile(wb, `Belare_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.xlsx`);
+            XLSX.writeFile(wb, `BelareStudio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.xlsx`);
         } finally {
             setIsExporting(false);
         }
@@ -240,20 +239,20 @@ const RelatoriosView: React.FC = () => {
                 styles: { fontSize: 8, cellPadding: 2.5 },
                 alternateRowStyles: { fillColor: [250, 250, 250] }
             });
-            doc.save(`Belare_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.pdf`);
+            doc.save(`BelareStudio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.pdf`);
         } finally {
             setIsExporting(false);
         }
     };
 
-    // --- GUARD FOR HYDRATION ---
+    // --- INTERRUPTOR DE SEGURANÇA CONTRA ERRO #418 ---
     if (!isMounted) return null;
 
     return (
         <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans text-left">
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4 z-30 shadow-sm flex-shrink-0">
                 <div className="flex flex-col md:flex-row items-center gap-6">
-                    <h1 className="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2">
+                    <h1 className="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2 leading-none">
                         <BarChart3 className="text-orange-500" size={28} />
                         BI & Relatórios
                     </h1>
@@ -300,31 +299,30 @@ const RelatoriosView: React.FC = () => {
             <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-7xl mx-auto space-y-8 pb-20">
                     
-                    {/* TAB: VISÃO GERAL */}
                     {activeTab === 'overview' && (
                         <div className="space-y-8 animate-in fade-in duration-500">
-                            {/* KPI Grid - Replaced <p> with <div> to prevent nesting errors */}
+                            {/* KPI Grid - Usando <div> para garantir aninhamento válido */}
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div className="bg-white p-5 border-l-4 border-l-emerald-500 rounded-2xl shadow-sm">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Receita Líquida</div>
-                                    <div className="text-xl font-black text-slate-800">R$ {stats.income.toLocaleString('pt-BR')}</div>
+                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Faturamento Bruto</div>
+                                    <div className="text-xl font-black text-slate-800 leading-none mt-1">R$ {stats.income.toLocaleString('pt-BR')}</div>
                                 </div>
                                 <div className="bg-white p-5 border-l-4 border-l-rose-500 rounded-2xl shadow-sm">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Despesas Operacionais</div>
-                                    <div className="text-xl font-black text-slate-800">R$ {stats.expense.toLocaleString('pt-BR')}</div>
+                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Despesas Totais</div>
+                                    <div className="text-xl font-black text-slate-800 leading-none mt-1">R$ {stats.expense.toLocaleString('pt-BR')}</div>
                                 </div>
                                 <div className="bg-white p-5 border-l-4 border-l-blue-500 rounded-2xl shadow-sm">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Resultado Líquido</div>
-                                    <div className="text-xl font-black text-slate-800">R$ {stats.profit.toLocaleString('pt-BR')}</div>
+                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Resultado Líquido</div>
+                                    <div className="text-xl font-black text-slate-800 leading-none mt-1">R$ {stats.profit.toLocaleString('pt-BR')}</div>
                                 </div>
                                 <div className="bg-white p-5 border-l-4 border-l-orange-500 rounded-2xl shadow-sm">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Margem Real</div>
-                                    <div className="text-xl font-black text-slate-800">{stats.income > 0 ? ((stats.profit / stats.income) * 100).toFixed(1) : 0}%</div>
+                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Margem de Lucro</div>
+                                    <div className="text-xl font-black text-slate-800 leading-none mt-1">{stats.income > 0 ? ((stats.profit / stats.income) * 100).toFixed(1) : 0}%</div>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                <Card title="Faturamento por Segmento" className="lg:col-span-1 rounded-[32px] shadow-sm">
+                                <Card title="Receita por Categoria" className="lg:col-span-1 rounded-[32px] shadow-sm">
                                     <div className="h-64 mt-4">
                                         <SafePie 
                                             data={[
@@ -337,7 +335,7 @@ const RelatoriosView: React.FC = () => {
                                         />
                                     </div>
                                 </Card>
-                                <Card title="Ocupação Profissional" className="lg:col-span-2 rounded-[32px] shadow-sm">
+                                <Card title="Produtividade da Equipe" className="lg:col-span-2 rounded-[32px] shadow-sm">
                                     <div className="h-64 mt-4">
                                         <SafeBar 
                                             data={professionals.map(p => ({
@@ -353,16 +351,14 @@ const RelatoriosView: React.FC = () => {
                         </div>
                     )}
 
-                    {/* TAB: CENTRAL DE EXPORTAÇÃO */}
                     {activeTab === 'export' && !selectedReport && (
                         <div className="space-y-6 animate-in slide-in-from-bottom-6 duration-500">
-                            <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Escolha o detalhamento contábil para baixar</h2>
+                            <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 leading-none">Selecione o detalhamento contábil para baixar</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                                 {reportsRegistry.map((report) => (
                                     <div
                                         key={report.id}
                                         onClick={() => handleSelectReport(report)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleSelectReport(report)}
                                         className="bg-white p-6 rounded-[32px] border-2 border-slate-100 hover:border-orange-500 hover:shadow-2xl transition-all text-left group flex flex-col h-full cursor-pointer active:scale-95 outline-none focus:ring-2 focus:ring-orange-200"
                                         role="button"
                                         tabIndex={0}
@@ -386,7 +382,6 @@ const RelatoriosView: React.FC = () => {
                         </div>
                     )}
 
-                    {/* VIEW: PRÉVIA DE DADOS E EXPORTAÇÃO */}
                     {selectedReport && (
                         <div className="space-y-6 animate-in zoom-in-95 duration-300">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
@@ -425,7 +420,7 @@ const RelatoriosView: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Data Grid Preview */}
+                            {/* Tabela de Preview */}
                             <div className="bg-white rounded-[40px] border border-slate-200 shadow-xl overflow-hidden min-h-[400px] flex flex-col">
                                 {isLoading ? (
                                     <div className="py-32 flex flex-col items-center justify-center text-slate-400">
@@ -453,21 +448,18 @@ const RelatoriosView: React.FC = () => {
                                                 <tbody className="divide-y divide-slate-100">
                                                     {previewData.map((row, i) => (
                                                         <tr key={i} className="hover:bg-orange-50/20 transition-colors">
-                                                            {selectedReport.columns.map(col => {
-                                                                const rawVal = row[col.key];
-                                                                return (
-                                                                    <td key={col.key} className="px-6 py-4 text-xs font-bold text-slate-600 whitespace-nowrap">
-                                                                        {col.format ? col.format(row[col.key]) : String(row[col.key] ?? '---')}
-                                                                    </td>
-                                                                );
-                                                            })}
+                                                            {selectedReport.columns.map(col => (
+                                                                <td key={col.key} className="px-6 py-4 text-xs font-bold text-slate-600 whitespace-nowrap">
+                                                                    {col.format ? col.format(row[col.key]) : String(row[col.key] ?? '---')}
+                                                                </td>
+                                                            ))}
                                                         </tr>
                                                     ))}
                                                 </tbody>
                                             </table>
                                         </div>
                                         
-                                        {/* Financial Summary Footer */}
+                                        {/* Rodapé de Totais */}
                                         {previewTotals && (
                                             <div className="bg-slate-50 border-t-2 border-slate-100 px-6 py-5 flex flex-wrap justify-end gap-12 items-center">
                                                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Sumário da Exportação:</span>
