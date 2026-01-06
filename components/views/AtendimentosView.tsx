@@ -23,8 +23,8 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const START_HOUR = 8;
 const END_HOUR = 20; 
-const SLOT_PX_HEIGHT = 80; 
-const CARD_TOP_OFFSET = 10; 
+const SLOT_PX_HEIGHT = 80; // Altura para 30 minutos (h-20 no Tailwind)
+const CARD_TOP_OFFSET = 0;  // Alinhamento exato com a linha da grade
 
 const STATUS_PRIORITY: Record<string, number> = {
     'em_atendimento': 1,
@@ -94,7 +94,7 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
     const top = (startMinutesSinceDayStart * pixelsPerMinute) + CARD_TOP_OFFSET;
-    const height = (durationMinutes * pixelsPerMinute) - 4; 
+    const height = (durationMinutes * pixelsPerMinute) - 4; // -4px para respiro entre cards
     return { top: `${top}px`, height: `${height}px` };
 };
 
@@ -398,7 +398,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         setIsLoadingData(true);
         try {
             // PASSO 0: Snapshot para Auditoria (Old Value)
-            // Registramos quem está apagando o quê, incluindo o valor financeiro perdido
             if (isFinished) {
                 await supabase.from('audit_logs').insert([{
                     actor_id: user?.id,
@@ -545,12 +544,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-20 bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
-                                <div key={time} className="h-10 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed bg-white"><span>{time}</span></div>
+                                <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed bg-white"><span>{time}</span></div>
                             ))}
                         </div>
                         {columns.map((col, idx) => (
                             <div key={col.id} className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} onClick={(e) => { if (e.target === e.currentTarget) handleGridClick(e, col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0], col.type === 'date' ? (col.data as Date) : currentDate); }}>
-                                {timeSlotsLabels.map((_, i) => <div key={i} className="h-10 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
+                                {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
                                 {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (String(app.professional.id) === String(col.id)))).map(app => (
                                     <div key={app.id} ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} className={getCardStyle(app, viewMode)} style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: app.service.color }}>
                                         <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100 transition-opacity">{app.origem === 'link' ? <Globe size={10} className="text-orange-500" /> : <User size={10} className="text-slate-400" />}</div>
