@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
@@ -26,12 +26,14 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [session, setSession] = useState<Session | null>(null);
+  
+  // Refs para controle de estabilidade (Protocolo de Estabilidade)
+  const lastProcessedId = useRef<string | null>(null);
+  const isMounted = useRef(true);
 
-  // Helper para buscar perfil detalhado (Papel, Nome, Avatar)
+  // Helper para buscar perfil detalhado
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
-      // Tenta buscar na tabela de profissionais primeiro (Equipe)
       const { data: profData } = await supabase
         .from('professionals')
         .select('role, photo_url, permissions, name')
@@ -48,7 +50,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         };
       }
 
-      // Fallback para tabela de perfis genérica
       const { data: profileData } = await supabase
         .from('profiles')
         .select('full_name, papel, avatar_url')
@@ -62,7 +63,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         avatar_url: profileData?.avatar_url || authUser.user_metadata?.avatar_url
       };
     } catch (e) {
-      console.warn("AuthContext: Erro ao buscar perfil, usando dados básicos.", e);
       return { 
         ...authUser, 
         papel: 'profissional', 
@@ -72,65 +72,52 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   };
 
   useEffect(() => {
-    let mounted = true;
+    isMounted.current = true;
 
-    // 1. Função de Inicialização (Boot)
-    const initializeAuth = async () => {
+    // Listener Único para todo o ciclo de vida da Autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      const currentId = currentSession?.user?.id || null;
+
+      // Estabilidade: Evita processar o mesmo ID múltiplas vezes (Corrige o loop de 4 disparos)
+      if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
+        setLoading(false);
+        return;
+      }
+
+      lastProcessedId.current = currentId;
+
+      if (!currentSession?.user) {
+        if (isMounted.current) {
+          setUser(null);
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
-        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
-        
-        if (error) throw error;
-
-        if (initialSession?.user && mounted) {
-          setSession(initialSession);
-          const appUser = await fetchProfile(initialSession.user);
-          if (mounted) setUser(appUser);
+        const appUser = await fetchProfile(currentSession.user);
+        if (isMounted.current) {
+          setUser(appUser);
         }
       } catch (err) {
-        console.error("AuthContext: Erro no boot inicial:", err);
+        console.error("AuthContext: Erro ao carregar perfil:", err);
       } finally {
-        // GARANTIA: Libera a tela inicial independente do resultado
-        if (mounted) setLoading(false);
-      }
-    };
-
-    initializeAuth();
-
-    // 2. Escuta mudanças de Estado (Login, Logout, Refresh, Foco de Aba)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
-      console.log("Auth Event:", event);
-      
-      if (!mounted) return;
-
-      if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setSession(null);
-        setLoading(false);
-      } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        if (currentSession?.user) {
-          setSession(currentSession);
-          // Busca o perfil em background sem travar a UI (Non-Blocking)
-          fetchProfile(currentSession.user).then(appUser => {
-            if (mounted) setUser(appUser);
-          });
+        if (isMounted.current) {
+          setLoading(false);
         }
-        // Destrava o loading se estiver preso
-        setLoading(false);
       }
     });
 
-    // 3. SAFETY TIMEOUT (Botão de Pânico)
-    // Se em 4 segundos o Supabase não responder, forçamos o fim do loading
-    // para que o usuário não fique preso em uma tela branca infinita.
+    // Safety Timeout para evitar travamento da UI em falhas de rede severas
     const safetyTimer = setTimeout(() => {
-      if (mounted && loading) {
-        console.warn("AuthContext: Safety timeout atingido. Forçando desbloqueio da UI.");
+      if (isMounted.current && loading) {
+        console.warn("AuthContext: Safety timeout atingido. Liberando UI.");
         setLoading(false);
       }
-    }, 4000);
+    }, 5000);
 
     return () => {
-      mounted = false;
+      isMounted.current = false;
       subscription.unsubscribe();
       clearTimeout(safetyTimer);
     };
@@ -144,15 +131,12 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   
   const signOut = async () => {
     try {
+      lastProcessedId.current = null;
       await supabase.auth.signOut();
-    } catch (error) {
-      console.error("Erro ao deslogar:", error);
     } finally {
-      // Limpeza forçada total em caso de falha de rede
       localStorage.clear(); 
       sessionStorage.clear();
       setUser(null);
-      setSession(null);
       setLoading(false);
       window.location.href = '/login'; 
     }
