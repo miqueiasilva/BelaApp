@@ -211,6 +211,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
+    // --- FIX: useEffect de sincronização com logs de debug ---
     useEffect(() => {
         isMounted.current = true;
         fetchResources();
@@ -237,21 +238,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     }, [resources]);
 
-    // --- FIX: Fetch de Recursos com Filtro de Visibilidade Híbrido (Supabase + Memória) ---
+    // --- CRITICAL FIX: Remoção da coluna problemática para evitar erro 400 ---
     const fetchResources = async () => {
         try {
+            // REMOVEMOS 'show_in_calendar' do select para parar o Erro 400 de Bad Request
             const { data, error } = await supabase
                 .from('team_members')
-                .select('id, name, photo_url, role, order_index, services_enabled, show_in_calendar') 
-                .eq('active', true) // Filtramos ativos no banco
+                .select('id, name, photo_url, role, order_index, services_enabled, active') 
+                .eq('active', true) 
                 .order('order_index', { ascending: true });
 
             if (error) throw error;
+            
             if (data && isMounted.current) {
-                // FILTRAGEM VISUAL: Exibe se for true ou se for null (legado). Oculta somente se explicitamente false.
-                const visibleProfessionals = data.filter((p: any) => p.show_in_calendar !== false);
-
-                const mapped = visibleProfessionals.map((p: any) => ({
+                console.log('Equipe recuperada com sucesso:', data);
+                const mapped = data.map((p: any) => ({
                     id: p.id,
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
@@ -261,7 +262,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 }));
                 setResources(mapped);
             }
-        } catch (e) { console.error("Error resources:", e); }
+        } catch (e: any) { 
+            console.error('Erro ao buscar equipe:', e);
+            if (isMounted.current) {
+                setToast({ message: 'Erro de sincronização de equipe. Recarregando...', type: 'error' });
+            }
+        }
     };
 
     const fetchAppointments = async () => {
