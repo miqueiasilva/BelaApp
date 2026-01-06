@@ -237,19 +237,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     }, [resources]);
 
-    // --- FIX: Fetch de Recursos com Filtro de Visibilidade na Agenda ---
+    // --- FIX: Fetch de Recursos com Filtro de Visibilidade Híbrido (Supabase + Memória) ---
     const fetchResources = async () => {
         try {
             const { data, error } = await supabase
                 .from('team_members')
                 .select('id, name, photo_url, role, order_index, services_enabled, show_in_calendar') 
-                .eq('active', true)
-                .eq('show_in_calendar', true) // <-- NOVO FILTRO: Apenas quem realiza atendimentos
+                .eq('active', true) // Filtramos ativos no banco
                 .order('order_index', { ascending: true });
 
             if (error) throw error;
             if (data && isMounted.current) {
-                const mapped = data.map((p: any) => ({
+                // FILTRAGEM VISUAL: Exibe se for true ou se for null (legado). Oculta somente se explicitamente false.
+                const visibleProfessionals = data.filter((p: any) => p.show_in_calendar !== false);
+
+                const mapped = visibleProfessionals.map((p: any) => ({
                     id: p.id,
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
