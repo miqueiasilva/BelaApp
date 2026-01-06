@@ -2,10 +2,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     BarChart3, TrendingUp, TrendingDown, DollarSign, Calendar, 
-    ChevronLeft, ChevronRight, Download, FileSpreadsheet, FileText,
-    Users, Scissors, Wallet, Clock, ChevronRight as ArrowRight,
-    Loader2, Search, X, CheckCircle, AlertCircle, Filter, AlertTriangle,
-    FilePieChart, Receipt, UserCheck, Briefcase, Table
+    ChevronLeft, ChevronRight, FileSpreadsheet, FileText,
+    Users, Scissors, Wallet, ArrowRight, Loader2, 
+    AlertTriangle, FilePieChart, Table, CheckCircle2,
+    BarChart, PieChart as PieChartIcon, Search, Printer
 } from 'lucide-react';
 import { format, addMonths, isSameMonth, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -25,6 +25,7 @@ type TabType = 'overview' | 'export';
 interface ReportColumn {
     header: string;
     key: string;
+    type: 'text' | 'currency' | 'date' | 'number';
     format?: (v: any) => string;
 }
 
@@ -37,76 +38,76 @@ interface ReportDefinition {
     bg: string;
     table: string; 
     columns: ReportColumn[];
+    showTotal?: boolean;
 }
 
-// Configuração centralizada dos relatórios disponíveis na Central de Exportação
+// Configuração robusta dos relatórios
 const reportsRegistry: ReportDefinition[] = [
     { 
         id: 'financeiro', 
-        title: 'Movimentação Financeira', 
-        description: 'Relatório contábil de todas as entradas e saídas do período.', 
+        title: 'Fluxo de Caixa Detalhado', 
+        description: 'Extrato completo para contabilidade com todas as entradas e saídas.', 
         icon: DollarSign, 
         color: 'text-emerald-600', 
         bg: 'bg-emerald-50', 
         table: 'financial_transactions',
+        showTotal: true,
         columns: [
-            { header: 'Data', key: 'date', format: (v) => format(parseISO(v), 'dd/MM/yyyy HH:mm') },
-            { header: 'Descrição', key: 'description' },
-            { header: 'Categoria', key: 'category' },
-            { header: 'Tipo', key: 'type' },
-            { header: 'Método', key: 'payment_method' },
-            { header: 'Valor Bruto', key: 'amount', format: (v) => `R$ ${Number(v).toFixed(2)}` },
-            { header: 'Líquido', key: 'net_value', format: (v) => `R$ ${Number(v).toFixed(2)}` }
+            { header: 'Data', key: 'date', type: 'date', format: (v) => format(parseISO(v), 'dd/MM/yyyy HH:mm') },
+            { header: 'Descrição', key: 'description', type: 'text' },
+            { header: 'Categoria', key: 'category', type: 'text' },
+            { header: 'Método', key: 'payment_method', type: 'text' },
+            { header: 'Valor (R$)', key: 'amount', type: 'currency', format: (v) => Number(v).toFixed(2) }
         ]
     },
     { 
         id: 'comissoes', 
-        title: 'Comissões por Profissional', 
-        description: 'Detalhamento de ganhos e taxas de repasse da equipe.', 
+        title: 'Mapa de Comissões', 
+        description: 'Cálculo de repasse e base de faturamento por profissional.', 
         icon: Wallet, 
         color: 'text-orange-600', 
         bg: 'bg-orange-50', 
-        table: 'financial_transactions', // Filtramos no handleSelectReport
+        table: 'financial_transactions',
+        showTotal: true,
         columns: [
-            { header: 'Data', key: 'date', format: (v) => format(parseISO(v), 'dd/MM/yyyy') },
-            { header: 'Profissional', key: 'professional_name' },
-            { header: 'Serviço/Produto', key: 'description' },
-            { header: 'Base Cálculo', key: 'net_value', format: (v) => `R$ ${Number(v).toFixed(2)}` },
-            { header: 'Taxa (%)', key: 'tax_rate', format: (v) => `${v || 0}%` },
-            { header: 'Comissão (R$)', key: 'amount', format: (v) => `Calculado` } // Exemplo simplificado
+            { header: 'Data', key: 'date', type: 'date', format: (v) => format(parseISO(v), 'dd/MM/yyyy') },
+            { header: 'Profissional', key: 'professional_name', type: 'text' },
+            { header: 'Serviço/Produto', key: 'description', type: 'text' },
+            { header: 'Base Cálculo', key: 'net_value', type: 'currency', format: (v) => Number(v).toFixed(2) },
+            { header: 'Taxa (%)', key: 'tax_rate', type: 'number', format: (v) => `${v}%` },
+            { header: 'Comissão', key: 'amount', type: 'currency', format: (v) => Number(v).toFixed(2) }
         ]
     },
     { 
-        id: 'agendamentos', 
+        id: 'agenda', 
         title: 'Histórico de Atendimentos', 
-        description: 'Lista de serviços prestados, status e origem das reservas.', 
+        description: 'Relatório de ocupação, taxas de cancelamento e no-show.', 
         icon: Calendar, 
         color: 'text-blue-600', 
         bg: 'bg-blue-50', 
         table: 'appointments',
         columns: [
-            { header: 'Horário', key: 'date', format: (v) => format(parseISO(v), 'dd/MM/yyyy HH:mm') },
-            { header: 'Cliente', key: 'client_name' },
-            { header: 'Serviço', key: 'service_name' },
-            { header: 'Profissional', key: 'professional_name' },
-            { header: 'Status', key: 'status' },
-            { header: 'Valor', key: 'value', format: (v) => `R$ ${Number(v).toFixed(2)}` }
+            { header: 'Horário', key: 'date', type: 'date', format: (v) => format(parseISO(v), 'dd/MM/yyyy HH:mm') },
+            { header: 'Cliente', key: 'client_name', type: 'text' },
+            { header: 'Serviço', key: 'service_name', type: 'text' },
+            { header: 'Profissional', key: 'professional_name', type: 'text' },
+            { header: 'Status', key: 'status', type: 'text' }
         ]
     },
     { 
         id: 'clientes', 
-        title: 'Base Geral de Clientes', 
-        description: 'Mailing completo com contatos, tags e datas de nascimento.', 
+        title: 'Relatório de Clientes', 
+        description: 'Dados cadastrais, frequência de visitas e mailing list.', 
         icon: Users, 
         color: 'text-purple-600', 
         bg: 'bg-purple-50', 
         table: 'clients',
         columns: [
-            { header: 'Nome', key: 'nome' },
-            { header: 'WhatsApp', key: 'whatsapp' },
-            { header: 'E-mail', key: 'email' },
-            { header: 'Cidade', key: 'cidade' },
-            { header: 'Nascimento', key: 'birth_date', format: (v) => v ? format(parseISO(v), 'dd/MM/yyyy') : '---' }
+            { header: 'Nome', key: 'nome', type: 'text' },
+            { header: 'WhatsApp', key: 'whatsapp', type: 'text' },
+            { header: 'E-mail', key: 'email', type: 'text' },
+            { header: 'Origem', key: 'referral_source', type: 'text' },
+            { header: 'Última Visita', key: 'created_at', type: 'date', format: (v) => format(parseISO(v), 'dd/MM/yyyy') }
         ]
     }
 ];
@@ -119,36 +120,25 @@ const RelatoriosView: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
 
-    // Navegação de Data
-    const handlePrevMonth = () => {
-        setCurrentDate(prev => addMonths(prev, -1));
-        if (selectedReport) setSelectedReport(null);
-    };
-    const handleNextMonth = () => {
-        setCurrentDate(prev => addMonths(prev, 1));
-        if (selectedReport) setSelectedReport(null);
-    };
+    // Navegação Mensal
+    const handlePrevMonth = () => setCurrentDate(prev => addMonths(prev, -1));
+    const handleNextMonth = () => setCurrentDate(prev => addMonths(prev, 1));
 
-    // --- KPIs ABA 1: VISÃO GERAL ---
+    // Dashboard Stats (Mocks do período)
     const stats = useMemo(() => {
         const income = mockTransactions
             .filter(t => t.type === 'receita' && isSameMonth(new Date(t.date), currentDate))
             .reduce((sum, t) => sum + t.amount, 0);
-            
         const expense = mockTransactions
             .filter(t => t.type === 'despesa' && isSameMonth(new Date(t.date), currentDate))
             .reduce((sum, t) => sum + t.amount, 0);
-            
-        const count = initialAppointments.filter(a => isSameMonth(new Date(a.start), currentDate)).length;
-        
-        return { income, expense, profit: income - expense, count };
+        return { income, expense, profit: income - expense };
     }, [currentDate]);
 
-    // --- MOTOR DE DADOS: CENTRAL DE EXPORTAÇÃO ---
+    // Busca de dados com prévia
     const handleSelectReport = async (report: ReportDefinition) => {
         setIsLoading(true);
         setSelectedReport(report);
-        setPreviewData([]);
         
         try {
             const start = startOfMonth(currentDate).toISOString();
@@ -156,114 +146,113 @@ const RelatoriosView: React.FC = () => {
 
             let query = supabase.from(report.table).select('*');
 
-            // Filtros específicos por tipo de relatório
-            if (report.table === 'clients') {
-                query = query.order('nome');
-            } else if (report.id === 'comissoes') {
-                query = query.not('professional_id', 'is', null).gte('date', start).lte('date', end).order('date');
-            } else {
+            if (report.table !== 'clients') {
                 query = query.gte('date', start).lte('date', end).order('date');
+            } else {
+                query = query.order('nome');
             }
 
             const { data, error } = await query;
             if (error) throw error;
             setPreviewData(data || []);
         } catch (e: any) {
-            console.error("Relatórios Error:", e.message);
+            console.error("Erro ao carregar relatório:", e.message);
             setPreviewData([]);
         } finally {
             setIsLoading(false);
         }
     };
 
-    // --- MOTORES DE EXPORTAÇÃO (Excel & PDF) ---
+    // Calculador de Totais da Prévia
+    const previewTotals = useMemo(() => {
+        if (!selectedReport?.showTotal || !previewData.length) return null;
+        
+        return selectedReport.columns.reduce((acc, col) => {
+            if (col.type === 'currency' || col.type === 'number') {
+                acc[col.key] = previewData.reduce((sum, row) => sum + (Number(row[col.key]) || 0), 0);
+            }
+            return acc;
+        }, {} as any);
+    }, [previewData, selectedReport]);
 
+    // Motores de Exportação
     const exportToExcel = () => {
         if (!previewData.length || !selectedReport) return;
         setIsExporting(true);
         
-        try {
-            // Formata os dados baseado nas definições de colunas para o Excel
-            const exportRows = previewData.map(row => {
-                const entry: any = {};
-                selectedReport.columns.forEach(col => {
-                    const rawValue = row[col.key];
-                    entry[col.header] = col.format ? col.format(rawValue) : rawValue;
-                });
-                return entry;
+        const exportRows = previewData.map(row => {
+            const entry: any = {};
+            selectedReport.columns.forEach(col => {
+                const val = row[col.key];
+                entry[col.header] = col.format ? col.format(val) : val;
             });
+            return entry;
+        });
 
-            const worksheet = XLSX.utils.json_to_sheet(exportRows);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Dados");
-            
-            const fileName = `Relatorio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.xlsx`;
-            XLSX.writeFile(workbook, fileName);
-        } finally {
-            setIsExporting(false);
-        }
+        const ws = XLSX.utils.json_to_sheet(exportRows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Relatório");
+        XLSX.writeFile(wb, `BelareStudio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.xlsx`);
+        setIsExporting(false);
     };
 
     const exportToPDF = () => {
         if (!previewData.length || !selectedReport) return;
         setIsExporting(true);
 
-        try {
-            const doc = new jsPDF('landscape');
-            const pageWidth = doc.internal.pageSize.getWidth();
-            
-            // Estilização do PDF
-            doc.setFontSize(18);
-            doc.setTextColor(30, 41, 59); // Slate-800
-            doc.text("BELARESTUDIO - GESTÃO INTELIGENTE", 14, 15);
-            
-            doc.setFontSize(12);
-            doc.setTextColor(249, 115, 22); // Orange-500
-            doc.text(selectedReport.title.toUpperCase(), 14, 22);
-            
-            doc.setFontSize(9);
-            doc.setTextColor(148, 163, 184); // Slate-400
-            const subtitle = `Competência: ${format(currentDate, 'MMMM yyyy', { locale: pt })} | Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`;
-            doc.text(subtitle, 14, 28);
+        const doc = new jsPDF('landscape');
+        
+        // Estilização do cabeçalho do PDF
+        doc.setFontSize(20);
+        doc.setTextColor(30, 41, 59); // Slate-800
+        doc.text("BELARESTUDIO", 14, 15);
+        
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        doc.text(`RELATÓRIO: ${selectedReport.title.toUpperCase()}`, 14, 22);
+        doc.text(`COMPETÊNCIA: ${format(currentDate, 'MMMM yyyy', { locale: pt }).toUpperCase()}`, 14, 27);
+        doc.text(`GERADO EM: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 32);
 
-            // Mapeamento de colunas para o autoTable
-            const headers = [selectedReport.columns.map(c => c.header)];
-            const body = previewData.map(row => 
-                selectedReport.columns.map(col => {
-                    const val = row[col.key];
-                    return col.format ? col.format(val) : String(val ?? '');
-                })
-            );
+        const headers = [selectedReport.columns.map(c => c.header)];
+        const body = previewData.map(row => 
+            selectedReport.columns.map(col => col.format ? col.format(row[col.key]) : String(row[col.key] ?? ''))
+        );
 
-            autoTable(doc, {
-                startY: 35,
-                head: headers,
-                body: body,
-                theme: 'striped',
-                headStyles: { fillColor: [249, 115, 22], textColor: [255, 255, 255], fontStyle: 'bold' },
-                styles: { fontSize: 8, cellPadding: 3 },
-                alternateRowStyles: { fillColor: [250, 250, 250] },
-                margin: { left: 14, right: 14 }
+        // Se houver totais, adiciona no PDF
+        if (previewTotals) {
+            const totalRow = selectedReport.columns.map(col => {
+                if (previewTotals[col.key] !== undefined) {
+                    return col.type === 'currency' ? `R$ ${previewTotals[col.key].toFixed(2)}` : String(previewTotals[col.key]);
+                }
+                return col.key === selectedReport.columns[0].key ? 'TOTAIS' : '';
             });
-
-            const fileName = `Report_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.pdf`;
-            doc.save(fileName);
-        } finally {
-            setIsExporting(false);
+            body.push(totalRow);
         }
+
+        autoTable(doc, {
+            startY: 40,
+            head: headers,
+            body: body,
+            theme: 'striped',
+            headStyles: { fillColor: [249, 115, 22], textColor: 255 }, // Orange-500
+            styles: { fontSize: 8, cellPadding: 2.5 },
+            alternateRowStyles: { fillColor: [250, 250, 250] }
+        });
+
+        doc.save(`Relatorio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.pdf`);
+        setIsExporting(false);
     };
 
     return (
         <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans text-left">
-            {/* Header com Navegação e Abas */}
-            <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 flex-shrink-0 z-30 shadow-sm">
+            {/* Header Global */}
+            <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4 z-30 shadow-sm flex-shrink-0">
                 <div className="flex flex-col md:flex-row items-center gap-6">
                     <h1 className="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2">
                         <BarChart3 className="text-orange-500" size={28} />
-                        Inteligência & Relatórios
+                        Inteligência de Negócio
                     </h1>
                     
-                    {/* Seletor de Período */}
                     <div className="flex items-center bg-slate-100 rounded-xl border border-slate-200 p-1">
                         <button onClick={handlePrevMonth} className="p-1.5 hover:bg-white rounded-lg text-slate-400 transition-all"><ChevronLeft size={18}/></button>
                         <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest min-w-[140px] text-center px-4">
@@ -284,7 +273,7 @@ const RelatoriosView: React.FC = () => {
                         onClick={() => setActiveTab('export')}
                         className={`flex items-center gap-2 px-6 py-2 text-[10px] font-black uppercase tracking-tighter rounded-xl transition-all ${activeTab === 'export' ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
                     >
-                        <Table size={14} /> Central de Exportação
+                        <Table size={14} /> Exportação & Listas
                     </button>
                 </div>
             </header>
@@ -292,32 +281,31 @@ const RelatoriosView: React.FC = () => {
             <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-7xl mx-auto space-y-8 pb-20">
                     
-                    {/* --- ABA 1: DASHBOARD VISUAL --- */}
+                    {/* ABA: VISÃO GERAL (Dashboard Visual) */}
                     {activeTab === 'overview' && (
                         <div className="space-y-8 animate-in fade-in duration-500">
-                            {/* KPIs */}
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 <Card className="p-5 border-l-4 border-l-emerald-500 rounded-2xl shadow-sm">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Faturamento Bruto</p>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Receita Líquida</p>
                                     <h3 className="text-xl font-black text-slate-800">R$ {stats.income.toLocaleString('pt-BR')}</h3>
                                 </Card>
                                 <Card className="p-5 border-l-4 border-l-rose-500 rounded-2xl shadow-sm">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Custos Totais</p>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Custos Fixos/Var.</p>
                                     <h3 className="text-xl font-black text-slate-800">R$ {stats.expense.toLocaleString('pt-BR')}</h3>
                                 </Card>
                                 <Card className="p-5 border-l-4 border-l-blue-500 rounded-2xl shadow-sm">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Resultado Líquido</p>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Lucro Real</p>
                                     <h3 className="text-xl font-black text-slate-800">R$ {stats.profit.toLocaleString('pt-BR')}</h3>
                                 </Card>
-                                <Card className="p-5 border-l-4 border-l-purple-500 rounded-2xl shadow-sm">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Atendimentos</p>
-                                    <h3 className="text-xl font-black text-slate-800">{stats.count} sessões</h3>
+                                <Card className="p-5 border-l-4 border-l-orange-500 rounded-2xl shadow-sm">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Margem Líquida</p>
+                                    <h3 className="text-xl font-black text-slate-800">{stats.income > 0 ? ((stats.profit / stats.income) * 100).toFixed(1) : 0}%</h3>
                                 </Card>
                             </div>
 
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                <Card title="Receita por Categoria" className="rounded-[32px] shadow-sm">
-                                    <div className="h-72 mt-4">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                <Card title="Faturamento por Categoria" className="lg:col-span-1 rounded-[32px] shadow-sm">
+                                    <div className="h-64 mt-4">
                                         <SafePie 
                                             data={[
                                                 { name: 'Cílios', receita: 4500 },
@@ -329,8 +317,8 @@ const RelatoriosView: React.FC = () => {
                                         />
                                     </div>
                                 </Card>
-                                <Card title="Ranking de Produtividade" className="rounded-[32px] shadow-sm">
-                                    <div className="h-72 mt-4">
+                                <Card title="Desempenho Semanal" className="lg:col-span-2 rounded-[32px] shadow-sm">
+                                    <div className="h-64 mt-4">
                                         <SafeBar 
                                             data={professionals.map(p => ({
                                                 name: p.name.split(' ')[0],
@@ -345,10 +333,10 @@ const RelatoriosView: React.FC = () => {
                         </div>
                     )}
 
-                    {/* --- ABA 2: CENTRAL DE EXPORTAÇÃO (Estilo Salão99) --- */}
+                    {/* ABA: CENTRAL DE EXPORTAÇÃO */}
                     {activeTab === 'export' && !selectedReport && (
                         <div className="space-y-6 animate-in slide-in-from-bottom-6 duration-500">
-                            <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Selecione o tipo de relatório contábil</h2>
+                            <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Selecione um relatório contábil</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                                 {reportsRegistry.map((report) => (
                                     <button
@@ -374,21 +362,19 @@ const RelatoriosView: React.FC = () => {
                         </div>
                     )}
 
-                    {/* --- VIEW: PRÉVIA E EXPORTAÇÃO --- */}
+                    {/* VIEW: PRÉVIA E AÇÕES DE DOWNLOAD */}
                     {selectedReport && (
                         <div className="space-y-6 animate-in zoom-in-95 duration-300">
-                            {/* Cabeçalho da Prévia */}
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
                                 <div className="flex items-center gap-4">
                                     <button 
                                         onClick={() => setSelectedReport(null)}
                                         className="p-3 bg-slate-100 text-slate-500 rounded-2xl hover:bg-slate-200 transition-all"
-                                        title="Voltar"
                                     >
-                                        <ChevronLeft size={20} strokeWidth={3} />
+                                        <ChevronLeft size={20} />
                                     </button>
                                     <div>
-                                        <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase">{selectedReport.title}</h2>
+                                        <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">{selectedReport.title}</h2>
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{previewData.length} registros sincronizados</p>
                                     </div>
                                 </div>
@@ -396,23 +382,22 @@ const RelatoriosView: React.FC = () => {
                                 <div className="flex gap-2 w-full sm:w-auto">
                                     <button 
                                         onClick={exportToExcel}
-                                        disabled={isExporting || previewData.length === 0}
+                                        disabled={isExporting}
                                         className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all active:scale-95 disabled:opacity-50"
                                     >
-                                        {isExporting ? <Loader2 className="animate-spin" size={18}/> : <FileSpreadsheet size={18} />} Excel
+                                        <FileSpreadsheet size={18} /> Excel
                                     </button>
                                     <button 
                                         onClick={exportToPDF}
-                                        disabled={isExporting || previewData.length === 0}
+                                        disabled={isExporting}
                                         className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-slate-800 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-slate-900 shadow-lg shadow-slate-200 transition-all active:scale-95 disabled:opacity-50"
                                     >
-                                        {isExporting ? <Loader2 className="animate-spin" size={18}/> : <FileText size={18} />} Gerar PDF
+                                        <FileText size={18} /> Gerar PDF
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Tabela de Preview */}
-                            <div className="bg-white rounded-[40px] border border-slate-200 shadow-xl overflow-hidden min-h-[400px]">
+                            <div className="bg-white rounded-[40px] border border-slate-200 shadow-xl overflow-hidden min-h-[400px] flex flex-col">
                                 {isLoading ? (
                                     <div className="py-32 flex flex-col items-center justify-center text-slate-400">
                                         <Loader2 className="animate-spin text-orange-500 mb-4" size={48} strokeWidth={3} />
@@ -421,36 +406,55 @@ const RelatoriosView: React.FC = () => {
                                 ) : previewData.length === 0 ? (
                                     <div className="py-32 text-center">
                                         <AlertTriangle size={64} className="text-slate-100 mx-auto mb-4" />
-                                        <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Sem dados para este filtro.</p>
+                                        <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Sem dados para este período.</p>
                                     </div>
                                 ) : (
-                                    <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
-                                        <table className="w-full text-left border-collapse">
-                                            <thead className="sticky top-0 bg-slate-900 text-white z-20">
-                                                <tr>
-                                                    {selectedReport.columns.map(col => (
-                                                        <th key={col.key} className="px-6 py-5 text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
-                                                            {col.header}
-                                                        </th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100">
-                                                {previewData.map((row, i) => (
-                                                    <tr key={i} className="hover:bg-orange-50/20 transition-colors">
-                                                        {selectedReport.columns.map(col => {
-                                                            const rawVal = row[col.key];
-                                                            return (
-                                                                <td key={col.key} className="px-6 py-4 text-xs font-bold text-slate-600 whitespace-nowrap">
-                                                                    {col.format ? col.format(rawVal) : String(rawVal ?? '---')}
-                                                                </td>
-                                                            );
-                                                        })}
+                                    <>
+                                        <div className="overflow-x-auto flex-1 custom-scrollbar">
+                                            <table className="w-full text-left border-collapse">
+                                                <thead className="sticky top-0 bg-slate-900 text-white z-20">
+                                                    <tr>
+                                                        {selectedReport.columns.map(col => (
+                                                            <th key={col.key} className="px-6 py-5 text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
+                                                                {col.header}
+                                                            </th>
+                                                        ))}
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {previewData.map((row, i) => (
+                                                        <tr key={i} className="hover:bg-orange-50/20 transition-colors">
+                                                            {selectedReport.columns.map(col => (
+                                                                <td key={col.key} className="px-6 py-4 text-xs font-bold text-slate-600 whitespace-nowrap">
+                                                                    {col.format ? col.format(row[col.key]) : String(row[col.key] ?? '---')}
+                                                                </td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        
+                                        {/* Rodapé de Totais na Prévia */}
+                                        {previewTotals && (
+                                            <div className="bg-slate-50 border-t-2 border-slate-100 px-6 py-5 flex justify-end gap-12 items-center">
+                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Totais do Período:</span>
+                                                {selectedReport.columns.map(col => {
+                                                    if (previewTotals[col.key] !== undefined) {
+                                                        return (
+                                                            <div key={col.key} className="flex flex-col items-end">
+                                                                <span className="text-[9px] font-black text-slate-400 uppercase">{col.header}</span>
+                                                                <span className="text-lg font-black text-orange-600">
+                                                                    {col.type === 'currency' ? `R$ ${previewTotals[col.key].toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : previewTotals[col.key]}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })}
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>
