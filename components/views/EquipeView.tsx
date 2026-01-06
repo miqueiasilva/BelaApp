@@ -40,7 +40,6 @@ const EquipeView: React.FC = () => {
         }, 8000);
 
         try {
-            // MIGRADO: De 'professionals' para 'team_members'
             const { data, error: sbError } = await supabase
                 .from('team_members')
                 .select('*')
@@ -72,7 +71,6 @@ const EquipeView: React.FC = () => {
 
     const handleCreateNew = async () => {
         try {
-            // MIGRADO: De 'professionals' para 'team_members'
             const { data, error } = await supabase
                 .from('team_members')
                 .insert([{ 
@@ -80,7 +78,8 @@ const EquipeView: React.FC = () => {
                     role: 'Colaborador', 
                     active: true, 
                     online_booking: true, 
-                    commission_rate: 30.00 
+                    commission_rate: 30.00,
+                    pix_key: null // Inicializado como nulo
                 }])
                 .select()
                 .single();
@@ -99,7 +98,6 @@ const EquipeView: React.FC = () => {
     const handleToggleActive = async (e: React.MouseEvent, id: number | string, currentStatus: boolean) => {
         e.stopPropagation();
         try {
-            // MIGRADO: De 'professionals' para 'team_members'
             const { error } = await supabase
                 .from('team_members')
                 .update({ active: !currentStatus })
@@ -147,7 +145,6 @@ const EquipeView: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {/* View Mode Toggle */}
                     <div className="hidden md:flex bg-slate-100 p-1 rounded-xl border border-slate-200">
                         <button 
                             onClick={() => setViewMode('grid')}
@@ -212,7 +209,6 @@ const EquipeView: React.FC = () => {
                             </div>
                         )
                     ) : viewMode === 'grid' ? (
-                        /* GRID VIEW */
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                             {filteredProfessionals.map(prof => (
                                 <div key={prof.id} className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:border-orange-100 transition-all group relative overflow-hidden cursor-pointer" onClick={() => setSelectedProf(prof)}>
@@ -239,7 +235,6 @@ const EquipeView: React.FC = () => {
                             ))}
                         </div>
                     ) : (
-                        /* LIST VIEW */
                         <div className="bg-white rounded-[28px] border border-slate-200 overflow-hidden shadow-sm">
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left border-collapse">

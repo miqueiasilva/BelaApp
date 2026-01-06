@@ -77,6 +77,7 @@ export interface LegacyProfessional {
   online_booking?: boolean;
   permissions?: any;
   work_schedule?: any;
+  pix_key?: string; // Campo para pagamentos de comissão
 }
 
 export interface LegacyService {
@@ -99,7 +100,6 @@ export interface Service {
   descricao?: string;
 }
 
-// FIX: Define LegacyAppointment using types defined above to resolve "Cannot find name" errors.
 export interface LegacyAppointment {
   id: number;
   client?: Client;
@@ -109,7 +109,7 @@ export interface LegacyAppointment {
   end: Date;
   status: AppointmentStatus;
   notas?: string;
-  origem?: string; // 'link', 'interno', 'whatsapp', etc.
+  origem?: string;
 }
 
 export interface FinancialTransaction {

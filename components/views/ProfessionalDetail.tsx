@@ -142,7 +142,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 bio: prof.bio || null,
                 active: !!prof.active,
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
-                // Regra de negócio: Salvar 60 como 60.00
                 commission_rate: isNaN(parseFloat(String(prof.commission_rate))) ? 0 : parseFloat(String(prof.commission_rate)),
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
@@ -263,7 +262,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                         ) : (
                                             <User size={64} className="m-12 text-slate-300" />
                                         )}
-                                        <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                             {isUploading ? <Loader2 className="animate-spin text-white" /> : <Camera className="text-white" />}
                                             <span className="text-[10px] text-white font-black uppercase mt-2">Trocar Foto</span>
                                         </div>
