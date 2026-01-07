@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
     Armchair, Plus, Trash2, Search, ArrowLeft, 
     Save, X, Loader2, Info, Package, Hash, 
-    AlertCircle, LayoutGrid
+    AlertCircle, LayoutGrid, Edit2
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import Card from '../shared/Card';
@@ -23,6 +23,7 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [editingId, setEditingId] = useState<string | number | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     // Estado do Formulário
@@ -49,24 +50,46 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         fetchResources();
     }, []);
 
+    const handleOpenModal = (resource?: Resource) => {
+        if (resource) {
+            setEditingId(resource.id);
+            setNewResource({ name: resource.name, quantity: resource.quantity });
+        } else {
+            setEditingId(null);
+            setNewResource({ name: '', quantity: 1 });
+        }
+        setIsModalOpen(true);
+    };
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newResource.name.trim()) return;
 
         setIsSaving(true);
         try {
-            const { error } = await supabase
-                .from('resources')
-                .insert([{ 
-                    name: newResource.name, 
-                    quantity: Number(newResource.quantity),
-                    active: true 
-                }]);
+            const payload = { 
+                name: newResource.name, 
+                quantity: Number(newResource.quantity),
+                active: true 
+            };
 
-            if (error) throw error;
+            if (editingId) {
+                const { error } = await supabase
+                    .from('resources')
+                    .update(payload)
+                    .eq('id', editingId);
+                if (error) throw error;
+                setToast({ message: "Recurso atualizado com sucesso!", type: 'success' });
+            } else {
+                const { error } = await supabase
+                    .from('resources')
+                    .insert([payload]);
+                if (error) throw error;
+                setToast({ message: "Recurso adicionado com sucesso!", type: 'success' });
+            }
 
-            setToast({ message: "Recurso adicionado com sucesso!", type: 'success' });
             setIsModalOpen(false);
+            setEditingId(null);
             setNewResource({ name: '', quantity: 1 });
             fetchResources();
         } catch (err: any) {
@@ -119,7 +142,7 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </div>
                 </div>
                 <button 
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={() => handleOpenModal()}
                     className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95"
                 >
                     <Plus size={18} /> Adicionar Recurso
@@ -156,13 +179,13 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 ) : (
                     <div className="divide-y divide-slate-100">
                         <div className="grid grid-cols-12 px-8 py-4 bg-slate-50/50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                            <div className="col-span-8">Identificação do Item</div>
+                            <div className="col-span-7">Identificação do Item</div>
                             <div className="col-span-2 text-center">Quantidade</div>
-                            <div className="col-span-2 text-right">Ações</div>
+                            <div className="col-span-3 text-right">Ações</div>
                         </div>
                         {filteredResources.map((resource) => (
                             <div key={resource.id} className="grid grid-cols-12 px-8 py-5 items-center hover:bg-orange-50/30 transition-all group">
-                                <div className="col-span-8 flex items-center gap-4">
+                                <div className="col-span-7 flex items-center gap-4">
                                     <div className="p-3 bg-slate-100 text-slate-500 rounded-2xl group-hover:bg-white group-hover:text-orange-500 transition-all">
                                         <Armchair size={20} />
                                     </div>
@@ -173,7 +196,14 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         {resource.quantity} un
                                     </span>
                                 </div>
-                                <div className="col-span-2 text-right">
+                                <div className="col-span-3 text-right flex justify-end gap-2">
+                                    <button 
+                                        onClick={() => handleOpenModal(resource)}
+                                        className="p-2.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
+                                        title="Editar"
+                                    >
+                                        <Edit2 size={18} />
+                                    </button>
                                     <button 
                                         onClick={() => handleDelete(resource.id)}
                                         className="p-2.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
@@ -201,14 +231,18 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </div>
             </div>
 
-            {/* Modal de Adição */}
+            {/* Modal de Adição/Edição */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[200] flex items-center justify-center p-4">
                     <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border border-white/20">
                         <header className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <div>
-                                <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter leading-none">Novo Recurso</h2>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Expandir infraestrutura</p>
+                                <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter leading-none">
+                                    {editingId ? 'Editar Recurso' : 'Novo Recurso'}
+                                </h2>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">
+                                    {editingId ? 'Atualizar infraestrutura' : 'Expandir infraestrutura'}
+                                </p>
                             </div>
                             <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-all"><X size={24} /></button>
                         </header>
@@ -254,7 +288,7 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 className="w-full bg-slate-800 hover:bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                             >
                                 {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                                Salvar Recurso
+                                {editingId ? 'Salvar Alterações' : 'Salvar Recurso'}
                             </button>
                         </form>
                     </div>
