@@ -24,7 +24,6 @@ import { useAuth } from '../../contexts/AuthContext';
 const START_HOUR = 8;
 const END_HOUR = 20; 
 const SLOT_PX_HEIGHT = 80; 
-const CARD_TOP_OFFSET = 0; 
 
 const STATUS_PRIORITY: Record<string, number> = {
     'em_atendimento': 1,
@@ -40,7 +39,9 @@ const STATUS_PRIORITY: Record<string, number> = {
     'bloqueado': 10
 };
 
-const StatusIndicator = ({ status }: { status: AppointmentStatus }) => {
+const StatusIndicator = ({ status, type }: { status: AppointmentStatus, type?: 'appointment' | 'block' }) => {
+    if (type === 'block') return <ShieldAlert size={12} className="text-slate-500" />;
+
     switch (status) {
         case 'agendado': return <Clock size={12} className="text-slate-400" />;
         case 'confirmado':
@@ -91,18 +92,12 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
 
 // --- MOTOR DE CÁLCULO DE PRECISÃO ABSOLUTA ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
-    // Pixels por minuto exatos
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
-
-    // Minutos desde o início do dia (08:00)
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
-
-    // Duração exata em minutos
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
-    // Matemática Pura (Sem offsets mágicos)
     const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
-    const height = Math.floor(durationMinutes * pixelsPerMinute);
+    const height = Math.max(20, Math.floor(durationMinutes * pixelsPerMinute));
     
     return { 
         position: 'absolute' as const,
@@ -114,9 +109,14 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     };
 };
 
-const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
+const getCardStyle = (app: any, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
     const baseClasses = "rounded-none shadow-sm border-l-[6px] p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0";
     
+    // --- ESTILO DE BLOQUEIO (Urgente: Fix Visual) ---
+    if (app.type === 'block') {
+        return "absolute rounded-none border-l-4 border-rose-400 bg-[repeating-linear-gradient(45deg,#f8fafc,#f8fafc_10px,#f1f5f9_10px,#f1f5f9_20px)] text-slate-500 p-2 overflow-hidden flex flex-col pointer-events-none opacity-90 z-[15]";
+    }
+
     if (viewMode === 'pagamento') {
         const isPaid = app.status === 'concluido'; 
         if (isPaid) return `${baseClasses} bg-emerald-50 border-emerald-500 text-emerald-900`;
@@ -178,7 +178,7 @@ interface AtendimentosViewProps {
 const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction }) => {
     const { user, loading: authLoading } = useAuth(); 
     const [currentDate, setCurrentDate] = useState(new Date());
-    const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
+    const [appointments, setAppointments] = useState<any[]>([]);
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [periodType, setPeriodType] = useState<'Dia' | 'Semana' | 'Mês' | 'Lista'>('Dia');
@@ -223,22 +223,48 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 rangeEnd = endOfDay(currentDate);
             }
 
-            const { data, error } = await supabase
-                .from('appointments')
-                .select('*')
-                .gte('date', rangeStart.toISOString())
-                .lte('date', rangeEnd.toISOString())
-                .neq('status', 'cancelado') 
-                .abortSignal(abortControllerRef.current.signal);
+            // --- FETCH DUPLO (Appointments + Blocks) ---
+            const [apptRes, blocksRes] = await Promise.all([
+                supabase
+                    .from('appointments')
+                    .select('*')
+                    .gte('date', rangeStart.toISOString())
+                    .lte('date', rangeEnd.toISOString())
+                    .neq('status', 'cancelado') 
+                    .abortSignal(abortControllerRef.current.signal),
+                supabase
+                    .from('schedule_blocks')
+                    .select('*')
+                    .gte('start_time', rangeStart.toISOString())
+                    .lte('start_time', rangeEnd.toISOString())
+                    .abortSignal(abortControllerRef.current.signal)
+            ]);
 
-            if (error) throw error;
+            if (apptRes.error) throw apptRes.error;
+            if (blocksRes.error) throw blocksRes.error;
 
-            if (data && isMounted.current && requestId === lastRequestId.current) {
-                const mapped = data.map(row => mapRowToAppointment(row, resources));
-                setAppointments(mapped);
+            if (isMounted.current && requestId === lastRequestId.current) {
+                // Adaptador de Agendamentos
+                const mappedAppts = (apptRes.data || []).map(row => ({
+                    ...mapRowToAppointment(row, resources),
+                    type: 'appointment'
+                }));
+
+                // Adaptador de Bloqueios
+                const mappedBlocks = (blocksRes.data || []).map(row => ({
+                    id: row.id,
+                    start: new Date(row.start_time),
+                    end: new Date(row.end_time),
+                    professional: { id: row.professional_id }, // Pode ser null para Loja Inteira
+                    service: { name: row.reason, color: '#fca5a5' },
+                    status: 'bloqueado',
+                    type: 'block'
+                }));
+
+                setAppointments([...mappedAppts, ...mappedBlocks]);
             }
         } catch (e: any) { 
-            if (e.name !== 'AbortError') console.error("Fetch Appointments Error:", e); 
+            if (e.name !== 'AbortError') console.error("Fetch Agenda Error:", e); 
         } finally { 
             if (isMounted.current) setIsLoadingData(false); 
         }
@@ -277,6 +303,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         const channel = supabase.channel('agenda-live')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => { if (isMounted.current) fetchAppointments(); })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => { if (isMounted.current) fetchResources(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'schedule_blocks' }, () => { if (isMounted.current) fetchAppointments(); })
             .subscribe();
 
         return () => {
@@ -368,7 +395,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
         
-        // RBAC: Bloqueio de mudança de status se for 'concluido' por não-admins
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
         if (!isAdmin && appointment.status === 'concluido') {
             setToast({ message: "Permissão Negada: Apenas o Gestor pode alterar registros concluídos.", type: 'error' });
@@ -389,7 +415,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         setActiveAppointmentDetail(null);
     };
 
-    // --- AUDITORIA E COMPLIANCE: Exclusão com Snapshot Forense (Audit Trail) ---
     const handleDeleteAppointmentFull = async (id: number) => {
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
@@ -397,7 +422,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
         const isFinished = appointment.status === 'concluido';
 
-        // REGRA 1: Bloqueio RBAC
         if (!isAdmin && isFinished) {
             setToast({ 
                 message: "Permissão Negada: Apenas o Gestor pode excluir registros com financeiro lançado.", 
@@ -414,7 +438,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         
         setIsLoadingData(true);
         try {
-            // PASSO 0: Snapshot para Auditoria (Old Value)
             if (isFinished) {
                 await supabase.from('audit_logs').insert([{
                     actor_id: user?.id,
@@ -433,20 +456,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 }]);
             }
 
-            // PASSO A: Limpeza Profunda (Prevenção de Erro 409 Conflict)
             await supabase.from('financial_transactions').delete().eq('appointment_id', id);
-
-            // PASSO B: Remoção do Registro Principal
             const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
-
             if (apptError) throw apptError;
 
             setAppointments(prev => prev.filter(p => p.id !== id));
-            setToast({ message: 'Registro removido e ação auditada.', type: 'info' });
+            setToast({ message: 'Registro removido.', type: 'info' });
             setActiveAppointmentDetail(null);
         } catch (e: any) {
-            console.error("Falha na exclusão atômica:", e);
-            setToast({ message: "Falha técnica ao excluir registro vinculado.", type: 'error' });
+            console.error("Falha na exclusão:", e);
+            setToast({ message: "Falha ao excluir registro.", type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -527,7 +546,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar"
             >
                 <div className="min-w-fit">
-                    {/* CABEÇALHO PROFISSIONAIS - ALTURA FIXA h-24 (96px) */}
+                    {/* CABEÇALHO PROFISSIONAIS */}
                     <div className="grid sticky top-0 z-[50] border-b border-slate-200 bg-white shadow-sm" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]"><Maximize2 size={16} className="text-slate-300" /></div>
                         {columns.map((col, idx) => (
@@ -562,7 +581,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     {/* CORPO DA GRADE */}
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         
-                        {/* COLUNA DE HORÁRIOS - PRECISÃO ZERO OFFSET */}
                         <div className="sticky left-0 z-[50] bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
                                 <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black relative border-b border-slate-100/50 border-dashed bg-white">
@@ -571,7 +589,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             ))}
                         </div>
 
-                        {/* COLUNAS DE CONTEÚDO */}
                         {columns.map((col, idx) => (
                             <div 
                                 key={col.id} 
@@ -585,36 +602,45 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     }
                                 }}
                             >
-                                {/* Linhas de Grade de Fundo */}
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
                                 
-                                {/* Cards de Agendamento */}
+                                {/* FILTRO DE EVENTOS (Atendimentos + Bloqueios) */}
                                 {filteredAppointments
                                     .filter(app => {
                                         if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
+                                        
+                                        // LOGICA DE ESCOPO: Bloqueios globais (Loja Inteira) aparecem em todas as colunas
+                                        if (app.type === 'block' && (app.professional.id === null || String(app.professional.id) === 'null')) {
+                                            return true;
+                                        }
+
                                         return String(app.professional.id) === String(col.id); 
                                     })
                                     .map(app => (
                                         <div 
                                             key={app.id} 
-                                            ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} 
-                                            onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} 
-                                            title={`${format(app.start, 'HH:mm')} - ${app.client?.nome || 'Bloqueado'} (${app.service.name})`}
+                                            ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} 
+                                            onClick={(e) => { 
+                                                if (app.type === 'block') return; // Bloqueios não são clicáveis
+                                                e.stopPropagation(); 
+                                                setActiveAppointmentDetail(app); 
+                                            }} 
+                                            title={`${format(app.start, 'HH:mm')} - ${app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Cliente')} (${app.service.name})`}
                                             className={getCardStyle(app, viewMode)} 
                                             style={{ 
                                                 ...getAppointmentPosition(app.start, app.end, timeSlot),
-                                                borderLeftColor: app.service.color
+                                                borderLeftColor: app.type === 'block' ? '#f87171' : app.service.color
                                             }}
                                         >
                                             <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100 transition-opacity">
-                                                {app.origem === 'link' ? <Globe size={10} className="text-orange-500" /> : <User size={10} className="text-slate-400" />}
+                                                {app.type === 'block' ? <ShieldAlert size={10} className="text-rose-400" /> : app.origem === 'link' ? <Globe size={10} className="text-orange-500" /> : <User size={10} className="text-slate-400" />}
                                             </div>
                                             <div className="flex items-center gap-1 overflow-hidden">
                                                 <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
                                                 <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-                                                    <StatusIndicator status={app.status} />
-                                                    <p className="font-bold text-slate-900 text-[11px] truncate leading-tight flex-1">
-                                                        {app.client?.nome || 'Bloqueado'}
+                                                    <StatusIndicator status={app.status} type={app.type} />
+                                                    <p className={`font-bold text-[11px] truncate leading-tight flex-1 ${app.type === 'block' ? 'text-slate-500 italic' : 'text-slate-900'}`}>
+                                                        {app.type === 'block' ? app.service.name : (app.client?.nome || 'Bloqueado')}
                                                     </p>
                                                 </div>
                                             </div>
