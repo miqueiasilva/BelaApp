@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     Armchair, Plus, Trash2, Search, ArrowLeft, 
-    Save, X, Loader2, Info, Package, Hash, Edit2
+    Save, X, Loader2, Info, Package, Hash, 
+    AlertCircle, LayoutGrid
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import Card from '../shared/Card';
@@ -12,6 +13,7 @@ interface Resource {
     id: string | number;
     name: string;
     quantity: number;
+    active: boolean;
     created_at?: string;
 }
 
@@ -23,7 +25,7 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Form State
+    // Estado do Formulário
     const [newResource, setNewResource] = useState({ name: '', quantity: 1 });
 
     const fetchResources = async () => {
@@ -57,7 +59,8 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 .from('resources')
                 .insert([{ 
                     name: newResource.name, 
-                    quantity: Number(newResource.quantity) 
+                    quantity: Number(newResource.quantity),
+                    active: true 
                 }]);
 
             if (error) throw error;
@@ -74,7 +77,7 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     };
 
     const handleDelete = async (id: string | number) => {
-        if (!confirm("Deseja realmente excluir este recurso? Isso pode afetar a disponibilidade da agenda.")) return;
+        if (!confirm("Deseja realmente excluir este recurso? Isso pode afetar a disponibilidade de novos agendamentos.")) return;
 
         try {
             const { error } = await supabase
@@ -101,12 +104,12 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div className="space-y-6 animate-in fade-in duration-500 text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-            {/* Header */}
+            {/* Cabeçalho */}
             <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
                 <div className="flex items-center gap-4">
                     <button 
                         onClick={onBack} 
-                        className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-500 hover:text-orange-500 hover:border-orange-200 transition-all shadow-sm group"
+                        className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-500 hover:text-orange-500 transition-all shadow-sm group"
                     >
                         <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
                     </button>
@@ -123,7 +126,7 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </button>
             </header>
 
-            {/* Barra de Busca */}
+            {/* Busca */}
             <div className="relative group max-w-md">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={18} />
                 <input 
@@ -143,37 +146,40 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         <p className="text-[10px] font-black uppercase tracking-widest">Sincronizando inventário...</p>
                     </div>
                 ) : filteredResources.length === 0 ? (
-                    <div className="py-20 text-center flex flex-col items-center">
-                        <Armchair size={48} className="text-slate-100 mb-4" />
-                        <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Nenhum recurso encontrado</p>
+                    <div className="py-24 text-center flex flex-col items-center">
+                        <div className="w-20 h-20 bg-slate-50 rounded-[28px] flex items-center justify-center text-slate-200 mb-4 border-2 border-dashed border-slate-200">
+                            <Armchair size={40} />
+                        </div>
+                        <h3 className="font-black text-slate-700 uppercase tracking-tighter">Nenhum recurso cadastrado</h3>
+                        <p className="text-xs text-slate-400 font-bold uppercase mt-1">Clique no botão superior para adicionar itens à sua estrutura</p>
                     </div>
                 ) : (
                     <div className="divide-y divide-slate-100">
                         <div className="grid grid-cols-12 px-8 py-4 bg-slate-50/50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                            <div className="col-span-8">Nome do Recurso</div>
+                            <div className="col-span-8">Identificação do Item</div>
                             <div className="col-span-2 text-center">Quantidade</div>
                             <div className="col-span-2 text-right">Ações</div>
                         </div>
                         {filteredResources.map((resource) => (
-                            <div key={resource.id} className="grid grid-cols-12 px-8 py-5 items-center hover:bg-slate-50 transition-colors group">
-                                <div className="col-span-8 flex items-center gap-3">
-                                    <div className="p-2 bg-orange-50 text-orange-600 rounded-xl">
-                                        <Armchair size={18} />
+                            <div key={resource.id} className="grid grid-cols-12 px-8 py-5 items-center hover:bg-orange-50/30 transition-all group">
+                                <div className="col-span-8 flex items-center gap-4">
+                                    <div className="p-3 bg-slate-100 text-slate-500 rounded-2xl group-hover:bg-white group-hover:text-orange-500 transition-all">
+                                        <Armchair size={20} />
                                     </div>
-                                    <span className="font-bold text-slate-700">{resource.name}</span>
+                                    <span className="font-bold text-slate-700 text-sm">{resource.name}</span>
                                 </div>
                                 <div className="col-span-2 text-center">
-                                    <span className="inline-flex items-center justify-center px-3 py-1 bg-slate-100 rounded-full text-xs font-black text-slate-600">
-                                        {resource.quantity}
+                                    <span className="inline-flex items-center justify-center px-4 py-1.5 bg-orange-100 text-orange-700 rounded-full text-[10px] font-black uppercase tracking-tighter">
+                                        {resource.quantity} un
                                     </span>
                                 </div>
                                 <div className="col-span-2 text-right">
                                     <button 
                                         onClick={() => handleDelete(resource.id)}
-                                        className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                                        className="p-2.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
                                         title="Excluir"
                                     >
-                                        <Trash2 size={18} />
+                                        <Trash2 size={20} />
                                     </button>
                                 </div>
                             </div>
@@ -182,15 +188,15 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 )}
             </div>
 
-            {/* Info Box */}
-            <div className="bg-blue-50 border border-blue-100 p-6 rounded-[32px] flex gap-4 max-w-2xl mx-auto">
-                <div className="p-2 bg-blue-100 rounded-xl h-fit">
-                    <Info className="text-blue-600" size={20} />
+            {/* Card Informativo */}
+            <div className="bg-blue-50 border border-blue-100 p-6 rounded-[32px] flex gap-4 max-w-3xl mx-auto shadow-sm">
+                <div className="p-3 bg-blue-100 rounded-2xl h-fit text-blue-600">
+                    <Info size={24} />
                 </div>
                 <div className="space-y-1">
-                    <p className="text-xs text-blue-900 font-bold">Otimização de Agenda</p>
+                    <h4 className="text-sm font-black text-blue-900 uppercase tracking-tight">Otimização de Agenda</h4>
                     <p className="text-xs text-blue-700 leading-relaxed font-medium">
-                        Os recursos limitam quantos agendamentos simultâneos podem ocorrer para serviços que dependem de equipamentos específicos (ex: salas de estética ou macas).
+                        Os recursos limitam quantos agendamentos simultâneos podem ocorrer para serviços que dependem de infraestrutura específica (ex: salas de estética, macas de cílios ou cadeiras de corte). O sistema bloqueia automaticamente novos horários se todos os recursos de um tipo estiverem ocupados.
                     </p>
                 </div>
             </div>
@@ -200,13 +206,16 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[200] flex items-center justify-center p-4">
                     <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border border-white/20">
                         <header className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Novo Recurso</h2>
+                            <div>
+                                <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter leading-none">Novo Recurso</h2>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Expandir infraestrutura</p>
+                            </div>
                             <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-all"><X size={24} /></button>
                         </header>
 
                         <form onSubmit={handleSave} className="p-8 space-y-6 text-left">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Nome (ex: Maca 01)</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Nome do Recurso</label>
                                 <div className="relative group">
                                     <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500">
                                         <Package size={18} />
@@ -216,8 +225,8 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         required
                                         value={newResource.name}
                                         onChange={e => setNewResource({...newResource, name: e.target.value})}
-                                        className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100"
-                                        placeholder="Identificação do item"
+                                        className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all"
+                                        placeholder="Ex: Maca 01"
                                     />
                                 </div>
                             </div>
@@ -234,7 +243,7 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         required
                                         value={newResource.quantity}
                                         onChange={e => setNewResource({...newResource, quantity: parseInt(e.target.value)})}
-                                        className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100"
+                                        className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all"
                                     />
                                 </div>
                             </div>
