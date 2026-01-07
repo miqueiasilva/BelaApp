@@ -23,7 +23,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const START_HOUR = 8;
 const END_HOUR = 20; 
-const SLOT_PX_HEIGHT = 80; // Corresponde a h-20 (80px real)
+const SLOT_PX_HEIGHT = 80; 
 const CARD_TOP_OFFSET = 0; 
 
 const STATUS_PRIORITY: Record<string, number> = {
@@ -91,17 +91,17 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
 
 // --- MOTOR DE CÁLCULO DE PRECISÃO ABSOLUTA ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
-    // 1. Pixels por minuto exatos
+    // Pixels por minuto exatos
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
 
-    // 2. Minutos desde o início do dia (08:00)
+    // Minutos desde o início do dia (08:00)
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
 
-    // 3. Duração exata em minutos
+    // Duração exata em minutos
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
-    // 4. Matemática Pura (Sem offsets mágicos, usando Math.floor para nitidez de pixels)
-    const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute) + CARD_TOP_OFFSET;
+    // Matemática Pura (Sem offsets mágicos)
+    const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
     const height = Math.floor(durationMinutes * pixelsPerMinute);
     
     return { 
@@ -110,8 +110,7 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
         height: `${height}px`,
         width: '100%', 
         zIndex: 20,
-        left: '0px',
-        margin: '0px'
+        left: '0px'
     };
 };
 
@@ -528,6 +527,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar"
             >
                 <div className="min-w-fit">
+                    {/* CABEÇALHO PROFISSIONAIS - ALTURA FIXA h-24 (96px) */}
                     <div className="grid sticky top-0 z-[50] border-b border-slate-200 bg-white shadow-sm" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]"><Maximize2 size={16} className="text-slate-300" /></div>
                         {columns.map((col, idx) => (
@@ -559,12 +559,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         ))}
                     </div>
 
+                    {/* CORPO DA GRADE */}
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
+                        
+                        {/* COLUNA DE HORÁRIOS - PRECISÃO ZERO OFFSET */}
                         <div className="sticky left-0 z-[50] bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
-                                <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed bg-white"><span>{time}</span></div>
+                                <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black relative border-b border-slate-100/50 border-dashed bg-white">
+                                    <span className="absolute top-0 right-3 -translate-y-1/2 bg-white px-1 z-10">{time}</span>
+                                </div>
                             ))}
                         </div>
+
+                        {/* COLUNAS DE CONTEÚDO */}
                         {columns.map((col, idx) => (
                             <div 
                                 key={col.id} 
@@ -578,7 +585,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     }
                                 }}
                             >
+                                {/* Linhas de Grade de Fundo */}
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
+                                
+                                {/* Cards de Agendamento */}
                                 {filteredAppointments
                                     .filter(app => {
                                         if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
