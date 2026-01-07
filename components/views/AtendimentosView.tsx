@@ -6,7 +6,7 @@ import {
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
     LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
-    CheckCircle2, Scissors, ShieldAlert
+    CheckCircle2, Scissors, ShieldAlert, Trash2
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -40,7 +40,7 @@ const STATUS_PRIORITY: Record<string, number> = {
 };
 
 const StatusIndicator = ({ status, type }: { status: AppointmentStatus, type?: 'appointment' | 'block' }) => {
-    if (type === 'block') return <ShieldAlert size={12} className="text-slate-500" />;
+    if (type === 'block') return <ShieldAlert size={12} className="text-rose-500" />;
 
     switch (status) {
         case 'agendado': return <Clock size={12} className="text-slate-400" />;
@@ -90,7 +90,6 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO DE PRECISÃO ABSOLUTA ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
@@ -112,9 +111,9 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
 const getCardStyle = (app: any, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
     const baseClasses = "rounded-none shadow-sm border-l-[6px] p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0";
     
-    // --- ESTILO DE BLOQUEIO (Urgente: Fix Visual) ---
     if (app.type === 'block') {
-        return "absolute rounded-none border-l-4 border-rose-400 bg-[repeating-linear-gradient(45deg,#f8fafc,#f8fafc_10px,#f1f5f9_10px,#f1f5f9_20px)] text-slate-500 p-2 overflow-hidden flex flex-col pointer-events-none opacity-90 z-[15]";
+        // FIX: cursor-not-allowed e pointer-events-auto para capturar clique e parar propagação
+        return "absolute rounded-none border-l-4 border-rose-400 bg-[repeating-linear-gradient(45deg,#fcfcfc,#fcfcfc_10px,#f8fafc_10px,#f8fafc_20px)] text-slate-500 p-2 overflow-hidden flex flex-col cursor-not-allowed opacity-95 z-[25] pointer-events-auto";
     }
 
     if (viewMode === 'pagamento') {
@@ -223,7 +222,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // --- FETCH DUPLO (Appointments + Blocks) ---
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
@@ -244,18 +242,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             if (blocksRes.error) throw blocksRes.error;
 
             if (isMounted.current && requestId === lastRequestId.current) {
-                // Adaptador de Agendamentos
                 const mappedAppts = (apptRes.data || []).map(row => ({
                     ...mapRowToAppointment(row, resources),
                     type: 'appointment'
                 }));
 
-                // Adaptador de Bloqueios
                 const mappedBlocks = (blocksRes.data || []).map(row => ({
                     id: row.id,
                     start: new Date(row.start_time),
                     end: new Date(row.end_time),
-                    professional: { id: row.professional_id }, // Pode ser null para Loja Inteira
+                    professional: { id: row.professional_id }, 
                     service: { name: row.reason, color: '#fca5a5' },
                     status: 'bloqueado',
                     type: 'block'
@@ -313,7 +309,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         };
     }, []);
 
-    // --- LOGICA DE REORDENAÇÃO ---
     const handleReorderProfessional = useCallback(async (e: React.MouseEvent, currentIndex: number, direction: 'left' | 'right') => {
         if (e) {
             e.preventDefault();
@@ -389,6 +384,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             setToast({ message: 'Erro ao salvar.', type: 'error' }); 
             fetchAppointments(); 
         } finally { setIsLoadingData(false); }
+    };
+
+    // --- NOVA FUNÇÃO: DELETAR BLOQUEIO ---
+    const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
+        e.stopPropagation();
+        if (!window.confirm("Remover este bloqueio de horário?")) return;
+
+        try {
+            const { error } = await supabase.from('schedule_blocks').delete().eq('id', blockId);
+            if (error) throw error;
+            setAppointments(prev => prev.filter(a => a.id !== blockId));
+            setToast({ message: 'Horário liberado!', type: 'info' });
+        } catch (e: any) {
+            setToast({ message: 'Erro ao remover bloqueio.', type: 'error' });
+        }
     };
 
     const handleUpdateStatus = async (id: number, newStatus: AppointmentStatus) => {
@@ -546,7 +556,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar"
             >
                 <div className="min-w-fit">
-                    {/* CABEÇALHO PROFISSIONAIS */}
                     <div className="grid sticky top-0 z-[50] border-b border-slate-200 bg-white shadow-sm" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]"><Maximize2 size={16} className="text-slate-300" /></div>
                         {columns.map((col, idx) => (
@@ -578,7 +587,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         ))}
                     </div>
 
-                    {/* CORPO DA GRADE */}
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         
                         <div className="sticky left-0 z-[50] bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
@@ -604,16 +612,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             >
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
                                 
-                                {/* FILTRO DE EVENTOS (Atendimentos + Bloqueios) */}
                                 {filteredAppointments
                                     .filter(app => {
                                         if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
-                                        
-                                        // LOGICA DE ESCOPO: Bloqueios globais (Loja Inteira) aparecem em todas as colunas
                                         if (app.type === 'block' && (app.professional.id === null || String(app.professional.id) === 'null')) {
                                             return true;
                                         }
-
                                         return String(app.professional.id) === String(col.id); 
                                     })
                                     .map(app => (
@@ -621,20 +625,40 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                             key={app.id} 
                                             ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} 
                                             onClick={(e) => { 
-                                                if (app.type === 'block') return; // Bloqueios não são clicáveis
+                                                // FIX: Stop propagation para impedir abertura do menu de agendamento por baixo
                                                 e.stopPropagation(); 
-                                                setActiveAppointmentDetail(app); 
+                                                if (app.type === 'appointment') {
+                                                    setActiveAppointmentDetail(app); 
+                                                }
                                             }} 
                                             title={`${format(app.start, 'HH:mm')} - ${app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Cliente')} (${app.service.name})`}
-                                            className={getCardStyle(app, viewMode)} 
+                                            className={`${getCardStyle(app, viewMode)} group/block`} 
                                             style={{ 
                                                 ...getAppointmentPosition(app.start, app.end, timeSlot),
                                                 borderLeftColor: app.type === 'block' ? '#f87171' : app.service.color
                                             }}
                                         >
-                                            <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100 transition-opacity">
-                                                {app.type === 'block' ? <ShieldAlert size={10} className="text-rose-400" /> : app.origem === 'link' ? <Globe size={10} className="text-orange-500" /> : <User size={10} className="text-slate-400" />}
+                                            {/* BOTÃO EXCLUIR PARA BLOQUEIOS */}
+                                            {app.type === 'block' && (
+                                                <button 
+                                                    onClick={(e) => handleDeleteBlock(e, app.id)}
+                                                    className="absolute top-1 right-1 p-1.5 bg-rose-500 text-white rounded-lg opacity-0 group-hover/block:opacity-100 transition-all shadow-md z-30"
+                                                    title="Remover Bloqueio"
+                                                >
+                                                    <Trash2 size={10} />
+                                                </button>
+                                            )}
+
+                                            <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100">
+                                                {app.type === 'block' ? (
+                                                    <ShieldAlert size={10} className="text-rose-400" />
+                                                ) : app.origem === 'link' ? (
+                                                    <Globe size={10} className="text-orange-500" />
+                                                ) : (
+                                                    <User size={10} className="text-slate-400" />
+                                                )}
                                             </div>
+
                                             <div className="flex items-center gap-1 overflow-hidden">
                                                 <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
                                                 <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
