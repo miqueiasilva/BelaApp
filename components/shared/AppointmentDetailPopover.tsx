@@ -59,25 +59,37 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
         const targetRect = targetElement.getBoundingClientRect();
         const popoverRect = popoverRef.current.getBoundingClientRect();
         const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
         
-        let top = targetRect.top;
+        // Cabeçalho da Agenda tem h-24 (96px). 
+        // Definimos uma zona de segurança de 112px (96px + 16px de margem)
+        const SAFE_ZONE_TOP = 112; 
+        
+        let top = targetRect.top + (targetRect.height / 2) - (popoverRect.height / 2);
         let left = targetRect.right + 12;
 
+        // Se estourar a direita, inverte para a esquerda do card
         if (left + popoverRect.width > viewportWidth) {
             left = targetRect.left - popoverRect.width - 12;
         }
         
-        top = targetRect.top + (targetRect.height / 2) - (popoverRect.height / 2);
-
-        if (top < 16) top = 16;
-        if (top + popoverRect.height > window.innerHeight - 16) {
-            top = window.innerHeight - popoverRect.height - 16;
+        // CORREÇÃO UX: Impede que o card suba demais e cubra os nomes dos profissionais
+        if (top < SAFE_ZONE_TOP) {
+            top = SAFE_ZONE_TOP;
         }
+
+        // Impede que o card suma no rodapé
+        if (top + popoverRect.height > viewportHeight - 16) {
+            top = viewportHeight - popoverRect.height - 16;
+        }
+
+        // Impede que o card suma na lateral esquerda (mobile fix)
         if (left < 16) left = 16;
 
         setPosition({ top, left, opacity: 1 });
     };
     
+    // Pequeno delay para garantir que o DOM renderizou e as medidas estão prontas
     const timer = setTimeout(handlePositioning, 0);
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
@@ -95,14 +107,13 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const isFinished = ['concluido', 'cancelado', 'bloqueado'].includes(appointment.status);
   const canCheckout = !isFinished;
   
-  // SEGURANÇA: Bloqueio de exclusão para agendamentos pagos ou bloqueados
   const isLockedForDelete = ['concluido', 'bloqueado'].includes(appointment.status?.toLowerCase());
 
   return (
     <>
         <div
             ref={popoverRef}
-            className={`fixed z-40 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col transition-all duration-150 ${isCheckoutOpen ? 'opacity-0 pointer-events-none scale-95' : 'scale-100'}`}
+            className={`fixed z-[100] w-80 bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-slate-200 flex flex-col transition-all duration-200 ${isCheckoutOpen ? 'opacity-0 pointer-events-none scale-95' : 'scale-100'}`}
             style={{ top: position.top, left: position.left, opacity: isCheckoutOpen ? 0 : position.opacity }}
             onClick={(e) => e.stopPropagation()}
         >
@@ -110,7 +121,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 <div className="flex-1 flex items-center gap-1.5">
                     <button 
                         onClick={() => { onEdit(appointment); onClose(); }} 
-                        className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl" 
+                        className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors" 
                         title="Editar"
                     >
                         <Edit size={18} />
@@ -125,20 +136,20 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                         {isLockedForDelete ? <Lock size={18} /> : <Trash2 size={18} />}
                     </button>
 
-                    <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl" title="Ver Perfil"><User size={18} /></button>
+                    <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors" title="Ver Perfil"><User size={18} /></button>
                 </div>
-                <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full"><X size={18}/></button>
+                <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><X size={18}/></button>
             </header>
             
-            <main className="p-5 space-y-4">
+            <main className="p-6 space-y-4">
                 <div>
-                    <h3 className="font-black text-lg text-slate-800 leading-tight">{appointment.client?.nome || 'Horário Bloqueado'}</h3>
-                    <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mt-0.5">{appointment.service.name}</p>
+                    <h3 className="font-black text-xl text-slate-800 leading-tight">{appointment.client?.nome || 'Horário Bloqueado'}</h3>
+                    <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mt-1">{appointment.service.name}</p>
                 </div>
                 
-                <div className="space-y-3">
+                <div className="space-y-3 pt-2">
                     <div className="flex items-start gap-3 text-xs font-bold text-slate-600">
-                        <Calendar size={14} className="mt-0.5 text-slate-400" />
+                        <div className="p-2 bg-slate-50 rounded-lg"><Calendar size={14} className="text-slate-400" /></div>
                         <div>
                             <span className="capitalize">{format(appointment.start, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
                             <br/>
@@ -147,17 +158,17 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     </div>
                     
                     <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
-                        <DollarSign size={14} className="text-slate-400" />
-                        <span className="text-emerald-600 font-black text-base">R$ {appointment.service.price.toFixed(2)}</span>
+                        <div className="p-2 bg-emerald-50 rounded-lg"><DollarSign size={14} className="text-emerald-500" /></div>
+                        <span className="text-emerald-600 font-black text-lg">R$ {appointment.service.price.toFixed(2)}</span>
                     </div>
                 </div>
 
-                <div className="border-t border-slate-100 pt-4 flex flex-col gap-3 pb-2">
-                    <div className="mb-2">
+                <div className="border-t border-slate-100 pt-5 flex flex-col gap-3">
+                    <div className="mb-1">
                         <button
                             ref={statusRef}
                             onClick={() => setIsStatusPopoverOpen(true)}
-                            className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50 hover:bg-slate-100 p-3 rounded-xl transition-all border border-slate-100"
+                            className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50 hover:bg-slate-100 p-4 rounded-2xl transition-all border border-slate-100"
                         >
                             <div className="flex items-center gap-2">
                                 <CheckCircle2 size={14} className="text-slate-400" />
@@ -170,15 +181,15 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     {canCheckout && (
                         <button
                             onClick={() => setIsCheckoutOpen(true)}
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.1em] py-4 rounded-2xl shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.1em] py-5 rounded-[24px] shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
-                            <Receipt size={16} />
+                            <Receipt size={18} />
                             Finalizar Atendimento
                         </button>
                     )}
 
                     {appointment.status === 'concluido' && (
-                        <div className="flex items-center justify-center gap-2 py-3 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100">
+                        <div className="flex items-center justify-center gap-2 py-4 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100">
                             <CheckCircle2 size={16} />
                             <span className="text-[10px] font-black uppercase tracking-widest">Pagamento Recebido</span>
                         </div>
@@ -208,8 +219,8 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     client_name: appointment.client?.nome || 'Cliente',
                     service_name: appointment.service.name,
                     price: appointment.service.price,
-                    professional_id: appointment.professional.id, // Adicionado ID do profissional
-                    professional_name: appointment.professional.name // Adicionado Nome do profissional
+                    professional_id: appointment.professional.id,
+                    professional_name: appointment.professional.name
                 }}
                 onSuccess={() => {
                     onUpdateStatus(appointment.id, 'concluido');
