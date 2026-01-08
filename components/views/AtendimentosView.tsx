@@ -180,34 +180,34 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // --- QUERY REESCRITA COM JOINS ESTRITOS ( professional_id ) ---
-            const [apptRes, blocksRes] = await Promise.all([
-                supabase
-                    .from('appointments')
-                    .select('*, clients(id, name, phone), services(id, name, price, color, duration), team_members!professional_id(id, name, color)')
-                    .gte('date', rangeStart.toISOString())
-                    .lte('date', rangeEnd.toISOString())
-                    .neq('status', 'cancelado') 
-                    .abortSignal(abortControllerRef.current.signal),
-                supabase
-                    .from('schedule_blocks')
-                    .select('*')
-                    .gte('start_time', rangeStart.toISOString())
-                    .lte('start_time', rangeEnd.toISOString())
-                    .abortSignal(abortControllerRef.current.signal)
-            ]);
+            // --- QUERY OTIMIZADA PARA EVITAR ERRO 400 ---
+            // Removemos 'color' de team_members pois geralmente profissionais não tem cor no DB
+            const { data: apptData, error: apptError } = await supabase
+                .from('appointments')
+                .select('*, clients(id, name, phone), services(id, name, price, color, duration), team_members!professional_id(id, name)')
+                .gte('date', rangeStart.toISOString())
+                .lte('date', rangeEnd.toISOString())
+                .neq('status', 'cancelado') 
+                .abortSignal(abortControllerRef.current.signal);
 
-            if (apptRes.error) throw apptRes.error;
-            if (blocksRes.error) throw blocksRes.error;
+            const { data: blockData, error: blockError } = await supabase
+                .from('schedule_blocks')
+                .select('*')
+                .gte('start_time', rangeStart.toISOString())
+                .lte('start_time', rangeEnd.toISOString())
+                .abortSignal(abortControllerRef.current.signal);
+
+            if (apptError) throw apptError;
+            if (blockError) throw blockError;
 
             if (isMounted.current && requestId === lastRequestId.current) {
-                const mappedAppts = (apptRes.data || []).map(row => ({
-                    ...mapRowToAppointment(row, resources),
+                const mappedAppts = (apptData || []).map(row => ({
+                    ...mapRowToAppointment(row),
                     type: 'appointment',
                     reminder_sent: row.reminder_sent || false 
                 }));
 
-                const mappedBlocks = (blocksRes.data || []).map(row => ({
+                const mappedBlocks = (blockData || []).map(row => ({
                     id: row.id,
                     start: new Date(row.start_time),
                     end: new Date(row.end_time),
@@ -220,7 +220,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 setAppointments([...mappedAppts, ...mappedBlocks]);
             }
         } catch (e: any) { 
-            if (e.name !== 'AbortError') console.error("Fetch Agenda Error:", e); 
+            if (e.name !== 'AbortError') {
+                console.error("Fetch Agenda Error:", e); 
+                setToast({ message: "Erro ao sincronizar agenda. Verifique a conexão.", type: 'error' });
+            }
         } finally { 
             if (isMounted.current) setIsLoadingData(false); 
         }
@@ -269,110 +272,100 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         };
     }, []);
 
-    const handleReorderProfessional = useCallback(async (e: React.MouseEvent, currentIndex: number, direction: 'left' | 'right') => {
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
-        const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
-        if (targetIndex < 0 || targetIndex >= resources.length) return;
-
-        const newResources = [...resources];
-        const temp = newResources[currentIndex];
-        newResources[currentIndex] = newResources[targetIndex];
-        newResources[targetIndex] = temp;
-
-        setResources(newResources);
-
-        try {
-            const updates = [
-                { id: newResources[currentIndex].id, order_index: currentIndex },
-                { id: newResources[targetIndex].id, order_index: targetIndex }
-            ];
-
-            for (const up of updates) {
-                await supabase.from('team_members').update({ order_index: up.order_index }).eq('id', up.id);
-            }
-        } catch (e) {
-            console.error("Falha ao salvar nova ordem:", e);
-            fetchResources(); 
-        }
-    }, [resources]);
-
-    // --- MAPPER ATUALIZADO CONFORME REQUISITOS (Inglês) ---
-    const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
+    // --- MAPPER COM FALLBACKS DE RELACIONAMENTO ---
+    const mapRowToAppointment = (row: any): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = row.duration || 30;
         
-        const joinedClient = row.clients;
-        const joinedService = row.services;
-        const joinedProf = row.team_members;
+        // Supabase pode retornar objetos ou arrays dependendo da configuração da FK
+        const joinedClient = Array.isArray(row.clients) ? row.clients[0] : row.clients;
+        const joinedService = Array.isArray(row.services) ? row.services[0] : row.services;
+        const joinedProf = Array.isArray(row.team_members) ? row.team_members[0] : row.team_members;
 
         return {
             id: row.id, 
             start, 
             end: new Date(start.getTime() + dur * 60000), 
             status: row.status as AppointmentStatus,
-            notas: row.notes || '', 
-            origem: row.origem || 'interno',
+            notas: row.note || row.notes || '', // Suporte a 'note' (inglês) ou 'notes'
+            origem: row.origin || row.origem || 'interno', // Suporte a 'origin' ou 'origem'
             client: { 
                 id: row.client_id, 
-                nome: joinedClient?.name || 'Cliente', 
+                nome: joinedClient?.name || row.client_name || 'Cliente', 
                 consent: true 
             },
             professional: { 
                 id: row.professional_id, 
-                name: joinedProf?.name || 'Profissional', 
+                name: joinedProf?.name || row.professional_name || 'Profissional', 
                 avatarUrl: '' 
             },
             service: { 
                 id: row.service_id, 
-                name: joinedService?.name || 'Serviço', 
-                price: Number(row.value || joinedService?.price || 0), 
+                name: joinedService?.name || row.service_name || 'Serviço', 
+                price: Number(row.price || row.value || joinedService?.price || 0), 
                 duration: dur, 
                 color: joinedService?.color || '#3b82f6' 
             }
         } as LegacyAppointment;
     };
 
-    // --- SALVAMENTO ATUALIZADO ( professional_id ) ---
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
             if (!force) {
-                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
+                const { data: existingOnDay } = await supabase
+                    .from('appointments')
+                    .select('id, date, duration')
+                    .eq('professional_id', app.professional.id)
+                    .neq('status', 'cancelado')
+                    .gte('date', startOfDay(app.start).toISOString())
+                    .lte('date', endOfDay(app.start).toISOString());
+
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
-                    return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
+                    const rowStart = new Date(row.date);
+                    const rowEnd = addMinutes(rowStart, row.duration || 30);
+                    return (app.start < rowEnd) && (app.end > rowStart);
                 });
-                if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
+
+                if (conflict) { 
+                    setPendingConflict({ newApp: app, conflictWith: conflict }); 
+                    setIsLoadingData(false); 
+                    return; 
+                }
             }
 
-            // PAYLOAD ATUALIZADO: client_id, professional_id, service_id
+            // PAYLOAD EM INGLÊS CONFORME REQUISITADO
             const payload = { 
                 client_id: app.client?.id,
                 professional_id: app.professional.id, 
                 service_id: app.service.id,
-                value: app.service.price, 
+                price: app.service.price, // Traduzido: value -> price
                 duration: app.service.duration, 
                 date: app.start.toISOString(), 
                 status: app.status, 
-                notes: app.notas, 
-                origem: app.origem || 'interno' 
+                note: app.notas, // Traduzido: notes -> note
+                origin: app.origem || 'interno' // Traduzido: origem -> origin
             };
             
+            let error;
             if (app.id && appointments.some(a => a.id === app.id)) {
-                await supabase.from('appointments').update(payload).eq('id', app.id);
+                const { error: err } = await supabase.from('appointments').update(payload).eq('id', app.id);
+                error = err;
             } else {
-                await supabase.from('appointments').insert([payload]);
+                const { error: err } = await supabase.from('appointments').insert([payload]);
+                error = err;
             }
 
+            if (error) throw error;
+
             setToast({ message: 'Agendamento salvo!', type: 'success' });
-            setModalState(null); setPendingConflict(null);
+            setModalState(null); 
+            setPendingConflict(null);
             fetchAppointments();
-        } catch (e) { 
-            setToast({ message: 'Erro ao salvar. Verifique os dados.', type: 'error' }); 
+        } catch (e: any) { 
+            console.error("Save Error:", e);
+            setToast({ message: `Erro ao salvar: ${e.message}`, type: 'error' }); 
         } finally { setIsLoadingData(false); }
     };
 
@@ -559,6 +552,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const targetDate = new Date(colDate || currentDate);
         targetDate.setHours(Math.floor((START_HOUR * 60 + minutes) / 60), Math.round((START_HOUR * 60 + minutes) % 60 / 15) * 15, 0, 0);
         setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
+    };
+
+    // --- FIX: Added missing handleReorderProfessional function ---
+    const handleReorderProfessional = (e: React.MouseEvent, index: number, direction: 'left' | 'right') => {
+        e.stopPropagation();
+        const targetIndex = direction === 'left' ? index - 1 : index + 1;
+        
+        if (targetIndex < 0 || targetIndex >= resources.length) return;
+
+        const newResources = [...resources];
+        const temp = newResources[index];
+        newResources[index] = newResources[targetIndex];
+        newResources[targetIndex] = temp;
+        
+        setResources(newResources);
     };
 
     return (
