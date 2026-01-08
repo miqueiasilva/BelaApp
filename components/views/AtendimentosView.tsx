@@ -301,7 +301,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         } as LegacyAppointment;
     };
 
-    // --- SALVAMENTO SÊNIOR: Higienização Completa para evitar Erro 400 ---
+    // --- REESTRUTURAÇÃO SÊNIOR: Salvamento com Payload Sanitizado (Evita Erro 400) ---
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
@@ -325,37 +325,38 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 }
             }
 
-            // REGRAS RÍGIDAS DE PAYLOAD: Apenas dados primitivos e nomes de colunas do banco
-            const payload = { 
-                date: app.start.toISOString(), 
-                duration: Number(app.service.duration), 
-                value: Number(app.service.price), 
-                status: app.status || 'agendado', 
-                notes: app.notas || '', 
-                origin: app.origem || 'agenda', 
-                client_id: Number(app.client?.id),
-                service_id: Number(app.service.id),
-                professional_id: String(app.professional.id) // UUID String
+            // OBRIGATÓRIO: Conversão explícita para tipos primitivos e nomes de colunas corretos
+            const payload = {
+                date: new Date(app.start).toISOString(),
+                status: 'scheduled', // Status padrão inicial solicitado pelo backend
+                notes: app.notas || '',
+                origin: 'agenda',
+                client_id: Number(app.client?.id),       // BigInt
+                service_id: Number(app.service.id),     // BigInt
+                professional_id: String(app.professional.id), // UUID
+                value: Number(app.service.price),
+                duration: Number(app.service.duration)
             };
             
-            let error;
-            if (app.id && appointments.some(a => a.id === app.id)) {
-                const { error: err } = await supabase.from('appointments').update(payload).eq('id', app.id);
-                error = err;
+            let result;
+            if (app.id && typeof app.id === 'number' && app.id < 2000000000) { // IDs reais do banco são serial/bigint controlados
+                result = await supabase.from('appointments').update([payload]).eq('id', app.id);
             } else {
-                const { error: err } = await supabase.from('appointments').insert([payload]);
-                error = err;
+                result = await supabase.from('appointments').insert([payload]);
             }
 
-            if (error) throw error;
+            if (result.error) {
+                console.error("Erro detalhado Supabase:", result.error.message, result.error.details);
+                throw result.error;
+            }
 
-            setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
+            setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null); 
             setPendingConflict(null);
             fetchAppointments();
         } catch (e: any) { 
-            console.error("Save Error Detail:", e);
-            setToast({ message: `Erro ao salvar: ${e.message || 'Verifique os campos obrigatórios.'}`, type: 'error' }); 
+            console.error("Save Error:", e);
+            setToast({ message: `Erro 400: Verifique os campos obrigatórios.`, type: 'error' }); 
         } finally { setIsLoadingData(false); }
     };
 
