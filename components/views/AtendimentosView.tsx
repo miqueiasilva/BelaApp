@@ -180,10 +180,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // --- REESTRUTURAÇÃO SÊNIOR: Uso de VIEW SQL para evitar Join Error 400 ---
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
-                    .from('vw_agenda_completa') // Usando View Flat
+                    .from('vw_agenda_completa') 
                     .select('*')
                     .gte('date', rangeStart.toISOString())
                     .lte('date', rangeEnd.toISOString())
@@ -271,7 +270,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         };
     }, []);
 
-    // --- MAPPER PLANO: Consumindo colunas da View sem objetos aninhados ---
     const mapRowToAppointment = (row: any): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = row.duration || 30;
@@ -303,12 +301,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         } as LegacyAppointment;
     };
 
-    // --- SALVAMENTO HIGIENIZADO: Apenas IDs e Tipos Primitivos ---
+    // --- SALVAMENTO SÊNIOR: Higienização Completa para evitar Erro 400 ---
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
             if (!force) {
-                // Verificação de conflito rápida
                 const { data: existingOnDay } = await supabase
                     .from('appointments')
                     .select('id, date, duration')
@@ -328,7 +325,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 }
             }
 
-            // HIGIENIZAÇÃO DO PAYLOAD (Regras do Banco Atualizado)
+            // REGRAS RÍGIDAS DE PAYLOAD: Apenas dados primitivos e nomes de colunas do banco
             const payload = { 
                 date: app.start.toISOString(), 
                 duration: Number(app.service.duration), 
@@ -338,19 +335,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 origin: app.origem || 'agenda', 
                 client_id: Number(app.client?.id),
                 service_id: Number(app.service.id),
-                professional_id: String(app.professional.id) // UUID or BigInt String
+                professional_id: String(app.professional.id) // UUID String
             };
             
-            if (app.id && typeof app.id === 'number' && app.id > 1000000000) { // Check if it's not a temp ID
-                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
-                if (error) throw error;
-            } else if (app.id && appointments.some(a => a.id === app.id)) {
-                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
-                if (error) throw error;
+            let error;
+            if (app.id && appointments.some(a => a.id === app.id)) {
+                const { error: err } = await supabase.from('appointments').update(payload).eq('id', app.id);
+                error = err;
             } else {
-                const { error } = await supabase.from('appointments').insert([payload]);
-                if (error) throw error;
+                const { error: err } = await supabase.from('appointments').insert([payload]);
+                error = err;
             }
+
+            if (error) throw error;
 
             setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
             setModalState(null); 
@@ -358,7 +355,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             fetchAppointments();
         } catch (e: any) { 
             console.error("Save Error Detail:", e);
-            setToast({ message: `Erro ao salvar: ${e.message || 'Verifique os campos.'}`, type: 'error' }); 
+            setToast({ message: `Erro ao salvar: ${e.message || 'Verifique os campos obrigatórios.'}`, type: 'error' }); 
         } finally { setIsLoadingData(false); }
     };
 
