@@ -2,16 +2,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     X, CheckCircle, Wallet, CreditCard, Banknote, 
-    Smartphone, Loader2, ShoppingCart, ArrowRight,
-    ChevronDown, Info, Percent, Layers, AlertTriangle,
-    User, Receipt, UserCheck, CreditCard as CardIcon,
-    ShieldCheck, DollarSign, ArrowUpRight
+    Smartphone, Loader2, ChevronDown, Percent, 
+    AlertTriangle, ShieldCheck, DollarSign, CreditCard as CardIcon,
+    ArrowRight, Info
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
-
-// --- CONFIGURAÇÕES FIXAS DE UI ---
-const CARD_BRANDS = ['VISA', 'MASTERCARD', 'ELO', 'HIPERCARD', 'AMEX', 'OUTROS'];
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -52,7 +48,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     // --- ESTADOS DE SELEÇÃO ---
     const [rates, setRates] = useState<PaymentRate[]>([]);
     const [selectedMethod, setSelectedMethod] = useState<'pix' | 'money' | 'credit' | 'debit'>('pix');
-    const [selectedBrand, setSelectedBrand] = useState<string>('VISA');
+    const [selectedBrand, setSelectedBrand] = useState<string>('');
     const [installments, setInstallments] = useState<number>(1);
 
     // 1. CARREGAMENTO DE TAXAS (MDR)
@@ -66,9 +62,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
             if (error) throw error;
             setRates(data || []);
+            
+            // Pré-selecionar primeira bandeira disponível se houver
+            if (data && data.length > 0) {
+                const firstBrand = data.find(r => r.method_type === 'credit')?.brand || data[0].brand;
+                setSelectedBrand(firstBrand);
+            }
         } catch (err: any) {
             console.error("[CHECKOUT_V2] Erro ao carregar taxas:", err);
-            setToast({ message: "Aviso: Usando taxas zeradas (falha na sincronização).", type: 'info' });
+            setToast({ message: "Falha ao sincronizar taxas. Usando 0% por segurança.", type: 'info' });
         } finally {
             setIsLoadingRates(false);
         }
@@ -78,9 +80,21 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         if (isOpen) fetchRates();
     }, [isOpen]);
 
-    // 2. MOTOR DE CÁLCULO FINANCEIRO
+    // 2. LÓGICA DE FILTRAGEM DINÂMICA
+    const availableBrands = useMemo(() => {
+        const filtered = rates.filter(r => r.method_type === selectedMethod);
+        return Array.from(new Set(filtered.map(r => r.brand)));
+    }, [rates, selectedMethod]);
+
+    const availableInstallments = useMemo(() => {
+        return rates
+            .filter(r => r.method_type === selectedMethod && r.brand === selectedBrand)
+            .map(r => r.installments)
+            .sort((a, b) => a - b);
+    }, [rates, selectedMethod, selectedBrand]);
+
+    // 3. MOTOR DE CÁLCULO FINANCEIRO
     const financialSummary = useMemo(() => {
-        // Encontra a taxa correspondente
         const match = rates.find(r => 
             r.method_type === selectedMethod && 
             (selectedMethod === 'pix' || selectedMethod === 'money' || r.brand === selectedBrand) &&
@@ -95,17 +109,24 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             feePercent,
             feeAmount,
             netValue,
-            hasRate: !!match
+            hasRate: !!match || selectedMethod === 'pix' || selectedMethod === 'money'
         };
     }, [rates, selectedMethod, selectedBrand, installments, appointment.price]);
 
-    // 3. FINALIZAÇÃO DA TRANSAÇÃO
+    // Reset de parcelas ao trocar bandeira ou método
+    useEffect(() => {
+        if (!availableInstallments.includes(installments)) {
+            setInstallments(availableInstallments[0] || 1);
+        }
+    }, [selectedBrand, selectedMethod, availableInstallments]);
+
+    // 4. FINALIZAÇÃO DA TRANSAÇÃO
     const handleConfirmPayment = async () => {
         if (isLoading) return;
         setIsLoading(true);
 
         try {
-            // A. Registrar o Pagamento Detalhado (command_payments)
+            // A. Registrar o Pagamento Detalhado na command_payments (Essencial para Auditoria)
             const { error: payError } = await supabase.from('command_payments').insert([{
                 command_id: appointment.command_id || null,
                 appointment_id: appointment.id,
@@ -128,7 +149,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             
             if (apptError) throw apptError;
 
-            // C. Fechar Comanda (se existir)
+            // C. Atualizar Status da Comanda (se existir)
             if (appointment.command_id) {
                 await supabase
                     .from('commands')
@@ -140,7 +161,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     .eq('id', appointment.command_id);
             }
 
-            // D. Registrar no Fluxo de Caixa (Opcional, se já não houver trigger)
+            // D. Lançar no Fluxo de Caixa Central
             await supabase.from('financial_transactions').insert([{
                 description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
                 amount: appointment.price,
@@ -154,7 +175,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 status: 'paid'
             }]);
 
-            setToast({ message: "Recebimento liquidado com sucesso!", type: 'success' });
+            setToast({ message: "Pagamento liquidado com sucesso!", type: 'success' });
             setTimeout(() => {
                 onSuccess();
                 onClose();
@@ -170,7 +191,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300 text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
             <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -178,17 +199,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><ShieldCheck size={24} /></div>
                         <div>
-                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Liquidação Final</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência de Taxas e MDR</p>
+                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Liquidação V2</h2>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência de MDR e Repasse</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
                 </header>
 
                 <main className="p-8 space-y-6">
-                    {/* INFO CLIENTE/SERVIÇO */}
+                    {/* RESUMO DA VENDA */}
                     <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-3xl border border-slate-100">
-                        <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-orange-500 shadow-sm font-black">
+                        <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-orange-500 shadow-sm font-black border border-slate-100">
                             {appointment.client_name.charAt(0)}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -201,7 +222,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                     </div>
 
-                    {/* SELEÇÃO DE MÉTODO */}
+                    {/* MÉTODOS DE PAGAMENTO */}
                     <div className="grid grid-cols-4 gap-2">
                         {[
                             { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600' },
@@ -211,10 +232,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         ].map((cat) => (
                             <button
                                 key={cat.id}
-                                onClick={() => {
-                                    setSelectedMethod(cat.id as any);
-                                    if (cat.id !== 'credit') setInstallments(1);
-                                }}
+                                onClick={() => setSelectedMethod(cat.id as any)}
                                 className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${selectedMethod === cat.id ? 'border-orange-500 bg-orange-50 shadow-md' : 'border-slate-50 bg-white hover:border-slate-200'}`}
                             >
                                 <cat.icon size={20} className={cat.color} />
@@ -223,36 +241,41 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         ))}
                     </div>
 
-                    {/* CAMPOS DINÂMICOS DE CARTÃO */}
+                    {/* SELEÇÃO DE BANDEIRA E PARCELAS (Condicional para Cartão) */}
                     {(selectedMethod === 'credit' || selectedMethod === 'debit') && (
                         <div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Bandeira do Cartão</label>
                                 <div className="grid grid-cols-3 gap-2">
-                                    {CARD_BRANDS.map(b => (
+                                    {availableBrands.length > 0 ? availableBrands.map(brand => (
                                         <button 
-                                            key={b}
-                                            onClick={() => setSelectedBrand(b)}
-                                            className={`py-2 rounded-xl text-[10px] font-black transition-all border ${selectedBrand === b ? 'bg-slate-800 text-white border-slate-800 shadow-lg' : 'bg-slate-50 text-slate-500 border-slate-100 hover:border-slate-300'}`}
+                                            key={brand}
+                                            onClick={() => setSelectedBrand(brand)}
+                                            className={`py-2 rounded-xl text-[10px] font-black transition-all border ${selectedBrand === brand ? 'bg-slate-800 text-white border-slate-800 shadow-lg' : 'bg-slate-50 text-slate-500 border-slate-100 hover:border-slate-300'}`}
                                         >
-                                            {b}
+                                            {brand}
                                         </button>
-                                    ))}
+                                    )) : (
+                                        <div className="col-span-3 p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 text-rose-600 text-[10px] font-bold">
+                                            <AlertTriangle size={14} /> Nenhuma bandeira configurada para {selectedMethod}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
                             {selectedMethod === 'credit' && (
-                                <div className="space-y-1.5">
+                                <div className="space-y-1.5 animate-in fade-in">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Número de Parcelas</label>
                                     <div className="relative">
                                         <select 
                                             value={installments}
                                             onChange={(e) => setInstallments(Number(e.target.value))}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none appearance-none focus:ring-4 focus:ring-orange-100"
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none appearance-none focus:ring-4 focus:ring-orange-100 transition-all"
                                         >
-                                            {[1,2,3,4,5,6,10,12].map(n => (
-                                                <option key={n} value={n}>{n === 1 ? 'À Vista' : `${n}x (sem juros para o cliente)`}</option>
+                                            {availableInstallments.map(n => (
+                                                <option key={n} value={n}>{n === 1 ? 'À Vista (1x)' : `${n}x`}</option>
                                             ))}
+                                            {availableInstallments.length === 0 && <option value="1">1x (Padrão)</option>}
                                         </select>
                                         <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={16} />
                                     </div>
@@ -261,18 +284,12 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                     )}
 
-                    {/* RESUMO DE LIQUIDAÇÃO */}
+                    {/* RESUMO FINANCEIRO FINAL */}
                     <div className={`rounded-[32px] p-6 border transition-all ${financialSummary.hasRate ? 'bg-slate-900 border-slate-800 text-white shadow-xl' : 'bg-orange-50 border-orange-100 text-orange-800'}`}>
-                        {!financialSummary.hasRate && (
-                            <div className="flex items-center gap-2 mb-4 text-[10px] font-black uppercase bg-white/20 p-2 rounded-lg">
-                                <AlertTriangle size={14} /> Taxa não configurada. Aplicando 0%.
-                            </div>
-                        )}
-                        
                         <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest opacity-60">
-                            <span>Taxa MDR ({selectedMethod === 'credit' ? `${installments}x` : 'Vista'})</span>
+                            <span>Taxa Aplicada ({selectedMethod.toUpperCase()})</span>
                             <span className="flex items-center gap-1">
-                                <Percent size={10} /> {financialSummary.feePercent}%
+                                <Percent size={10} /> {financialSummary.feePercent.toFixed(2)}%
                             </span>
                         </div>
                         
@@ -284,10 +301,16 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                 </h3>
                             </div>
                             <div className="text-right">
-                                <p className="text-[10px] font-black opacity-60 uppercase tracking-widest">Desconto Taxa</p>
+                                <p className="text-[10px] font-black opacity-60 uppercase tracking-widest">Valor da Taxa</p>
                                 <p className="text-sm font-bold text-rose-400">-{formatCurrency(financialSummary.feeAmount)}</p>
                             </div>
                         </div>
+                        
+                        {!financialSummary.hasRate && (
+                            <div className="mt-4 flex items-center gap-2 text-[9px] font-bold text-orange-600 bg-white/20 p-2 rounded-lg">
+                                <Info size={12} /> Taxa exata não encontrada para esta combinação. Aplicando 0%.
+                            </div>
+                        )}
                     </div>
 
                     <button
@@ -298,8 +321,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         {isLoading ? <Loader2 className="animate-spin" /> : <><CheckCircle size={22} /> Confirmar Recebimento</>}
                     </button>
                     
-                    <p className="text-[9px] text-slate-400 text-center font-bold uppercase tracking-widest">
-                        A liberação deste pagamento gera um log auditável na base de dados.
+                    <p className="text-[9px] text-slate-400 text-center font-bold uppercase tracking-widest leading-relaxed">
+                        Ao confirmar, o saldo será liquidado no caixa e o repasse<br/>profissional será calculado automaticamente.
                     </p>
                 </main>
             </div>
