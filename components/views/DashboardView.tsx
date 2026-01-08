@@ -61,39 +61,18 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         const now = new Date();
         switch (filter) {
             case 'hoje':
-                return { 
-                    start: startOfDay(now).toISOString(), 
-                    end: endOfDay(now).toISOString(),
-                    label: 'Hoje'
-                };
+                return { start: startOfDay(now).toISOString(), end: endOfDay(now).toISOString(), label: 'Hoje' };
             case 'semana':
-                return { 
-                    start: startOfDay(subDays(now, 7)).toISOString(), 
-                    end: endOfDay(now).toISOString(),
-                    label: 'Últimos 7 dias'
-                };
+                return { start: startOfDay(subDays(now, 7)).toISOString(), end: endOfDay(now).toISOString(), label: 'Últimos 7 dias' };
             case 'mes':
-                return { 
-                    start: startOfMonth(now).toISOString(), 
-                    end: endOfMonth(now).toISOString(),
-                    label: 'Este Mês'
-                };
+                return { start: startOfMonth(now).toISOString(), end: endOfMonth(now).toISOString(), label: 'Este Mês' };
             case 'custom':
-                return {
-                    start: startOfDay(parseISO(customStart)).toISOString(),
-                    end: endOfDay(parseISO(customEnd)).toISOString(),
-                    label: `Período personalizado`
-                };
+                return { start: startOfDay(parseISO(customStart)).toISOString(), end: endOfDay(parseISO(customEnd)).toISOString(), label: `Período personalizado` };
             default:
-                return { 
-                    start: startOfDay(now).toISOString(), 
-                    end: endOfDay(now).toISOString(),
-                    label: 'Hoje'
-                };
+                return { start: startOfDay(now).toISOString(), end: endOfDay(now).toISOString(), label: 'Hoje' };
         }
     }, [filter, customStart, customEnd]);
 
-    // --- LEITURA OBRIGATÓRIA DA VIEW PARA EVITAR ERRO 400 ---
     useEffect(() => {
         let mounted = true;
 
@@ -101,10 +80,15 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             try {
                 if (mounted) setIsLoading(true);
 
-                // 1. Agendamentos via VIEW (Flattened Data)
+                // 1. QUERY RELACIONAL ESTRITA (Baseada na radiografia do DB)
                 const { data: appts, error: apptsError } = await supabase
-                    .from('vw_agenda_completa')
-                    .select('*')
+                    .from('appointments')
+                    .select(`
+                        *,
+                        clients!client_id(id, name, phone),
+                        services!service_id(id, name, price, color, duration),
+                        team_members!professional_id(id, name)
+                    `)
                     .gte('date', dateRange.start)
                     .lte('date', dateRange.end)
                     .order('date', { ascending: true });
@@ -112,29 +96,26 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (apptsError) throw apptsError;
                 if (mounted) setAppointments(appts || []);
 
-                // 2. Faturamento mensal acumulado para Meta (Sempre via View)
+                // 2. Faturamento mensal (Soma coluna value da tabela appointments)
                 const now = new Date();
                 const startMonthStr = startOfMonth(now).toISOString();
                 const endMonthStr = endOfMonth(now).toISOString();
                 
-                const { data: monthData, error: monthError } = await supabase
-                    .from('vw_agenda_completa')
+                const { data: monthData } = await supabase
+                    .from('appointments')
                     .select('value')
                     .eq('status', 'concluido')
                     .gte('date', startMonthStr)
                     .lte('date', endMonthStr);
                 
-                if (monthError) throw monthError;
-                
                 const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
 
-                // 3. Meta do Estúdio
                 const { data: settings } = await supabase.from('studio_settings').select('revenue_goal').maybeSingle();
                 if (mounted) setFinancialGoal(settings?.revenue_goal || 5000);
 
             } catch (e) {
-                console.error("Erro ao sincronizar dashboard:", e);
+                console.error("Dashboard Fetch Error:", e);
             } finally {
                 if (mounted) setIsLoading(false);
             }
@@ -144,7 +125,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         return () => { mounted = false; };
     }, [dateRange]);
 
-    // KPIs Calculados sobre os dados da View
     const kpis = useMemo(() => {
         const revenue = appointments
             .filter(a => a.status === 'concluido')
@@ -159,11 +139,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const goalMetrics = useMemo(() => {
         const goalProgress = financialGoal > 0 ? (monthRevenueTotal / financialGoal) * 100 : 0;
         const displayGoal = financialGoal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        return {
-            progress: goalProgress,
-            display: displayGoal,
-            visual: Math.min(goalProgress, 100)
-        };
+        return { progress: goalProgress, display: displayGoal, visual: Math.min(goalProgress, 100) };
     }, [monthRevenueTotal, financialGoal]);
 
     const handleApplyCustomFilter = () => {
@@ -241,9 +217,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                             <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${goalMetrics.visual}%` }} />
                         </div>
                     </div>
-                    <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                        <TrendingUp size={100} />
-                    </div>
                 </div>
             </div>
 
@@ -262,8 +235,8 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     <Card title="Atividade Recente" icon={<BarChart3 size={18} className="text-orange-500" />}>
                         <div className="py-10 text-center text-slate-400 flex flex-col items-center">
                             <TrendingUp className="opacity-10 mb-2" size={48} />
-                            <p className="text-sm font-bold uppercase tracking-widest">Gráficos de fluxo ativos</p>
-                            <p className="text-[10px] font-medium text-slate-300 mt-2">Dados sincronizados via View vw_agenda_completa.</p>
+                            <p className="text-sm font-bold uppercase tracking-widest">Fluxo de Dados Ativo</p>
+                            <p className="text-[10px] font-medium text-slate-300 mt-2">Consultando appointments via Join Relacional.</p>
                         </div>
                     </Card>
                 </div>
@@ -271,7 +244,15 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 <div className="lg:col-span-1">
                     <TodayScheduleWidget 
                         onNavigate={onNavigate} 
-                        appointments={appointments} 
+                        appointments={appointments.map(a => ({
+                            id: a.id,
+                            date: a.date,
+                            status: a.status,
+                            client_name: a.clients?.name || 'Cliente',
+                            service_name: a.services?.name || 'Serviço',
+                            professional_name: a.team_members?.name || 'Profissional',
+                            client_whatsapp: a.clients?.phone
+                        }))} 
                         dateLabel={dateRange.label}
                     />
                 </div>
