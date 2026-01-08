@@ -4,7 +4,8 @@ import {
     Search, Plus, Clock, User, FileText, 
     DollarSign, Coffee, Scissors, Trash2, ShoppingBag, X,
     CreditCard, Banknote, Smartphone, CheckCircle, Loader2,
-    Receipt, History, LayoutGrid, CheckCircle2, AlertCircle
+    Receipt, History, LayoutGrid, CheckCircle2, AlertCircle,
+    UserCheck, Briefcase
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { FinancialTransaction, PaymentMethod, Client, Command, CommandItem } from '../../types';
@@ -12,6 +13,7 @@ import Toast, { ToastType } from '../shared/Toast';
 import SelectionModal from '../modals/SelectionModal';
 import ClientSearchModal from '../modals/ClientSearchModal';
 import { differenceInMinutes, parseISO, format } from 'date-fns';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface ComandasViewProps {
     onAddTransaction: (t: FinancialTransaction) => void;
@@ -20,6 +22,7 @@ interface ComandasViewProps {
 type CommandTab = 'open' | 'paid' | 'all';
 
 const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
+    const { user } = useAuth();
     const [tabs, setTabs] = useState<Command[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -28,26 +31,27 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
 
     // Modals State
     const [isSelectionOpen, setIsSelectionOpen] = useState(false);
+    const [isProfSelectionOpen, setIsProfSelectionOpen] = useState(false);
     const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
     const [activeTabId, setActiveTabId] = useState<string | null>(null);
+    const [pendingItem, setPendingItem] = useState<any>(null);
     
     // Close Tab Modal State
     const [closingTab, setClosingTab] = useState<Command | null>(null);
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
     const [isFinishing, setIsFinishing] = useState(false);
 
-    // Dados de Catálogo para Adição
+    // Dados de Catálogo e Equipe
     const [catalog, setCatalog] = useState<any[]>([]);
+    const [team, setTeam] = useState<any[]>([]);
 
     const fetchCommands = async () => {
         setLoading(true);
         try {
-            // CORREÇÃO: Query explicitando o join com campos necessários para evitar falhas de leitura
             let query = supabase
                 .from('commands')
                 .select('*, clients(id, name, nome, avatar_url, photo_url), command_items(*)');
 
-            // Filtro por Aba
             if (currentTab === 'open') {
                 query = query.eq('status', 'open');
             } else if (currentTab === 'paid') {
@@ -66,10 +70,11 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         }
     };
 
-    const fetchCatalog = async () => {
-        const [svcs, prods] = await Promise.all([
+    const fetchData = async () => {
+        const [svcs, prods, teamRes] = await Promise.all([
             supabase.from('services').select('id, nome, preco').eq('ativo', true),
-            supabase.from('products').select('id, name, price').eq('active', true)
+            supabase.from('products').select('id, name, price').eq('active', true),
+            supabase.from('team_members').select('id, name').eq('active', true)
         ]);
 
         const items = [
@@ -77,12 +82,13 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
             ...(prods.data || []).map(p => ({ id: p.id, name: `[Produto] ${p.name}`, price: p.price, type: 'produto' }))
         ];
         setCatalog(items);
+        setTeam((teamRes.data || []).map(t => ({ id: t.id, name: t.name })));
     };
 
     useEffect(() => {
         fetchCommands();
-        fetchCatalog();
-    }, [currentTab]); // Recarregar ao trocar de aba
+        fetchData();
+    }, [currentTab]);
 
     // --- Handlers ---
 
@@ -124,7 +130,19 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         }
     };
 
-    const handleAddItem = async (item: any) => {
+    // Função que decide se precisa de profissional ou não
+    const handleSelectItemFromCatalog = (item: any) => {
+        if (item.type === 'produto') {
+            handleAddItemToDB(item, null);
+        } else {
+            // É serviço: precisa vincular profissional
+            setPendingItem(item);
+            setIsSelectionOpen(false);
+            setIsProfSelectionOpen(true);
+        }
+    };
+
+    const handleAddItemToDB = async (item: any, professionalId: string | null) => {
         if (!activeTabId) return;
 
         try {
@@ -134,7 +152,8 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                 price: item.price,
                 quantity: 1,
                 product_id: item.type === 'produto' ? item.id : null,
-                service_id: item.type === 'servico' ? item.id : null
+                service_id: item.type === 'servico' ? item.id : null,
+                professional_id: professionalId
             };
 
             const { data, error } = await supabase
@@ -157,8 +176,11 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
             }));
 
             setIsSelectionOpen(false);
+            setIsProfSelectionOpen(false);
+            setPendingItem(null);
             setToast({ message: "Item adicionado!", type: 'success' });
         } catch (e) {
+            console.error("Erro ao adicionar item:", e);
             setToast({ message: "Erro ao adicionar item.", type: 'error' });
         }
     };
@@ -325,7 +347,6 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                         {filteredTabs.map(tab => {
                             const total = tab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
                             const duration = differenceInMinutes(new Date(), parseISO(tab.created_at));
-                            // CORREÇÃO: Lógica de prioridade de nome vindo do banco (name ou nome)
                             const clientName = tab.clients?.name || tab.clients?.nome || 'Cliente Não Identificado';
                             const clientAvatar = tab.clients?.avatar_url || tab.clients?.photo_url;
                             const isPaid = tab.status === 'paid';
@@ -334,7 +355,6 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                                 <div key={tab.id} className={`bg-white rounded-[32px] border transition-all flex flex-col overflow-hidden group h-[480px] ${isPaid ? 'border-slate-100 opacity-90' : 'border-slate-100 shadow-sm hover:shadow-xl hover:border-orange-100'}`}>
                                     <div className="p-5 border-b border-slate-50 flex justify-between items-start bg-slate-50/50">
                                         <div className="flex items-center gap-3">
-                                            {/* CORREÇÃO: Exibição de Avatar ou Inicial do Cliente */}
                                             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg border-2 border-white shadow-sm overflow-hidden ${isPaid ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
                                                 {clientAvatar ? (
                                                     <img src={clientAvatar} className="w-full h-full object-cover" alt={clientName} />
@@ -452,7 +472,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                 </div>
             )}
 
-            {/* MODAL: Adicionar Item */}
+            {/* MODAL: Adicionar Item (Fase 1: Escolha do Item) */}
             {isSelectionOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="relative w-full max-w-md h-[550px] bg-white rounded-[40px] shadow-2xl overflow-hidden">
@@ -460,9 +480,25 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                             title="Lançar Item"
                             items={catalog}
                             onClose={() => setIsSelectionOpen(false)}
-                            onSelect={handleAddItem}
+                            onSelect={handleSelectItemFromCatalog}
                             searchPlaceholder="O que o cliente consumiu?"
                             renderItemIcon={() => <Plus size={18}/>}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL: Vincular Profissional (Fase 2: Escolha do Profissional) */}
+            {isProfSelectionOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="relative w-full max-w-md h-[550px] bg-white rounded-[40px] shadow-2xl overflow-hidden">
+                        <SelectionModal
+                            title="Vincular Profissional"
+                            items={team}
+                            onClose={() => { setIsProfSelectionOpen(false); setPendingItem(null); }}
+                            onSelect={(prof) => handleAddItemToDB(pendingItem, String(prof.id))}
+                            searchPlaceholder="Quem realizou o serviço?"
+                            renderItemIcon={() => <UserCheck size={18}/>}
                         />
                     </div>
                 </div>
