@@ -25,7 +25,6 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
 
-    // 1. DATA LAYER CENTRALIZADA (RELATIONAL JOIN)
     const loadAppointments = async (date: Date) => {
         if (authLoading || !user) return;
         setIsLoadingData(true);
@@ -33,12 +32,13 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
             const start = startOfDay(date).toISOString();
             const end = endOfDay(date).toISOString();
 
+            // FIX: Sincronização com o schema correto (nome para clients e services)
             const { data, error } = await supabase
                 .from('appointments')
                 .select(`
                     *,
-                    clients!client_id(id, name, phone),
-                    services!service_id(id, name, price, color, duration),
+                    clients!client_id(id, nome, whatsapp),
+                    services!service_id(id, nome, preco, cor_hex, duracao_min),
                     team_members!professional_id(id, name, photo_url)
                 `)
                 .gte('date', start)
@@ -54,11 +54,16 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
             const mapped = (data || []).map(row => ({
                 id: row.id,
                 start: parseISO(row.date),
-                end: new Date(parseISO(row.date).getTime() + (row.services?.duration || 30) * 60000),
+                end: new Date(parseISO(row.date).getTime() + (row.services?.duracao_min || 30) * 60000),
                 status: row.status,
-                client: { id: row.client_id, nome: row.clients?.name || 'Cliente' },
+                client: { id: row.client_id, nome: row.clients?.nome || 'Cliente' },
                 professional: { id: row.professional_id, name: row.team_members?.name || 'Profissional' },
-                service: { id: row.service_id, name: row.services?.name || 'Serviço', price: row.services?.price || 0, color: row.services?.color || '#3b82f6' }
+                service: { 
+                    id: row.service_id, 
+                    name: row.services?.nome || 'Serviço', 
+                    price: row.services?.preco || 0, 
+                    color: row.services?.cor_hex || '#3b82f6' 
+                }
             }));
 
             setAppointments(mapped);
@@ -78,15 +83,12 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
         }
     };
 
-    useEffect(() => {
-        fetchResources();
-    }, []);
+    useEffect(() => { fetchResources(); }, []);
 
     useEffect(() => {
         if (resources.length > 0) loadAppointments(currentDate);
     }, [currentDate, resources, user, authLoading]);
 
-    // 2. SALVAMENTO E ATUALIZAÇÃO IMEDIATA (OPTIMISTIC + SYNC)
     const handleSaveAppointment = async (app: any) => {
         setIsLoadingData(true);
         try {
@@ -99,17 +101,11 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
                 origin: 'agenda'
             };
 
-            const { data, error } = await supabase.from('appointments').insert([payload]).select().single();
-            
-            if (error) {
-                console.error("INSERT appointments error:", error);
-                throw error;
-            }
+            const { error } = await supabase.from('appointments').insert([payload]);
+            if (error) throw error;
 
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null);
-            
-            // Refresh imediato
             await loadAppointments(currentDate);
         } catch (e: any) {
             setToast({ message: 'Erro ao salvar. Verifique se os campos estão preenchidos.', type: 'error' });

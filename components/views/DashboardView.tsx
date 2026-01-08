@@ -5,7 +5,6 @@ import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import { getDashboardInsight } from '../../services/geminiService';
 import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Filter as FilterIcon, CalendarRange } from 'lucide-react';
-// FIX: Added missing 'endOfYesterday' to the date-fns imports to resolve the reference error on line 50.
 import { format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, parseISO, endOfYesterday } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
@@ -48,7 +47,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             case 'hoje': return { start: startOfDay(now).toISOString(), end: endOfDay(now).toISOString(), label: 'Hoje' };
             case 'semana': return { start: startOfDay(subDays(now, 7)).toISOString(), end: endOfDay(now).toISOString(), label: 'Últimos 7 dias' };
             case 'mes': return { start: startOfMonth(now).toISOString(), end: endOfMonth(now).toISOString(), label: 'Este Mês' };
-            // FIX: Uses endOfYesterday() which is now imported from date-fns.
             case 'custom': return { start: startOfDay(parseISO(customStart)).toISOString(), end: endOfYesterday().toISOString(), label: 'Personalizado' };
             default: return { start: startOfDay(now).toISOString(), end: endOfDay(now).toISOString(), label: 'Hoje' };
         }
@@ -57,13 +55,13 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const fetchDashboardData = async () => {
         try {
             setIsLoading(true);
-            // Query Relacional Explícita para evitar Erro 400
+            // FIX: Sincronização com o schema real (coluna 'nome')
             const { data, error } = await supabase
                 .from('appointments')
                 .select(`
                     id, date, status, duration, created_at,
-                    clients!client_id(name),
-                    services!service_id(name, price, color),
+                    clients!client_id(nome),
+                    services!service_id(nome, preco, cor_hex),
                     team_members!professional_id(name)
                 `)
                 .gte('date', dateRange.start)
@@ -71,22 +69,18 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 .neq('status', 'cancelado')
                 .order('date', { ascending: true });
 
-            if (error) {
-                console.error("LOAD appointments error:", error);
-                throw error;
-            }
+            if (error) throw error;
             setAppointments(data || []);
 
-            // Faturamento mensal consolidado via Join
             const now = new Date();
             const { data: monthData } = await supabase
                 .from('appointments')
-                .select('services!service_id(price)')
+                .select('services!service_id(preco)')
                 .eq('status', 'concluido')
                 .gte('date', startOfMonth(now).toISOString())
                 .lte('date', endOfMonth(now).toISOString());
             
-            const totalMonthRev = monthData?.reduce((acc, curr: any) => acc + (Number(curr.services?.price) || 0), 0) || 0;
+            const totalMonthRev = monthData?.reduce((acc, curr: any) => acc + (Number(curr.services?.preco) || 0), 0) || 0;
             setMonthRevenueTotal(totalMonthRev);
 
             const { data: settings } = await supabase.from('studio_settings').select('revenue_goal').maybeSingle();
@@ -99,15 +93,12 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         }
     };
 
-    useEffect(() => {
-        fetchDashboardData();
-    }, [dateRange]);
+    useEffect(() => { fetchDashboardData(); }, [dateRange]);
 
     const kpis = useMemo(() => {
-        // CORREÇÃO: Lê o preço do serviço relacionado (Join) em vez de coluna física 'value'
         const revenue = appointments
             .filter(a => a.status === 'concluido')
-            .reduce((acc, a) => acc + (Number(a.services?.price) || 0), 0);
+            .reduce((acc, a) => acc + (Number(a.services?.preco) || 0), 0);
         
         const scheduled = appointments.length;
         const completed = appointments.filter(a => a.status === 'concluido').length;
@@ -123,7 +114,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     if (isLoading) return (
         <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-white">
             <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-            <p className="text-xs font-black uppercase tracking-widest">Sincronizando BI...</p>
+            <p className="text-xs font-black uppercase tracking-widest animate-pulse">Sincronizando BI...</p>
         </div>
     );
 
@@ -147,7 +138,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 <StatCard title="Receita Bruta" value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-green-500" subtext={dateRange.label} />
                 <StatCard title="Agendados" value={kpis.scheduled} icon={Calendar} colorClass="bg-blue-500" subtext={dateRange.label} />
                 <StatCard title="Concluídos" value={kpis.completed} icon={Users} colorClass="bg-purple-500" subtext={dateRange.label} />
-                <div className="bg-slate-800 p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group h-full transition-all">
+                <div className="bg-slate-800 p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden h-full">
                     <p className="text-[10px] font-black uppercase tracking-widest opacity-60">META MENSAL</p>
                     <div className="mt-2">
                         <div className="flex items-end justify-between mb-2">
@@ -167,7 +158,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     <Card title="Infraestrutura de Dados" icon={<BarChart3 size={18} className="text-orange-500" />}>
                         <div className="py-10 text-center text-slate-400 flex flex-col items-center">
                             <TrendingUp className="opacity-10 mb-2" size={48} />
-                            <p className="text-sm font-bold uppercase tracking-widest">Sincronizando Ativa</p>
+                            <p className="text-sm font-bold uppercase tracking-widest">Sincronização Ativa</p>
                             <p className="text-[10px] font-medium text-slate-300 mt-2">Dados processados via Joins Relacionais.</p>
                         </div>
                     </Card>
