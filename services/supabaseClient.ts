@@ -1,28 +1,6 @@
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Helper para timeout obrigatório de 10s em todas as requisições (Anti-Hang)
-const fetchWithTimeout = async (url: string, options: any = {}) => {
-  const timeout = 10000; // 10 segundos
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-    clearTimeout(id);
-    return response;
-  } catch (error: any) {
-    clearTimeout(id);
-    if (error.name === 'AbortError') {
-      throw new Error("Timeout: O servidor demorou muito para responder. Verifique sua conexão.");
-    }
-    throw error;
-  }
-};
-
 const getEnvVar = (key: string): string | null => {
   try {
     // @ts-ignore
@@ -52,6 +30,13 @@ const FALLBACK_KEY = "sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x";
 const supabaseUrl = getEnvVar('VITE_SUPABASE_URL') || FALLBACK_URL;
 const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY') || FALLBACK_KEY;
 
+// Validação de inicialização (Startup Logs)
+if (!supabaseUrl || !supabaseAnonKey) {
+    console.error("❌ CRITICAL: Supabase credentials missing! Check environment variables.");
+} else if (process.env.NODE_ENV === 'development') {
+    console.info("✅ Supabase initialized with:", supabaseUrl.substring(0, 15) + "...");
+}
+
 export const isConfigured = !!(supabaseUrl && supabaseAnonKey);
 
 export const supabase = (isConfigured 
@@ -61,10 +46,6 @@ export const supabase = (isConfigured
         autoRefreshToken: true,
         detectSessionInUrl: true,
       },
-      global: {
-        // INJEÇÃO DE SEGURANÇA: Timeout global em todas as chamadas de rede
-        fetch: fetchWithTimeout
-      }
     }) 
   : null) as unknown as SupabaseClient;
 
@@ -75,15 +56,3 @@ export const saveSupabaseConfig = (url: string, key: string) => {
     window.location.reload();
   }
 };
-
-export async function testConnection() {
-    if (!isConfigured || !supabase) return false;
-    try {
-        const { error } = await supabase.auth.getSession();
-        if (error) throw error;
-        return true;
-    } catch (e) {
-        console.error("Supabase Connection Error:", e);
-        return false;
-    }
-}

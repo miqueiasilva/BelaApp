@@ -1,21 +1,10 @@
 
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { 
-    ChevronLeft, ChevronRight, MessageSquare, 
-    ChevronDown, RefreshCw, Calendar as CalendarIcon,
-    ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
-    LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
-    AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
-    CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle
-} from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, RefreshCw, Maximize2, Plus, Ban, X, Loader2, DollarSign, CheckCircle } from 'lucide-react';
+import { format, addDays, startOfDay, endOfDay, parseISO } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
-
-import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
+import { LegacyAppointment, AppointmentStatus, LegacyProfessional } from '../../types';
 import AppointmentModal from '../modals/AppointmentModal';
-import BlockTimeModal from '../modals/BlockTimeModal';
-import NewTransactionModal from '../modals/NewTransactionModal';
-import JaciBotPanel from '../JaciBotPanel';
 import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
 import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
@@ -25,521 +14,114 @@ const START_HOUR = 8;
 const END_HOUR = 20; 
 const SLOT_PX_HEIGHT = 80; 
 
-const STATUS_PRIORITY: Record<string, number> = {
-    'em_atendimento': 1,
-    'chegou': 2,
-    'confirmado_whatsapp': 3,
-    'confirmado': 4,
-    'agendado': 5,
-    'pendente': 5, 
-    'em_espera': 6,
-    'concluido': 7,
-    'faltou': 8,
-    'cancelado': 9,
-    'bloqueado': 10
-};
-
-const StatusIndicator = ({ status, type }: { status: AppointmentStatus, type?: 'appointment' | 'block' }) => {
-    if (type === 'block') return <ShieldAlert size={10} className="text-rose-500" />;
-
-    switch (status) {
-        case 'agendado': return <Clock size={10} className="text-slate-400" />;
-        case 'confirmado':
-        case 'confirmado_whatsapp': return <ThumbsUp size={10} className="text-blue-500" />;
-        case 'chegou': return <MapPin size={10} className="text-purple-500" />;
-        case 'em_atendimento': return <Scissors size={10} className="text-indigo-600" />;
-        case 'concluido': return <CheckCircle2 size={10} className="text-emerald-600" />;
-        case 'faltou':
-        case 'cancelado': return <Ban size={10} className="text-rose-500" />;
-        default: return <Clock size={10} className="text-amber-500" />; 
-    }
-};
-
-const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) => {
-    return (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-orange-100">
-                <div className="bg-orange-50 p-8 text-center border-b border-orange-100">
-                    <div className="w-20 h-20 bg-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200 animate-bounce">
-                        <AlertTriangle size={40} />
-                    </div>
-                    <h2 className="text-2xl font-black text-slate-800 leading-tight">Conflito de Horário Detectado!</h2>
-                </div>
-                <div className="p-8 space-y-6">
-                    <div className="space-y-4">
-                        <p className="text-slate-600 text-sm leading-relaxed text-center font-medium">
-                            O horário das <b className="text-slate-800">{format(newApp.start, 'HH:mm')}</b> às <b className="text-slate-800">{format(newApp.end, 'HH:mm')}</b> choca com o atendimento de:
-                        </p>
-                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex items-center gap-4">
-                            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-orange-500 shadow-sm border border-orange-100">
-                                <CalendarDays size={24} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="font-black text-slate-800 truncate">{conflictApp.client_name}</p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{conflictApp.service_name}</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="flex flex-col gap-3">
-                        <button onClick={onConfirm} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-orange-100 transition-all active:scale-95 flex items-center justify-center gap-2">Salvar Mesmo Assim</button>
-                        <button onClick={onCancel} className="w-full py-4 text-slate-400 font-bold text-sm hover:text-slate-600 transition-colors">Voltar</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
-    const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
-    const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
-    const durationMinutes = (end.getTime() - start.getTime()) / 60000;
-
-    const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
-    const height = Math.max(20, Math.floor(durationMinutes * pixelsPerMinute));
-    
-    return { 
-        position: 'absolute' as const,
-        top: `${top}px`, 
-        height: `${height}px`,
-        width: '100%', 
-        zIndex: 20,
-        left: '0px'
-    };
-};
-
-const getCardStyle = (app: any, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
-    const baseClasses = "rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50";
-    
-    if (app.type === 'block') {
-        return "absolute rounded-none border-l-4 border-rose-400 bg-[repeating-linear-gradient(45deg,#fcfcfc,#fcfcfc_10px,#f8fafc_10px,#f8fafc_20px)] text-slate-500 p-2 overflow-hidden flex flex-col cursor-not-allowed opacity-95 z-[25] pointer-events-auto shadow-sm";
-    }
-
-    return baseClasses;
-};
-
-const TimelineIndicator = ({ timeSlot }: { timeSlot: number }) => {
-    const [topPosition, setTopPosition] = useState(0);
-    useEffect(() => {
-        const calculatePosition = () => {
-            const now = new Date();
-            const startMinutes = START_HOUR * 60;
-            const nowMinutes = now.getHours() * 60 + now.getMinutes();
-            if (nowMinutes < startMinutes || nowMinutes > (END_HOUR * 60)) { setTopPosition(-1); return; }
-            const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
-            const top = (nowMinutes - startMinutes) * pixelsPerMinute;
-            setTopPosition(top);
-        };
-        calculatePosition();
-        const intervalId = setInterval(calculatePosition, 60000); 
-        return () => clearInterval(intervalId);
-    }, [timeSlot]);
-    if (topPosition < 0) return null;
-    return (
-        <div className="absolute w-full z-10 pointer-events-none" style={{ top: `${topPosition}px` }}>
-            <div className="h-px bg-red-500 w-full relative"><div className="absolute -left-1 -top-1 w-2.5 h-2.5 bg-red-500 rounded-full shadow-sm"></div></div>
-        </div>
-    );
-};
-
-interface AtendimentosViewProps {
-    onAddTransaction: (t: FinancialTransaction) => void;
-    onNavigateToCommand?: (id: string) => void;
-}
-
-const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, onNavigateToCommand }) => {
+const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
     const { user, loading: authLoading } = useAuth(); 
     const [currentDate, setCurrentDate] = useState(new Date());
     const [appointments, setAppointments] = useState<any[]>([]);
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
-    const [periodType, setPeriodType] = useState<'Dia' | 'Semana' | 'Mês' | 'Lista'>('Dia');
-    const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
-    const [modalState, setModalState] = useState<{ type: 'appointment' | 'block' | 'sale'; data: any } | null>(null);
-    const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
-    const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
+    const [modalState, setModalState] = useState<{ type: 'appointment'; data: any } | null>(null);
+    const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<any | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
-
-    const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
-    const [viewMode, setViewMode] = useState<'profissional' | 'andamento' | 'pagamento'>('profissional');
-    const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
-    const [colWidth, setColWidth] = useState(220);
-    const [isAutoWidth, setIsAutoWidth] = useState(false);
-    const [timeSlot, setTimeSlot] = useState(30);
-
-    const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
-    const gridScrollRef = useRef<HTMLDivElement>(null); 
-    const abortControllerRef = useRef<AbortController | null>(null);
-    const lastRequestId = useRef(0);
 
-    const fetchAppointments = async () => {
-        if (!isMounted.current || authLoading || !user) return;
-        
-        const requestId = ++lastRequestId.current;
-        if (abortControllerRef.current) abortControllerRef.current.abort();
-        abortControllerRef.current = new AbortController();
+    // 1. DATA LAYER CENTRALIZADA (RELATIONAL JOIN)
+    const loadAppointments = async (date: Date) => {
+        if (authLoading || !user) return;
         setIsLoadingData(true);
-
         try {
-            let rangeStart: Date, rangeEnd: Date;
-            if (periodType === 'Semana') {
-                rangeStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-                rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
-            } else if (periodType === 'Mês') {
-                rangeStart = startOfMonth(currentDate);
-                rangeEnd = endOfMonth(currentDate);
-            } else {
-                rangeStart = startOfDay(currentDate);
-                rangeEnd = endOfDay(currentDate);
+            const start = startOfDay(date).toISOString();
+            const end = endOfDay(date).toISOString();
+
+            const { data, error } = await supabase
+                .from('appointments')
+                .select(`
+                    *,
+                    clients!client_id(id, name, phone),
+                    services!service_id(id, name, price, color, duration),
+                    team_members!professional_id(id, name, photo_url)
+                `)
+                .gte('date', start)
+                .lte('date', end)
+                .neq('status', 'cancelado')
+                .order('date', { ascending: true });
+
+            if (error) {
+                console.error("LOAD appointments error:", error);
+                throw error;
             }
 
-            const [apptRes, blocksRes] = await Promise.all([
-                supabase
-                    .from('appointments')
-                    .select('*')
-                    .gte('date', rangeStart.toISOString())
-                    .lte('date', rangeEnd.toISOString())
-                    .neq('status', 'cancelado') 
-                    .abortSignal(abortControllerRef.current.signal),
-                supabase
-                    .from('schedule_blocks')
-                    .select('*')
-                    .gte('start_time', rangeStart.toISOString())
-                    .lte('start_time', rangeEnd.toISOString())
-                    .abortSignal(abortControllerRef.current.signal)
-            ]);
+            const mapped = (data || []).map(row => ({
+                id: row.id,
+                start: parseISO(row.date),
+                end: new Date(parseISO(row.date).getTime() + (row.services?.duration || 30) * 60000),
+                status: row.status,
+                client: { id: row.client_id, nome: row.clients?.name || 'Cliente' },
+                professional: { id: row.professional_id, name: row.team_members?.name || 'Profissional' },
+                service: { id: row.service_id, name: row.services?.name || 'Serviço', price: row.services?.price || 0, color: row.services?.color || '#3b82f6' }
+            }));
 
-            if (apptRes.error) throw apptRes.error;
-            if (blocksRes.error) throw blocksRes.error;
-
-            if (isMounted.current && requestId === lastRequestId.current) {
-                const mappedAppts = (apptRes.data || []).map(row => ({
-                    ...mapRowToAppointment(row, resources),
-                    type: 'appointment'
-                }));
-
-                const mappedBlocks = (blocksRes.data || []).map(row => ({
-                    id: row.id,
-                    start: new Date(row.start_time),
-                    end: new Date(row.end_time),
-                    professional: { id: row.professional_id }, 
-                    service: { name: row.reason, color: '#fca5a5' },
-                    status: 'bloqueado',
-                    type: 'block'
-                }));
-
-                setAppointments([...mappedAppts, ...mappedBlocks]);
-            }
-        } catch (e: any) { 
-            if (e.name !== 'AbortError') console.error("Fetch Agenda Error:", e); 
-        } finally { 
-            if (isMounted.current) setIsLoadingData(false); 
+            setAppointments(mapped);
+        } catch (e) {
+            console.error("Sync Error:", e);
+        } finally {
+            setIsLoadingData(false);
         }
     };
 
     const fetchResources = async () => {
-        if (authLoading || !user) return;
-        try {
-            const { data, error } = await supabase
-                .from('team_members')
-                .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled') 
-                .eq('active', true)
-                .order('order_index', { ascending: true }) 
-                .order('name', { ascending: true });
-            if (error) throw error;
-            if (data && isMounted.current) {
-                const mapped = data.filter((m: any) => m.show_in_calendar !== false).map((p: any) => ({
-                    id: p.id, name: p.name, avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
-                    role: p.role, order_index: p.order_index || 0, services_enabled: p.services_enabled || [] 
-                }));
-                setResources(mapped);
-            }
-        } catch (e) { console.error(e); }
+        const { data } = await supabase.from('team_members').select('*').eq('active', true).order('order_index');
+        if (data) {
+            setResources(data.map((p: any) => ({
+                id: p.id, name: p.name, avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}`
+            })));
+        }
     };
 
     useEffect(() => {
-        if (!authLoading && user && resources.length > 0) {
-            fetchAppointments();
-        }
-    }, [currentDate, periodType, resources, user, authLoading]);
-
-    useEffect(() => {
-        isMounted.current = true;
         fetchResources();
-        
-        const channel = supabase.channel('agenda-live')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => { if (isMounted.current) fetchAppointments(); })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => { if (isMounted.current) fetchResources(); })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'schedule_blocks' }, () => { if (isMounted.current) fetchAppointments(); })
-            .subscribe();
-
-        return () => {
-            isMounted.current = false;
-            if (abortControllerRef.current) abortControllerRef.current.abort();
-            supabase.removeChannel(channel).catch(console.error);
-        };
     }, []);
 
-    const handleReorderProfessional = useCallback(async (e: React.MouseEvent, currentIndex: number, direction: 'left' | 'right') => {
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
+    useEffect(() => {
+        if (resources.length > 0) loadAppointments(currentDate);
+    }, [currentDate, resources, user, authLoading]);
 
-        const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
-        if (targetIndex < 0 || targetIndex >= resources.length) return;
-
-        const newResources = [...resources];
-        const temp = newResources[currentIndex];
-        newResources[currentIndex] = newResources[targetIndex];
-        newResources[targetIndex] = temp;
-
-        setResources(newResources);
-
-        try {
-            const updates = [
-                { id: newResources[currentIndex].id, order_index: currentIndex },
-                { id: newResources[targetIndex].id, order_index: targetIndex }
-            ];
-
-            for (const up of updates) {
-                await supabase.from('team_members').update({ order_index: up.order_index }).eq('id', up.id);
-            }
-        } catch (e) {
-            console.error("Falha ao salvar nova ordem:", e);
-            fetchResources(); 
-        }
-    }, [resources]);
-
-    const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
-        const start = new Date(row.date);
-        const dur = row.duration || 30;
-        
-        let prof = professionalsList.find(p => String(p.id) === String(row.resource_id));
-        if (!prof && row.professional_name) {
-            prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
-        }
-
-        return {
-            id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
-            notas: row.notes || '', origem: row.origem || 'interno',
-            client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
-            professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
-            service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
-        } as LegacyAppointment;
-    };
-
-    const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
+    // 2. SALVAMENTO E ATUALIZAÇÃO IMEDIATA (OPTIMISTIC + SYNC)
+    const handleSaveAppointment = async (app: any) => {
         setIsLoadingData(true);
         try {
-            if (!force) {
-                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('resource_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
-                const conflict = existingOnDay?.find(row => {
-                    if (app.id && row.id === app.id) return false;
-                    return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
-                });
-                if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
-            }
-            const payload = { client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), status: app.status, notes: app.notas, origem: app.origem || 'interno' };
+            const payload = {
+                client_id: Number(app.client?.id),
+                service_id: Number(app.service.id),
+                professional_id: String(app.professional.id),
+                date: app.start.toISOString(),
+                status: app.status || 'agendado',
+                origin: 'agenda'
+            };
+
+            const { data, error } = await supabase.from('appointments').insert([payload]).select().single();
             
-            if (app.id && appointments.some(a => a.id === app.id)) {
-                await supabase.from('appointments').update(payload).eq('id', app.id);
-            } else {
-                await supabase.from('appointments').insert([payload]);
+            if (error) {
+                console.error("INSERT appointments error:", error);
+                throw error;
             }
 
             setToast({ message: 'Agendamento salvo!', type: 'success' });
-            setModalState(null); setPendingConflict(null);
-            fetchAppointments();
-        } catch (e) { 
-            setToast({ message: 'Erro ao salvar.', type: 'error' }); 
-            fetchAppointments(); 
-        } finally { setIsLoadingData(true); }
-    };
-
-    const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
-        e.stopPropagation();
-        if (!window.confirm("Remover este bloqueio de horário?")) return;
-
-        try {
-            const { error } = await supabase.from('schedule_blocks').delete().eq('id', blockId);
-            if (error) throw error;
-            setAppointments(prev => prev.filter(a => a.id !== blockId));
-            setToast({ message: 'Horário liberado!', type: 'info' });
+            setModalState(null);
+            
+            // Refresh imediato
+            await loadAppointments(currentDate);
         } catch (e: any) {
-            setToast({ message: 'Erro ao remover bloqueio.', type: 'error' });
+            setToast({ message: 'Erro ao salvar. Verifique se os campos estão preenchidos.', type: 'error' });
+        } finally {
+            setIsLoadingData(false);
         }
     };
 
     const handleUpdateStatus = async (id: number, newStatus: AppointmentStatus) => {
-        const appointment = appointments.find(a => a.id === id);
-        if (!appointment) return;
-        
-        const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
-        if (!isAdmin && appointment.status === 'concluido') {
-            setToast({ message: "Permissão Negada: Apenas o Gestor pode alterar registros concluídos.", type: 'error' });
-            return;
-        }
-
-        if (appointment.status === 'concluido' && newStatus !== 'concluido') {
-            if (!window.confirm("Atenção: O lançamento financeiro será ESTORNADO do caixa. Continuar?")) return;
-            await supabase.from('financial_transactions').delete().eq('appointment_id', id);
-        }
-        
         const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
-        if (!error) {
-            setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
-        } else {
-            fetchAppointments();
-        }
+        if (!error) loadAppointments(currentDate);
         setActiveAppointmentDetail(null);
-    };
-
-    const handleConvertToCommand = async (appointment: LegacyAppointment) => {
-        setIsLoadingData(true);
-        try {
-            const { data: command, error: cmdError } = await supabase
-                .from('commands')
-                .insert([{
-                    client_id: appointment.client?.id,
-                    status: 'open',
-                    total_amount: appointment.service.price
-                }])
-                .select()
-                .single();
-
-            if (cmdError) throw cmdError;
-
-            const { error: itemError } = await supabase
-                .from('command_items')
-                .insert([{
-                    command_id: command.id,
-                    appointment_id: appointment.id,
-                    title: appointment.service.name,
-                    price: appointment.service.price,
-                    quantity: 1
-                }]);
-
-            if (itemError) throw itemError;
-
-            const { error: apptUpdateError } = await supabase
-                .from('appointments')
-                .update({ status: 'concluido' })
-                .eq('id', appointment.id);
-
-            if (apptUpdateError) throw apptUpdateError;
-
-            setToast({ message: `Comanda gerada com sucesso! Redirecionando... 💳`, type: 'success' });
-            setActiveAppointmentDetail(null);
-            
-            // REDIRECIONAMENTO AUTOMÁTICO
-            if (onNavigateToCommand) {
-                onNavigateToCommand(command.id);
-            }
-        } catch (e: any) {
-            console.error("Falha ao gerar comanda:", e);
-            setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
-        } finally {
-            setIsLoadingData(false);
-        }
-    };
-
-    const handleDeleteAppointmentFull = async (id: number) => {
-        const appointment = appointments.find(a => a.id === id);
-        if (!appointment) return;
-
-        const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
-        const isFinished = appointment.status === 'concluido';
-
-        if (!isAdmin && isFinished) {
-            setToast({ 
-                message: "Permissão Negada: Apenas o Gestor pode excluir registros com financeiro lançado.", 
-                type: 'error' 
-            });
-            return;
-        }
-
-        const confirmMsg = isFinished 
-            ? "⚠️ AÇÃO AUDITADA: Este registro possui financeiro vinculado. A exclusão removerá o recebimento e gerará um Log de Segurança. Prosseguir?"
-            : "Deseja realmente apagar este agendamento?";
-
-        if (!window.confirm(confirmMsg)) return;
-        
-        setIsLoadingData(true);
-        try {
-            if (isFinished) {
-                await supabase.from('audit_logs').insert([{
-                    actor_id: user?.id,
-                    actor_name: user?.nome,
-                    action_type: 'DELETE',
-                    entity: 'appointments',
-                    entity_id: String(id),
-                    old_value: {
-                        client: appointment.client?.nome,
-                        service: appointment.service.name,
-                        value: appointment.service.price,
-                        date: appointment.start.toISOString(),
-                        professional: appointment.professional.name,
-                        status: appointment.status
-                    }
-                }]);
-            }
-
-            await supabase.from('financial_transactions').delete().eq('appointment_id', id);
-            const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
-            if (apptError) throw apptError;
-
-            setAppointments(prev => prev.filter(p => p.id !== id));
-            setToast({ message: 'Registro removido.', type: 'info' });
-            setActiveAppointmentDetail(null);
-        } catch (e: any) {
-            console.error("Falha na exclusão:", e);
-            setToast({ message: "Falha ao excluir registro.", type: 'error' });
-        } finally {
-            setIsLoadingData(false);
-        }
-    };
-
-    const handleDateChange = (direction: number) => {
-        if (periodType === 'Dia' || periodType === 'Lista') setCurrentDate(prev => addDays(prev, direction));
-        else if (periodType === 'Semana') setCurrentDate(prev => addWeeks(prev, direction));
-        else if (periodType === 'Mês') setCurrentDate(prev => addMonths(prev, direction));
-    };
-
-    const columns = useMemo(() => {
-        if (periodType === 'Semana') {
-            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
-            return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
-        }
-        return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
-    }, [periodType, currentDate, resources]);
-
-    const filteredAppointments = useMemo(() => {
-        let baseList = appointments.filter(a => {
-            if (periodType === 'Dia' || periodType === 'Lista') return isSameDay(a.start, currentDate);
-            if (periodType === 'Semana') return isWithinInterval(a.start, { start: startOfWeek(currentDate, { weekStartsOn: 1 }), end: endOfWeek(currentDate, { weekStartsOn: 1 }) });
-            return isSameMonth(a.start, currentDate);
-        });
-        return [...baseList].sort((a, b) => (STATUS_PRIORITY[a.status] || 99) - (STATUS_PRIORITY[b.status] || 99) || a.start.getTime() - b.start.getTime());
-    }, [appointments, periodType, currentDate]);
-
-    const timeSlotsLabels = useMemo(() => {
-        const labels = [];
-        for (let i = 0; i < (END_HOUR - START_HOUR) * 60 / timeSlot; i++) {
-            const minutes = i * timeSlot;
-            labels.push(`${String(START_HOUR + Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`);
-        }
-        return labels;
-    }, [timeSlot]);
-
-    const handleGridClick = (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const minutes = ((e.clientY - rect.top) / (SLOT_PX_HEIGHT / timeSlot));
-        const targetDate = new Date(colDate || currentDate);
-        targetDate.setHours(Math.floor((START_HOUR * 60 + minutes) / 60), Math.round((START_HOUR * 60 + minutes) % 60 / 15) * 15, 0, 0);
-        setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
     };
 
     return (
@@ -547,211 +129,81 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
             <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30 shadow-sm">
-                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
-                    <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Agenda {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}</h2>
-                        <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                            <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><LayoutGrid size={14} /> Equipe</button>
-                            <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><PlayCircle size={14} /> Andamento</button>
-                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><CreditCard size={14} /> Pagamento</button>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-                        <button onClick={() => setIsConfigModalOpen(true)} className="p-2 rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-50 transition-all"><SlidersHorizontal size={20} /></button>
-                        <button onClick={() => setIsPeriodModalOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">{periodType} <ChevronDown size={16} /></button>
-                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all active:scale-95">Agendar</button>
-                    </div>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Agenda {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}</h2>
+                    <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 px-6 rounded-xl shadow-lg transition-all active:scale-95">Novo Agendamento</button>
                 </div>
                 <div className="flex items-center gap-4">
-                    <button onClick={() => setCurrentDate(new Date())} className="text-sm font-bold bg-slate-100 px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors">HOJE</button>
-                    <div className="flex items-center gap-1">
-                        <button onClick={() => handleDateChange(-1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronLeft size={20} /></button>
-                        <button onClick={() => handleDateChange(1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight size={20} /></button>
+                    <button onClick={() => setCurrentDate(new Date())} className="text-sm font-bold bg-slate-100 px-4 py-2 rounded-lg hover:bg-slate-200">HOJE</button>
+                    <div className="flex items-center gap-1 text-slate-500">
+                        <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-2 hover:bg-slate-100 rounded-full"><ChevronLeft size={20} /></button>
+                        <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-2 hover:bg-slate-100 rounded-full"><ChevronRight size={20} /></button>
                     </div>
-                    <span className="text-orange-500 font-bold text-lg capitalize tracking-tight">{format(currentDate, "EEE, dd 'de' MMMM", { locale: pt })}</span>
+                    <span className="text-orange-500 font-bold text-lg capitalize">{format(currentDate, "EEE, dd 'de' MMMM", { locale: pt })}</span>
                 </div>
             </header>
 
-            <div 
-                ref={gridScrollRef}
-                className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar"
-            >
+            <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
                 <div className="min-w-fit">
-                    <div className="grid sticky top-0 z-[50] border-b border-slate-200 bg-white shadow-sm" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]"><Maximize2 size={16} className="text-slate-300" /></div>
-                        {columns.map((col, idx) => (
-                            <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-24 bg-white relative group transition-colors hover:bg-slate-50">
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-full max-w-[200px] overflow-hidden">
-                                    {(col as any).photo && <img src={(col as any).photo} alt={col.title} className="w-8 h-8 rounded-full object-cover border border-orange-100 flex-shrink-0" />}
-                                    <div className="flex flex-col overflow-hidden">
-                                        <span className="text-[11px] font-black text-slate-800 leading-tight truncate">{col.title}</span>
-                                        {(col as any).subtitle && <span className="text-[9px] text-slate-400 font-bold uppercase">{ (col as any).subtitle}</span>}
-                                    </div>
+                    <div className="grid sticky top-0 z-[50] border-b border-slate-200 bg-white shadow-sm" style={{ gridTemplateColumns: `60px repeat(${resources.length}, 220px)` }}>
+                        <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-20 flex items-center justify-center"><Maximize2 size={16} className="text-slate-300" /></div>
+                        {resources.map((res) => (
+                            <div key={res.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-20 bg-white">
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-full overflow-hidden">
+                                    <img src={res.avatarUrl} className="w-8 h-8 rounded-full object-cover" />
+                                    <span className="text-[11px] font-black text-slate-800 truncate">{res.name}</span>
                                 </div>
-                                {periodType === 'Dia' && col.type === 'professional' && (
-                                    <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                                        <button 
-                                            onClick={(e) => handleReorderProfessional(e, idx, 'left')}
-                                            className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"
-                                        >
-                                            <ChevronLeft size={14} />
-                                        </button>
-                                        <button 
-                                            onClick={(e) => handleReorderProfessional(e, idx, 'right')}
-                                            className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"
-                                        >
-                                            <ChevronRight size={14} />
-                                        </button>
-                                    </div>
-                                )}
                             </div>
                         ))}
                     </div>
 
-                    <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        
-                        <div className="sticky left-0 z-[50] bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
-                            {timeSlotsLabels.map(time => (
-                                <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black relative border-b border-slate-100/50 border-dashed bg-white">
-                                    <span className="absolute top-0 right-3 -translate-y-1/2 bg-white px-1 z-10">{time}</span>
-                                </div>
-                            ))}
+                    <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${resources.length}, 220px)` }}>
+                        <div className="sticky left-0 z-[50] bg-white border-r border-slate-200">
+                            {Array.from({ length: (END_HOUR - START_HOUR) * 2 }).map((_, i) => {
+                                const hour = START_HOUR + Math.floor(i / 2);
+                                const min = (i % 2) * 30;
+                                const time = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+                                return (
+                                    <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black relative border-b border-slate-100/50 border-dashed bg-white">
+                                        <span className="absolute top-0 right-3 -translate-y-1/2 bg-white px-1 z-10">{time}</span>
+                                    </div>
+                                );
+                            })}
                         </div>
 
-                        {columns.map((col, idx) => (
-                            <div 
-                                key={col.id} 
-                                className={`relative border-r border-slate-200 cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`}
-                                style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }}
-                                onClick={(e) => {
-                                    if (e.target === e.currentTarget) {
-                                        const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0];
-                                        const date = col.type === 'date' ? (col.data as Date) : currentDate;
-                                        handleGridClick(e, prof, date);
-                                    }
-                                }}
-                            >
-                                {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
-                                
-                                {filteredAppointments
-                                    .filter(app => {
-                                        if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
-                                        if (app.type === 'block' && (app.professional.id === null || String(app.professional.id) === 'null')) {
-                                            return true;
-                                        }
-                                        return String(app.professional.id) === String(col.id); 
-                                    })
-                                    .map(app => {
-                                        const durationMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
-                                        const isShort = durationMinutes <= 25;
-                                        const cardColor = app.type === 'block' ? '#f87171' : (app.service.color || '#3b82f6');
-                                        
-                                        return (
-                                            <div 
-                                                key={app.id} 
-                                                ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} 
-                                                onClick={(e) => { 
-                                                    e.stopPropagation(); 
-                                                    if (app.type === 'appointment') {
-                                                        setActiveAppointmentDetail(app); 
-                                                    }
-                                                }} 
-                                                className={getCardStyle(app, viewMode)} 
-                                                style={{ 
-                                                    ...getAppointmentPosition(app.start, app.end, timeSlot),
-                                                    borderLeftColor: cardColor,
-                                                    backgroundColor: `${cardColor}15`
-                                                }}
-                                            >
-                                                {/* Badges de Status (Canto superior direito) */}
-                                                <div className="absolute top-1 right-1 flex gap-0.5 z-10">
-                                                    {app.status === 'concluido' && <DollarSign size={10} className="text-emerald-600 font-bold" strokeWidth={3} />}
-                                                    {['confirmado', 'confirmado_whatsapp'].includes(app.status) && <CheckCircle size={10} className="text-blue-600" strokeWidth={3} />}
-                                                    {app.type === 'block' && <ShieldAlert size={10} className="text-rose-400" />}
-                                                </div>
+                        {resources.map((res) => (
+                            <div key={res.id} className="relative border-r border-slate-200 min-h-[960px]">
+                                {appointments.filter(app => String(app.professional.id) === String(res.id)).map(app => {
+                                    const startMinutes = (app.start.getHours() * 60 + app.start.getMinutes()) - (START_HOUR * 60);
+                                    const durMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
+                                    const top = (startMinutes / 30) * 80;
+                                    const height = (durMinutes / 30) * 80;
 
-                                                <div className="flex flex-col h-full justify-between relative z-0 pointer-events-none">
-                                                    <div>
-                                                        {/* Linha 1: Horário */}
-                                                        <p className="text-[10px] font-medium text-slate-500 leading-none mb-0.5">
-                                                            {format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}
-                                                        </p>
-                                                        
-                                                        {/* Linha 2: Cliente */}
-                                                        <p className="text-xs font-bold text-slate-800 truncate leading-tight">
-                                                            {app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Bloqueado')}
-                                                        </p>
-                                                    </div>
-
-                                                    {/* Linha 3: Serviço (Oculta se for muito curto) */}
-                                                    {!isShort && (
-                                                        <p className="text-[10px] text-slate-500 truncate leading-none mt-auto opacity-80">
-                                                            {app.service.name}
-                                                        </p>
-                                                    )}
-                                                </div>
-
-                                                {app.type === 'block' && (
-                                                    <button 
-                                                        onClick={(e) => handleDeleteBlock(e, app.id)}
-                                                        className="absolute bottom-1 right-1 p-1 bg-rose-500 text-white rounded opacity-0 group-hover/card:opacity-100 transition-all shadow-md z-30 pointer-events-auto"
-                                                        title="Remover Bloqueio"
-                                                    >
-                                                        <Trash2 size={10} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                                    return (
+                                        <div 
+                                            key={app.id} 
+                                            ref={(el) => appointmentRefs.current.set(app.id, el)}
+                                            onClick={() => setActiveAppointmentDetail(app)}
+                                            className="absolute left-0 right-0 p-1.5 border-l-4 rounded-none shadow-sm cursor-pointer hover:brightness-95 transition-all overflow-hidden"
+                                            style={{ 
+                                                top: `${top}px`, 
+                                                height: `${height}px`, 
+                                                borderLeftColor: app.service.color,
+                                                backgroundColor: `${app.service.color}15`,
+                                                zIndex: 20
+                                            }}
+                                        >
+                                            <p className="text-[10px] font-black text-slate-500 leading-none">{format(app.start, 'HH:mm')}</p>
+                                            <p className="text-xs font-bold text-slate-800 truncate">{app.client.nome}</p>
+                                            <p className="text-[9px] text-slate-400 font-medium truncate uppercase">{app.service.name}</p>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         ))}
-                        <TimelineIndicator timeSlot={timeSlot} />
                     </div>
                 </div>
             </div>
-
-            {selectionMenu && (
-                <>
-                    <div className="fixed inset-0 z-50" onClick={() => setSelectionMenu(null)} />
-                    <div className="fixed z-[60] bg-white rounded-2xl shadow-2xl border border-slate-100 w-64 py-2 animate-in fade-in zoom-in-95 duration-150" style={{ top: Math.min(selectionMenu.y, window.innerHeight - 200), left: Math.min(selectionMenu.x, window.innerWidth - 260) }}>
-                        <button onClick={() => { setModalState({ type: 'appointment', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 transition-colors">
-                            <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600"><CalendarIcon size={16} /></div> Novo Agendamento
-                        </button>
-                        <button onClick={() => { setModalState({ type: 'sale', data: { professionalId: selectionMenu.professional.id } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-green-600 transition-colors">
-                            <div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div> Nova Venda
-                        </button>
-                        <button onClick={() => { setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors">
-                            <div className="p-1.5 bg-rose-100 rounded-lg text-orange-600"><Ban size={16} /></div> Bloqueio
-                        </button>
-                    </div>
-                </>
-            )}
-
-            {isConfigModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
-                    <div className="relative w-full max-w-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200">
-                        <header className="flex justify-between items-center mb-8"><h3 className="font-extrabold text-slate-800">Grade</h3><button onClick={() => setIsConfigModalOpen(false)}><X size={20} /></button></header>
-                        <div className="space-y-4">
-                            <label className="text-sm font-black text-slate-700 uppercase">Largura: {colWidth}px</label>
-                            <input type="range" min="150" max="450" step="10" value={colWidth} onChange={e => setColWidth(Number(e.target.value))} className="w-full" />
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {isPeriodModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPeriodModalOpen(false)}></div>
-                    <div className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden p-4 animate-in zoom-in-95 duration-200">
-                        <div className="space-y-2">
-                            {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (
-                                <button key={item} onClick={() => { setPeriodType(item as any); setIsPeriodModalOpen(false); }} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}>{item}{periodType === item && <Check size={18} />}</button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {activeAppointmentDetail && (
                 <AppointmentDetailPopover 
@@ -759,18 +211,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} 
                     onClose={() => setActiveAppointmentDetail(null)} 
                     onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
-                    onDelete={handleDeleteAppointmentFull} 
+                    onDelete={() => {}} 
                     onUpdateStatus={handleUpdateStatus}
-                    onConvertToCommand={handleConvertToCommand}
                 />
             )}
-            {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
-            {modalState?.type === 'block' && <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSave={handleSaveAppointment as any} />}
-            {modalState?.type === 'sale' && <NewTransactionModal type="receita" onClose={() => setModalState(null)} onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }} />}
-            {pendingConflict && <ConflictAlertModal newApp={pendingConflict.newApp} conflictApp={pendingConflict.conflictWith} onConfirm={() => handleSaveAppointment(pendingConflict.newApp, true)} onCancel={() => setPendingConflict(null)} />}
             
-            <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
-            <div className="fixed bottom-8 right-8 z-10"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
+            {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
         </div>
     );
 };
