@@ -42,9 +42,10 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     const fetchCommands = async () => {
         setLoading(true);
         try {
+            // CORREÇÃO: Query explicitando o join com campos necessários para evitar falhas de leitura
             let query = supabase
                 .from('commands')
-                .select('*, clients(*), command_items(*)');
+                .select('*, clients(id, name, nome, avatar_url, photo_url), command_items(*)');
 
             // Filtro por Aba
             if (currentTab === 'open') {
@@ -90,8 +91,6 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         if (!window.confirm("Deseja realmente excluir esta comanda? Todos os itens lançados serão perdidos.")) return;
 
         try {
-            // Itens são deletados automaticamente se o banco tiver ON DELETE CASCADE, 
-            // caso contrário deletamos manualmente os itens primeiro
             await supabase.from('command_items').delete().eq('command_id', id);
             const { error } = await supabase.from('commands').delete().eq('id', id);
             
@@ -115,7 +114,6 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
 
             if (error) throw error;
             
-            // Se estiver na aba 'open' ou 'all', adiciona à lista
             if (currentTab !== 'paid') {
                 setTabs(prev => [data, ...prev]);
             }
@@ -200,9 +198,8 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         const total = closingTab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
 
         try {
-            const clientName = closingTab.clients?.nome || closingTab.clients?.name || closingTab.clients?.full_name || 'Cliente';
+            const clientName = closingTab.clients?.name || closingTab.clients?.nome || 'Cliente';
 
-            // 1. Criar Transação Financeira
             const { error: finError } = await supabase.from('financial_transactions').insert([{
                 description: `Fechamento Comanda - ${clientName}`,
                 amount: total,
@@ -215,7 +212,6 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
 
             if (finError) throw finError;
 
-            // 2. Fechar Comanda
             const { error: cmdError } = await supabase
                 .from('commands')
                 .update({ 
@@ -226,7 +222,6 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
 
             if (cmdError) throw cmdError;
 
-            // Se estiver na aba 'open', remove. Se estiver em 'all', atualiza status local
             if (currentTab === 'open') {
                 setTabs(prev => prev.filter(t => t.id !== closingTab.id));
             } else {
@@ -244,7 +239,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
 
     const filteredTabs = useMemo(() => {
         return tabs.filter(t => {
-            const name = (t.clients?.nome || t.clients?.name || t.clients?.full_name || '').toLowerCase();
+            const name = (t.clients?.name || t.clients?.nome || t.clients?.full_name || '').toLowerCase();
             return name.includes(searchTerm.toLowerCase());
         });
     }, [tabs, searchTerm]);
@@ -330,15 +325,22 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                         {filteredTabs.map(tab => {
                             const total = tab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
                             const duration = differenceInMinutes(new Date(), parseISO(tab.created_at));
-                            const clientName = tab.clients?.nome || tab.clients?.name || tab.clients?.full_name || 'Cliente';
+                            // CORREÇÃO: Lógica de prioridade de nome vindo do banco (name ou nome)
+                            const clientName = tab.clients?.name || tab.clients?.nome || 'Cliente Não Identificado';
+                            const clientAvatar = tab.clients?.avatar_url || tab.clients?.photo_url;
                             const isPaid = tab.status === 'paid';
 
                             return (
                                 <div key={tab.id} className={`bg-white rounded-[32px] border transition-all flex flex-col overflow-hidden group h-[480px] ${isPaid ? 'border-slate-100 opacity-90' : 'border-slate-100 shadow-sm hover:shadow-xl hover:border-orange-100'}`}>
                                     <div className="p-5 border-b border-slate-50 flex justify-between items-start bg-slate-50/50">
                                         <div className="flex items-center gap-3">
-                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg border-2 border-white shadow-sm ${isPaid ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
-                                                {clientName.charAt(0).toUpperCase()}
+                                            {/* CORREÇÃO: Exibição de Avatar ou Inicial do Cliente */}
+                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg border-2 border-white shadow-sm overflow-hidden ${isPaid ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
+                                                {clientAvatar ? (
+                                                    <img src={clientAvatar} className="w-full h-full object-cover" alt={clientName} />
+                                                ) : (
+                                                    clientName.charAt(0).toUpperCase()
+                                                )}
                                             </div>
                                             <div className="min-w-0">
                                                 <h3 className="font-black text-slate-800 text-sm truncate max-w-[120px]">{clientName}</h3>
@@ -476,10 +478,14 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                         </header>
                         <div className="p-10 space-y-8">
                             <div className="text-center">
-                                <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-[28px] flex items-center justify-center mx-auto mb-4 font-black text-3xl border-4 border-white shadow-xl">
-                                    {(closingTab.clients?.nome || closingTab.clients?.name || closingTab.clients?.full_name || 'C').charAt(0).toUpperCase()}
+                                <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-[28px] flex items-center justify-center mx-auto mb-4 font-black text-3xl border-4 border-white shadow-xl overflow-hidden">
+                                    {(closingTab.clients?.avatar_url || closingTab.clients?.photo_url) ? (
+                                        <img src={closingTab.clients.avatar_url || closingTab.clients.photo_url} className="w-full h-full object-cover" />
+                                    ) : (
+                                        (closingTab.clients?.name || closingTab.clients?.nome || 'C').charAt(0).toUpperCase()
+                                    )}
                                 </div>
-                                <h2 className="text-xl font-black text-slate-800">{closingTab.clients?.nome || closingTab.clients?.name || closingTab.clients?.full_name || 'Cliente'}</h2>
+                                <h2 className="text-xl font-black text-slate-800">{closingTab.clients?.name || closingTab.clients?.nome || 'Cliente'}</h2>
                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Check-out de Consumo</p>
                             </div>
 
