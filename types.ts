@@ -157,7 +157,7 @@ export interface Command {
     total_amount: number;
     created_at: string;
     closed_at?: string;
-    clients?: any; // Alterado para any para suportar clients(*) sem quebra de tipo
+    clients?: { nome: string; whatsapp: string }; // Join relation
     command_items: CommandItem[];
 }
 

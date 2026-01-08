@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
     Plus, Users, Loader2, Search, ArrowRight, User as UserIcon, 
     Briefcase, RefreshCw, AlertTriangle, LayoutGrid, List,
-    ChevronRight, Settings2, MapPin
+    ChevronRight, Settings2
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { LegacyProfessional } from '../../types';
@@ -12,12 +11,12 @@ import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
 
 const EquipeView: React.FC = () => {
-    const [professionals, setProfessionals] = useState<any[]>([]);
+    const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-    const [selectedProf, setSelectedProf] = useState<any | null>(null);
+    const [selectedProf, setSelectedProf] = useState<LegacyProfessional | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
     const isMounted = useRef(true);
@@ -42,7 +41,7 @@ const EquipeView: React.FC = () => {
         try {
             const { data, error: sbError } = await supabase
                 .from('team_members')
-                .select('*, resources(name)')
+                .select('*')
                 .order('name', { ascending: true })
                 .abortSignal(abortControllerRef.current.signal);
             
@@ -77,16 +76,16 @@ const EquipeView: React.FC = () => {
                     name: 'Novo Profissional', 
                     role: 'Colaborador', 
                     active: true, 
-                    online_booking_enabled: true, 
+                    online_booking: true, 
                     commission_rate: 30.00,
-                    pix_key: null
+                    pix_key: null // Inicializado como nulo
                 }])
-                .select('*, resources(name)')
+                .select()
                 .single();
 
             if (error) throw error;
             if (isMounted.current) {
-                setSelectedProf(data);
+                setSelectedProf(data as any);
                 setToast({ message: 'Colaborador criado!', type: 'success' });
                 fetchProfessionals();
             }
@@ -215,29 +214,21 @@ const EquipeView: React.FC = () => {
                             {filteredProfessionals.map(prof => (
                                 <div key={prof.id} className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:border-orange-100 transition-all group relative overflow-hidden cursor-pointer" onClick={() => setSelectedProf(prof)}>
                                     <div className="absolute top-6 right-6">
+                                        {/* FIX: Explicitly handle the MouseEvent in the onClick handler to ensure compatibility with ToggleSwitch interface and call handleToggleActive correctly. */}
                                         <ToggleSwitch on={!!prof.active} onClick={(e: React.MouseEvent<HTMLButtonElement>) => { handleToggleActive(e, prof.id, !!prof.active); }} />
                                     </div>
                                     <div className="flex flex-col items-center text-center">
                                         <div className="relative mb-6">
                                             <div className="w-24 h-24 rounded-[28px] overflow-hidden border-4 border-white shadow-md bg-slate-100 flex items-center justify-center transition-transform group-hover:scale-105">
-                                                {prof.photo_url ? (
-                                                    <img src={prof.photo_url} className="w-full h-full object-cover" alt={prof.name} />
+                                                {(prof as any).photo_url ? (
+                                                    <img src={(prof as any).photo_url} className="w-full h-full object-cover" alt={prof.name} />
                                                 ) : (
                                                     <UserIcon size={40} className="text-slate-300" />
                                                 )}
                                             </div>
                                         </div>
                                         <h3 className="font-black text-slate-800 text-lg leading-tight truncate w-full px-2">{prof.name}</h3>
-                                        <p className="text-[10px] text-slate-400 font-bold mb-4 uppercase tracking-[0.2em]">{prof.role || 'Colaborador'}</p>
-                                        
-                                        {/* Badge da Sala */}
-                                        <div className="mb-6">
-                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-500 rounded-full text-[9px] font-black uppercase tracking-widest border border-slate-200">
-                                                <MapPin size={10} className="text-orange-500" />
-                                                {prof.resources?.name || 'Sem Sala Padrão'}
-                                            </span>
-                                        </div>
-
+                                        <p className="text-[10px] text-slate-400 font-bold mb-6 uppercase tracking-[0.2em]">{prof.role || 'Colaborador'}</p>
                                         <div className="mt-auto flex items-center gap-2 text-orange-500 font-black text-[10px] uppercase tracking-widest py-3 px-6 rounded-2xl bg-orange-50 group-hover:bg-orange-500 group-hover:text-white transition-all shadow-sm">
                                             Gerenciar Perfil <ChevronRight size={14} />
                                         </div>
@@ -253,7 +244,6 @@ const EquipeView: React.FC = () => {
                                         <tr>
                                             <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Colaborador</th>
                                             <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cargo / Função</th>
-                                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Sala Padrão</th>
                                             <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Acesso</th>
                                             <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ações</th>
                                         </tr>
@@ -267,8 +257,8 @@ const EquipeView: React.FC = () => {
                                             >
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-3">
-                                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-sm flex-shrink-0 ${prof.photo_url ? 'bg-white' : 'bg-slate-200 text-slate-500'}`}>
-                                                            {prof.photo_url ? <img src={prof.photo_url} className="w-full h-full object-cover rounded-xl" alt="" /> : prof.name.charAt(0)}
+                                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-sm flex-shrink-0 ${(prof as any).photo_url ? 'bg-white' : 'bg-slate-200 text-slate-500'}`}>
+                                                            {(prof as any).photo_url ? <img src={(prof as any).photo_url} className="w-full h-full object-cover rounded-xl" alt="" /> : prof.name.charAt(0)}
                                                         </div>
                                                         <span className="font-bold text-slate-700 group-hover:text-orange-600 transition-colors">{prof.name}</span>
                                                     </div>
@@ -276,11 +266,9 @@ const EquipeView: React.FC = () => {
                                                 <td className="px-6 py-4">
                                                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{prof.role || 'Geral'}</span>
                                                 </td>
-                                                <td className="px-6 py-4">
-                                                    <span className="text-xs font-medium text-slate-400">{prof.resources?.name || 'Não vinculada'}</span>
-                                                </td>
                                                 <td className="px-6 py-4 text-center">
                                                     <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                                                        {/* FIX: Updated onClick to handle the click event correctly according to the ToggleSwitch signature, preventing event bubbling. */}
                                                         <ToggleSwitch on={!!prof.active} onClick={(e: React.MouseEvent<HTMLButtonElement>) => { handleToggleActive(e, prof.id, !!prof.active); }} />
                                                     </div>
                                                 </td>
