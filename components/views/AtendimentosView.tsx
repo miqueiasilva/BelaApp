@@ -203,7 +203,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 const mappedAppts = (apptRes.data || []).map(row => ({
                     ...mapRowToAppointment(row, resources),
                     type: 'appointment',
-                    // Campo adicional de lembrete se existir no banco
                     reminder_sent: row.reminder_sent || false 
                 }));
 
@@ -314,7 +313,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             notas: row.notes || '', origem: row.origem || 'interno',
             client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
             professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
-            service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
+            service: { 
+                id: row.service_id, // CORREÇÃO: Pegando o ID real do serviço do banco
+                name: row.service_name, 
+                price: Number(row.value), 
+                duration: dur, 
+                color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') 
+            }
         } as LegacyAppointment;
     };
 
@@ -329,7 +334,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 });
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
-            const payload = { client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), status: app.status, notes: app.notas, origem: app.origem || 'interno' };
+            const payload = { 
+                client_id: app.client?.id,
+                client_name: app.client?.nome, 
+                resource_id: app.professional.id, 
+                professional_name: app.professional.name, 
+                service_id: app.service.id, // CORREÇÃO: Persistindo o service_id
+                service_name: app.service.name, 
+                value: app.service.price, 
+                duration: app.service.duration, 
+                date: app.start.toISOString(), 
+                status: app.status, 
+                notes: app.notas, 
+                origem: app.origem || 'interno' 
+            };
             
             if (app.id && appointments.some(a => a.id === app.id)) {
                 await supabase.from('appointments').update(payload).eq('id', app.id);
@@ -384,36 +402,43 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setActiveAppointmentDetail(null);
     };
 
+    // --- FUNÇÃO CORRIGIDA: handleConvertToCommand ---
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
         setIsLoadingData(true);
         try {
+            // 1. CRIAR COMANDA (commands)
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     client_id: appointment.client?.id,
                     status: 'open',
-                    total_amount: appointment.service.price
+                    total_amount: appointment.service.price // Pode ser 0 se for deixar o banco calcular via trigger
                 }])
                 .select()
                 .single();
 
             if (cmdError) throw cmdError;
 
+            // 2. CRIAR ITENS (command_items) - AGORA COM PAYLOAD CORRETO
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
+                    service_id: appointment.service.id, // OBRIGATÓRIO V2
+                    professional_id: appointment.professional.id, // OBRIGATÓRIO PARA COMISSÃO
                     title: appointment.service.name,
                     price: appointment.service.price,
-                    quantity: 1
+                    quantity: 1,
+                    duration: appointment.service.duration
                 }]);
 
             if (itemError) throw itemError;
 
+            // 3. ATUALIZAR AGENDAMENTO (appointments)
             const { error: apptUpdateError } = await supabase
                 .from('appointments')
-                .update({ status: 'concluido' })
+                .update({ status: 'concluido' }) // Ou 'billed' dependendo da regra de negócio
                 .eq('id', appointment.id);
 
             if (apptUpdateError) throw apptUpdateError;
@@ -426,7 +451,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }
         } catch (e: any) {
             console.error("Falha ao gerar comanda:", e);
-            setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
+            setToast({ message: "Erro ao converter agendamento em comanda. Verifique os dados do serviço.", type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -539,7 +564,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                             <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><LayoutGrid size={14} /> Equipe</button>
                             <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><PlayCircle size={14} /> Andamento</button>
-                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><CreditCard size={14} /> Pagamento</button>
+                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}><CreditCard size={14} /> Pagamento</button>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
@@ -648,10 +673,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                 style={{ 
                                                     ...getAppointmentPosition(app.start, app.end, timeSlot),
                                                     borderLeftColor: cardColor,
-                                                    backgroundColor: `${cardColor}12` // Opacidade baseada no estilo suave Salão 99
+                                                    backgroundColor: `${cardColor}12` 
                                                 }}
                                             >
-                                                {/* Indicadores de Status (Canto superior direito) */}
                                                 <div className="absolute top-1 right-1 flex items-center gap-0.5 z-10 bg-white/40 backdrop-blur-[1px] p-0.5 rounded-lg">
                                                     {reminderSent && (
                                                         <Send 
@@ -681,18 +705,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
                                                 <div className="flex flex-col h-full justify-between relative z-0 pointer-events-none">
                                                     <div className="min-w-0">
-                                                        {/* Linha 1: Horário */}
                                                         <p className="text-[10px] font-bold text-slate-500 leading-none mb-1">
                                                             {format(app.start, 'HH:mm')}
                                                         </p>
-                                                        
-                                                        {/* Linha 2: Cliente */}
                                                         <p className="text-xs font-extrabold text-slate-800 truncate leading-tight mb-0.5">
                                                             {app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Bloqueado')}
                                                         </p>
                                                     </div>
 
-                                                    {/* Linha 3: Serviço (Oculta se for muito curto) */}
                                                     {!isShort && (
                                                         <p className="text-[10px] font-medium text-slate-600 truncate leading-none mt-auto opacity-90">
                                                             {app.service.name}
