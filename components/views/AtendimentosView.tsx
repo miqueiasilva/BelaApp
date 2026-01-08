@@ -6,8 +6,7 @@ import {
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
     LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
-    CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle,
-    Send, SendHorizonal
+    CheckCircle2, Scissors, ShieldAlert, Trash2
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -38,6 +37,22 @@ const STATUS_PRIORITY: Record<string, number> = {
     'faltou': 8,
     'cancelado': 9,
     'bloqueado': 10
+};
+
+const StatusIndicator = ({ status, type }: { status: AppointmentStatus, type?: 'appointment' | 'block' }) => {
+    if (type === 'block') return <ShieldAlert size={12} className="text-rose-500" />;
+
+    switch (status) {
+        case 'agendado': return <Clock size={12} className="text-slate-400" />;
+        case 'confirmado':
+        case 'confirmado_whatsapp': return <ThumbsUp size={12} className="text-blue-500" />;
+        case 'chegou': return <MapPin size={12} className="text-purple-500" />;
+        case 'em_atendimento': return <Scissors size={12} className="text-indigo-600" />;
+        case 'concluido': return <CheckCircle2 size={12} className="text-emerald-600" />;
+        case 'faltou':
+        case 'cancelado': return <Ban size={12} className="text-rose-500" />;
+        default: return <Clock size={12} className="text-amber-500" />; 
+    }
 };
 
 const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) => {
@@ -93,14 +108,41 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     };
 };
 
-const getCardStyle = (app: any) => {
-    const baseClasses = "rounded-none shadow-sm border-l-4 p-2 cursor-pointer hover:brightness-95 active:scale-[0.98] transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/40 relative";
+const getCardStyle = (app: any, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
+    const baseClasses = "rounded-none shadow-sm border-l-[6px] p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0";
     
     if (app.type === 'block') {
-        return "absolute rounded-none border-l-4 border-rose-400 bg-[repeating-linear-gradient(45deg,#fcfcfc,#fcfcfc_10px,#f8fafc_10px,#f8fafc_20px)] text-slate-500 p-2 overflow-hidden flex flex-col cursor-not-allowed opacity-95 z-[25] pointer-events-auto shadow-sm";
+        return "absolute rounded-none border-l-4 border-rose-400 bg-[repeating-linear-gradient(45deg,#fcfcfc,#fcfcfc_10px,#f8fafc_10px,#f8fafc_20px)] text-slate-500 p-2 overflow-hidden flex flex-col cursor-not-allowed opacity-95 z-[25] pointer-events-auto";
     }
 
-    return baseClasses;
+    if (viewMode === 'pagamento') {
+        const isPaid = app.status === 'concluido'; 
+        if (isPaid) return `${baseClasses} bg-emerald-50 border-emerald-500 text-emerald-900`;
+        return `${baseClasses} bg-rose-50 border-rose-500 text-rose-900`;
+    }
+    if (viewMode === 'andamento') {
+        switch (app.status) {
+            case 'concluido': return `${baseClasses} bg-green-100 border-green-600 text-green-900`;
+            case 'cancelado': return `${baseClasses} bg-red-100 border-red-600 text-red-900 opacity-60`;
+            case 'faltou': return `${baseClasses} bg-orange-100 border-orange-600 text-orange-900`;
+            case 'confirmado':
+            case 'confirmado_whatsapp': return `${baseClasses} bg-blue-100 border-blue-600 text-blue-900`;
+            case 'em_atendimento': return `${baseClasses} bg-indigo-100 border-indigo-600 text-indigo-900 animate-pulse`;
+            default: return `${baseClasses} bg-slate-100 border-slate-400 text-slate-700`;
+        }
+    }
+    switch (app.status) {
+        case 'concluido': return `${baseClasses} bg-green-50 border-green-200 text-green-900`;
+        case 'bloqueado': return `${baseClasses} bg-slate-100 border-slate-300 text-slate-500 opacity-80`;
+        case 'confirmado': return `${baseClasses} bg-cyan-50 border-cyan-200 text-cyan-900`;
+        case 'confirmado_whatsapp': return `${baseClasses} bg-teal-50 border-teal-200 text-teal-900`;
+        case 'chegou': return `${baseClasses} bg-purple-50 border-purple-200 text-purple-900`;
+        case 'em_atendimento': return `${baseClasses} bg-indigo-50 border-indigo-200 text-indigo-900 animate-pulse`;
+        case 'faltou': return `${baseClasses} bg-orange-50 border-orange-200 text-orange-900`;
+        case 'cancelado': return `${baseClasses} bg-rose-50 border-rose-200 text-rose-800 opacity-60`;
+        case 'em_espera': return `${baseClasses} bg-stone-50 border-stone-200 text-stone-900`;
+        default: return `${baseClasses} bg-blue-50 border-blue-200 text-blue-900`;
+    }
 };
 
 const TimelineIndicator = ({ timeSlot }: { timeSlot: number }) => {
@@ -182,7 +224,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
-                    .from('vw_agenda_completa') 
+                    .from('appointments')
                     .select('*')
                     .gte('date', rangeStart.toISOString())
                     .lte('date', rangeEnd.toISOString())
@@ -201,7 +243,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (isMounted.current && requestId === lastRequestId.current) {
                 const mappedAppts = (apptRes.data || []).map(row => ({
-                    ...mapRowToAppointment(row),
+                    ...mapRowToAppointment(row, resources),
                     type: 'appointment'
                 }));
 
@@ -218,10 +260,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 setAppointments([...mappedAppts, ...mappedBlocks]);
             }
         } catch (e: any) { 
-            if (e.name !== 'AbortError') {
-                console.error("Fetch Agenda Error:", e);
-                setToast({ message: "Erro ao sincronizar agenda.", type: 'error' });
-            }
+            if (e.name !== 'AbortError') console.error("Fetch Agenda Error:", e); 
         } finally { 
             if (isMounted.current) setIsLoadingData(false); 
         }
@@ -270,94 +309,81 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         };
     }, []);
 
-    const mapRowToAppointment = (row: any): LegacyAppointment => {
+    const handleReorderProfessional = useCallback(async (e: React.MouseEvent, currentIndex: number, direction: 'left' | 'right') => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
+        if (targetIndex < 0 || targetIndex >= resources.length) return;
+
+        const newResources = [...resources];
+        const temp = newResources[currentIndex];
+        newResources[currentIndex] = newResources[targetIndex];
+        newResources[targetIndex] = temp;
+
+        setResources(newResources);
+
+        try {
+            const updates = [
+                { id: newResources[currentIndex].id, order_index: currentIndex },
+                { id: newResources[targetIndex].id, order_index: targetIndex }
+            ];
+
+            for (const up of updates) {
+                await supabase.from('team_members').update({ order_index: up.order_index }).eq('id', up.id);
+            }
+        } catch (e) {
+            console.error("Falha ao salvar nova ordem:", e);
+            fetchResources(); 
+        }
+    }, [resources]);
+
+    const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = row.duration || 30;
+        
+        let prof = professionalsList.find(p => String(p.id) === String(row.resource_id));
+        if (!prof && row.professional_name) {
+            prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
+        }
 
         return {
-            id: row.id, 
-            start, 
-            end: new Date(start.getTime() + dur * 60000), 
-            status: row.status as AppointmentStatus,
-            notas: row.notes || '', 
-            origem: row.origin || 'agenda',
-            client: { 
-                id: row.client_id, 
-                nome: row.client_name || 'Cliente', 
-                consent: true 
-            },
-            professional: { 
-                id: row.professional_id, 
-                name: row.professional_name || 'Profissional', 
-                avatarUrl: '' 
-            },
-            service: { 
-                id: row.service_id, 
-                name: row.service_name || 'Serviço', 
-                price: Number(row.value || 0), 
-                duration: dur, 
-                color: row.service_color || '#3b82f6' 
-            }
+            id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
+            notas: row.notes || '', origem: row.origem || 'interno',
+            client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
+            professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
+            service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : '#3b82f6' }
         } as LegacyAppointment;
     };
 
-    // --- REESTRUTURAÇÃO SÊNIOR: Salvamento com Payload Sanitizado (Evita Erro 400) ---
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
             if (!force) {
-                const { data: existingOnDay } = await supabase
-                    .from('appointments')
-                    .select('id, date, duration')
-                    .eq('professional_id', app.professional.id)
-                    .neq('status', 'cancelado')
-                    .gte('date', startOfDay(app.start).toISOString())
-                    .lte('date', endOfDay(app.start).toISOString());
-                
+                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('resource_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
                     return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
                 });
-                if (conflict) { 
-                    setPendingConflict({ newApp: app, conflictWith: conflict }); 
-                    setIsLoadingData(false); 
-                    return; 
-                }
+                if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
-
-            // OBRIGATÓRIO: Conversão explícita para tipos primitivos e nomes de colunas corretos
-            const payload = {
-                date: new Date(app.start).toISOString(),
-                status: 'scheduled', // Status padrão inicial solicitado pelo backend
-                notes: app.notas || '',
-                origin: 'agenda',
-                client_id: Number(app.client?.id),       // BigInt
-                service_id: Number(app.service.id),     // BigInt
-                professional_id: String(app.professional.id), // UUID
-                value: Number(app.service.price),
-                duration: Number(app.service.duration)
-            };
+            const payload = { client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), status: app.status, notes: app.notas, origem: app.origem || 'interno' };
             
-            let result;
-            if (app.id && typeof app.id === 'number' && app.id < 2000000000) { // IDs reais do banco são serial/bigint controlados
-                result = await supabase.from('appointments').update([payload]).eq('id', app.id);
+            if (app.id && appointments.some(a => a.id === app.id)) {
+                await supabase.from('appointments').update(payload).eq('id', app.id);
             } else {
-                result = await supabase.from('appointments').insert([payload]);
-            }
-
-            if (result.error) {
-                console.error("Erro detalhado Supabase:", result.error.message, result.error.details);
-                throw result.error;
+                await supabase.from('appointments').insert([payload]);
             }
 
             setToast({ message: 'Agendamento salvo!', type: 'success' });
-            setModalState(null); 
-            setPendingConflict(null);
+            setModalState(null); setPendingConflict(null);
             fetchAppointments();
-        } catch (e: any) { 
-            console.error("Save Error:", e);
-            setToast({ message: `Erro 400: Verifique os campos obrigatórios.`, type: 'error' }); 
-        } finally { setIsLoadingData(false); }
+        } catch (e) { 
+            setToast({ message: 'Erro ao salvar.', type: 'error' }); 
+            fetchAppointments(); 
+        } finally { setIsLoadingData(true); }
     };
 
     const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
@@ -406,7 +432,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 .insert([{
                     client_id: appointment.client?.id,
                     status: 'open',
-                    total_amount: appointment.service.price 
+                    total_amount: appointment.service.price
                 }])
                 .select()
                 .single();
@@ -418,19 +444,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
-                    service_id: appointment.service.id, 
-                    professional_id: appointment.professional.id, 
                     title: appointment.service.name,
                     price: appointment.service.price,
-                    quantity: 1,
-                    duration: appointment.service.duration
+                    quantity: 1
                 }]);
 
             if (itemError) throw itemError;
 
             const { error: apptUpdateError } = await supabase
                 .from('appointments')
-                .update({ status: 'concluido' }) 
+                .update({ status: 'concluido' })
                 .eq('id', appointment.id);
 
             if (apptUpdateError) throw apptUpdateError;
@@ -438,12 +461,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             setToast({ message: `Comanda gerada com sucesso! Redirecionando... 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
             
+            // REDIRECIONAMENTO AUTOMÁTICO
             if (onNavigateToCommand) {
                 onNavigateToCommand(command.id);
             }
         } catch (e: any) {
             console.error("Falha ao gerar comanda:", e);
-            setToast({ message: "Erro ao converter agendamento em comanda. Verifique os dados do serviço.", type: 'error' });
+            setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -511,17 +535,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         else if (periodType === 'Mês') setCurrentDate(prev => addMonths(prev, direction));
     };
 
-    const handleReorderProfessional = (e: React.MouseEvent, index: number, direction: 'left' | 'right') => {
-        e.stopPropagation();
-        const targetIndex = direction === 'left' ? index - 1 : index + 1;
-        if (targetIndex < 0 || targetIndex >= resources.length) return;
-        const newResources = [...resources];
-        const temp = newResources[index];
-        newResources[index] = newResources[targetIndex];
-        newResources[targetIndex] = temp;
-        setResources(newResources);
-    };
-
     const columns = useMemo(() => {
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -567,7 +580,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                             <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><LayoutGrid size={14} /> Equipe</button>
                             <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><PlayCircle size={14} /> Andamento</button>
-                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}><CreditCard size={14} /> Pagamento</button>
+                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><CreditCard size={14} /> Pagamento</button>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
@@ -655,77 +668,54 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         }
                                         return String(app.professional.id) === String(col.id); 
                                     })
-                                    .map(app => {
-                                        const durationMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
-                                        const isShort = durationMinutes <= 25;
-                                        const cardColor = app.type === 'block' ? '#f87171' : (app.service.color || '#3b82f6');
-                                        const isConfirmed = ['confirmado', 'confirmado_whatsapp'].includes(app.status);
+                                    .map(app => (
+                                        <div 
+                                            key={app.id} 
+                                            ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} 
+                                            onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                if (app.type === 'appointment') {
+                                                    setActiveAppointmentDetail(app); 
+                                                }
+                                            }} 
+                                            title={`${format(app.start, 'HH:mm')} - ${app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Cliente')} (${app.service.name})`}
+                                            className={`${getCardStyle(app, viewMode)} group/block`} 
+                                            style={{ 
+                                                ...getAppointmentPosition(app.start, app.end, timeSlot),
+                                                borderLeftColor: app.type === 'block' ? '#f87171' : app.service.color
+                                            }}
+                                        >
+                                            {app.type === 'block' && (
+                                                <button 
+                                                    onClick={(e) => handleDeleteBlock(e, app.id)}
+                                                    className="absolute top-1 right-1 p-1.5 bg-rose-500 text-white rounded-lg opacity-0 group-hover/block:opacity-100 transition-all shadow-md z-30"
+                                                    title="Remover Bloqueio"
+                                                >
+                                                    <Trash2 size={10} />
+                                                </button>
+                                            )}
 
-                                        return (
-                                            <div 
-                                                key={app.id} 
-                                                ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} 
-                                                onClick={(e) => { 
-                                                    e.stopPropagation(); 
-                                                    if (app.type === 'appointment') {
-                                                        setActiveAppointmentDetail(app); 
-                                                    }
-                                                }} 
-                                                className={getCardStyle(app)} 
-                                                style={{ 
-                                                    ...getAppointmentPosition(app.start, app.end, timeSlot),
-                                                    borderLeftColor: cardColor,
-                                                    backgroundColor: `${cardColor}12` 
-                                                }}
-                                            >
-                                                <div className="absolute top-1 right-1 flex items-center gap-0.5 z-10 bg-white/40 backdrop-blur-[1px] p-0.5 rounded-lg">
-                                                    {isConfirmed && (
-                                                        <CheckCircle2 
-                                                            size={11} 
-                                                            className="text-emerald-500" 
-                                                            strokeWidth={3} 
-                                                            title="Cliente Confirmou"
-                                                        />
-                                                    )}
-                                                    {app.status === 'concluido' && (
-                                                        <DollarSign 
-                                                            size={10} 
-                                                            className="text-emerald-700" 
-                                                            strokeWidth={3} 
-                                                            title="Pago"
-                                                        />
-                                                    )}
-                                                </div>
-
-                                                <div className="flex flex-col h-full justify-between relative z-0 pointer-events-none">
-                                                    <div className="min-w-0">
-                                                        <p className="text-[10px] font-bold text-slate-500 leading-none mb-1">
-                                                            {format(app.start, 'HH:mm')}
-                                                        </p>
-                                                        <p className="text-xs font-extrabold text-slate-800 truncate leading-tight mb-0.5">
-                                                            {app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Bloqueado')}
-                                                        </p>
-                                                    </div>
-
-                                                    {!isShort && (
-                                                        <p className="text-[10px] font-medium text-slate-600 truncate leading-none mt-auto opacity-90">
-                                                            {app.service.name}
-                                                        </p>
-                                                    )}
-                                                </div>
-
-                                                {app.type === 'block' && (
-                                                    <button 
-                                                        onClick={(e) => handleDeleteBlock(e, app.id)}
-                                                        className="absolute bottom-1 right-1 p-1 bg-rose-500 text-white rounded opacity-0 group-hover/card:opacity-100 transition-all shadow-md z-30 pointer-events-auto"
-                                                        title="Remover Bloqueio"
-                                                    >
-                                                        <Trash2 size={10} />
-                                                    </button>
+                                            <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100">
+                                                {app.type === 'block' ? (
+                                                    <ShieldAlert size={10} className="text-rose-400" />
+                                                ) : app.origem === 'link' ? (
+                                                    <Globe size={10} className="text-orange-500" />
+                                                ) : (
+                                                    <User size={10} className="text-slate-400" />
                                                 )}
                                             </div>
-                                        );
-                                    })}
+
+                                            <div className="flex items-center gap-1 overflow-hidden">
+                                                <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
+                                                <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                                                    <StatusIndicator status={app.status} type={app.type} />
+                                                    <p className={`font-bold text-[11px] truncate leading-tight flex-1 ${app.type === 'block' ? 'text-slate-500 italic' : 'text-slate-900'}`}>
+                                                        {app.type === 'block' ? app.service.name : (app.client?.nome || 'Bloqueado')}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
                             </div>
                         ))}
                         <TimelineIndicator timeSlot={timeSlot} />

@@ -1,10 +1,12 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
     Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Coffee,
     Phone, Mail, Smartphone, CreditCard, LayoutDashboard, Calendar,
-    Settings2, Hash, Armchair, Percent, Info
+    Settings2, Hash
 } from 'lucide-react';
+// FIX: Added 'Service' type import to resolve missing properties on 'allServices' state.
 import { LegacyProfessional, LegacyService, Service } from '../../types';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -52,8 +54,8 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
 const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: initialProf, onBack, onSave }) => {
     // --- State ---
     const [prof, setProf] = useState<any>(null);
+    // FIX: Updated allServices state type to 'Service[]' from 'LegacyService[]' because the database columns are 'nome' and 'duracao_min'.
     const [allServices, setAllServices] = useState<Service[]>([]);
-    const [allRooms, setAllRooms] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [activeTab, setActiveTab] = useState<'perfil' | 'servicos' | 'horarios' | 'comissoes' | 'permissoes'>('perfil');
@@ -63,13 +65,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     // --- Initialization ---
     useEffect(() => {
         const init = async () => {
-            // Fetch Services
             const { data: svcs } = await supabase.from('services').select('*').order('nome');
             if (svcs) setAllServices(svcs as any);
-
-            // Fetch Rooms (Resources)
-            const { data: rooms } = await supabase.from('resources').select('id, name').eq('active', true).order('name');
-            if (rooms) setAllRooms(rooms);
 
             const normalized = {
                 ...initialProf,
@@ -81,15 +78,13 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 birth_date: (initialProf as any).birth_date || '',
                 order_index: (initialProf as any).order_index ?? 0,
                 commission_rate: (initialProf as any).commission_rate ?? 30,
-                discount_fees: (initialProf as any).discount_fees ?? false, // Novo campo financeiro
                 permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
                 services_enabled: (initialProf as any).services_enabled || [],
                 work_schedule: (initialProf as any).work_schedule || {},
                 photo_url: (initialProf as any).photo_url || initialProf.avatarUrl || null,
                 online_booking_enabled: (initialProf as any).online_booking_enabled ?? (initialProf as any).online_booking ?? true,
                 show_in_calendar: (initialProf as any).show_in_calendar ?? true, 
-                active: (initialProf as any).active ?? true,
-                resource_id: (initialProf as any).resource_id || ''
+                active: (initialProf as any).active ?? true
             };
             setProf(normalized);
         };
@@ -153,14 +148,12 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
                 order_index: parseInt(String(prof.order_index)) || 0,
                 commission_rate: isNaN(parseFloat(String(prof.commission_rate))) ? 0 : parseFloat(String(prof.commission_rate)),
-                discount_fees: !!prof.discount_fees, // Persistindo nova regra de taxas
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
                 work_schedule: prof.work_schedule,
                 photo_url: prof.photo_url,
                 online_booking_enabled: !!prof.online_booking_enabled, 
-                show_in_calendar: !!prof.show_in_calendar,
-                resource_id: prof.resource_id ? prof.resource_id : null
+                show_in_calendar: !!prof.show_in_calendar 
             };
 
             const { error } = await supabase
@@ -318,31 +311,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <EditField label="Nome Completo" name="name" value={prof.name} onChange={handleInputChange} icon={User} span="md:col-span-2" />
                                         <EditField label="Cargo / Especialidade" name="role" value={prof.role} onChange={handleInputChange} />
-                                        
-                                        {/* NOVO CAMPO: Sala de Atendimento */}
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-wider">Sala de Atendimento</label>
-                                            <div className="relative group">
-                                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors">
-                                                    <Armchair size={16} />
-                                                </div>
-                                                <select 
-                                                    name="resource_id"
-                                                    value={prof.resource_id}
-                                                    onChange={handleInputChange}
-                                                    className="w-full bg-white border border-slate-200 rounded-xl py-2.5 pl-11 pr-10 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all shadow-sm appearance-none"
-                                                >
-                                                    <option value="">Selecione uma sala...</option>
-                                                    {allRooms.map(room => (
-                                                        <option key={room.id} value={room.id}>{room.name}</option>
-                                                    ))}
-                                                </select>
-                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                                                    <ChevronDown size={16} />
-                                                </div>
-                                            </div>
-                                        </div>
-
                                         <EditField label="Ordem na Agenda (1, 2, 3...)" name="order_index" type="number" min="0" value={prof.order_index} onChange={handleInputChange} icon={Hash} />
                                         <EditField label="Data de Nascimento" name="birth_date" type="date" value={prof.birth_date} onChange={handleInputChange} />
                                         <EditField label="WhatsApp" name="phone" value={prof.phone} onChange={handleInputChange} icon={Phone} placeholder="(00) 00000-0000" />
@@ -408,39 +376,13 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
                     {activeTab === 'comissoes' && (
                         <Card title="Remuneração" className="animate-in fade-in max-w-2xl mx-auto">
-                            <div className="p-8 bg-gradient-to-br from-orange-50 to-orange-100 rounded-[32px] border border-orange-200 text-center space-y-8">
-                                <div className="space-y-4">
-                                    <label className="block text-[10px] font-black text-orange-800 uppercase tracking-widest">Taxa de Comissão Padrão (%)</label>
-                                    <div className="relative inline-block">
-                                        <input type="number" step="0.01" value={prof.commission_rate} onChange={handleInputChange} name="commission_rate" className="w-40 border-2 border-orange-300 rounded-3xl px-6 py-5 text-5xl font-black text-orange-600 outline-none focus:border-orange-500 bg-white shadow-inner text-center" />
-                                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-2xl font-black text-orange-300">%</span>
-                                    </div>
+                            <div className="p-8 bg-gradient-to-br from-orange-50 to-orange-100 rounded-[32px] border border-orange-200 text-center">
+                                <label className="block text-[10px] font-black text-orange-800 uppercase tracking-widest mb-4">Taxa de Comissão Padrão (%)</label>
+                                <div className="relative inline-block">
+                                    <input type="number" step="0.01" value={prof.commission_rate} onChange={handleInputChange} name="commission_rate" className="w-40 border-2 border-orange-300 rounded-3xl px-6 py-5 text-5xl font-black text-orange-600 outline-none focus:border-orange-500 bg-white shadow-inner text-center" />
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-2xl font-black text-orange-300">%</span>
                                 </div>
-
-                                <div className="pt-8 border-t border-orange-200">
-                                    <div className="flex items-center justify-between p-5 bg-white border border-orange-200 rounded-3xl transition-all hover:shadow-md">
-                                        <div className="flex items-center gap-4 text-left">
-                                            <div className="p-3 bg-orange-50 text-orange-500 rounded-2xl">
-                                                <Percent size={20} />
-                                            </div>
-                                            <div>
-                                                <p className="font-black text-slate-800 text-sm">Descontar taxas da comissão?</p>
-                                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Cálculo sobre o valor líquido (MDR)</p>
-                                            </div>
-                                        </div>
-                                        <ToggleSwitch 
-                                            on={!!prof.discount_fees} 
-                                            onClick={() => setProf({...prof, discount_fees: !prof.discount_fees})} 
-                                        />
-                                    </div>
-                                    <div className="mt-3 flex gap-2 px-2 text-left">
-                                        {/* FIX: Info icon was missing from the lucide-react imports */}
-                                        <Info size={14} className="text-orange-400 flex-shrink-0 mt-0.5" />
-                                        <p className="text-[10px] text-orange-700 font-medium leading-relaxed">
-                                            Se ativado, a comissão será calculada sobre o valor líquido recebido (após as taxas de cartão configuradas). Se desativado, calcula sobre o valor bruto total do serviço.
-                                        </p>
-                                    </div>
-                                </div>
+                                <p className="text-xs text-orange-700 font-medium mt-6">Este valor será a base para o cálculo de todos os serviços realizados por este profissional no módulo de Remunerações.</p>
                             </div>
                         </Card>
                     )}
@@ -467,11 +409,5 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         </div>
     );
 };
-
-const ChevronDown = ({ size }: { size: number }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-        <path d="m6 9 6 6 6-6"/>
-    </svg>
-);
 
 export default ProfessionalDetail;
