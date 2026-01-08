@@ -31,7 +31,6 @@
         scrollbar-width: none;
       }
     </style>
-    <!-- v1.0.1 Fix: Importmap removed to prevent React version conflict -->
 <script type="importmap">
 {
   "imports": {
@@ -55,6 +54,7 @@
 
   <body class="bg-slate-50 notranslate">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    <!-- FIX: Path changed to ./ to avoid CORS cross-origin requests -->
+    <script type="module" src="./index.tsx"></script>
   </body>
 </html>
