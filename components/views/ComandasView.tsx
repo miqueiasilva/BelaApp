@@ -36,7 +36,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     const [activeTabId, setActiveTabId] = useState<string | null>(null);
     const [pendingItem, setPendingItem] = useState<any>(null);
     
-    // Close Tab Modal State (Fallback para Checkout Modal se necessário)
+    // Close Tab Modal State
     const [closingTab, setClosingTab] = useState<any | null>(null);
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
     const [isFinishing, setIsFinishing] = useState(false);
@@ -48,7 +48,6 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     const fetchCommands = async () => {
         setLoading(true);
         try {
-            // CORREÇÃO: Query incluindo o join com team_members para os itens já salvos
             let query = supabase
                 .from('commands')
                 .select('*, clients(id, name, nome, avatar_url, photo_url), command_items(*, team_members(id, name))');
@@ -91,6 +90,8 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         fetchData();
     }, [currentTab]);
 
+    // --- Handlers ---
+
     const handleDeleteCommand = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
         if (!window.confirm("Deseja realmente excluir esta comanda?")) return;
@@ -105,19 +106,34 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         }
     };
 
+    // CORREÇÃO 1: Validação de client_id na criação da comanda
     const handleCreateCommand = async (client: Client) => {
+        if (!client.id) {
+            setToast({ message: "Erro: Cliente inválido ou sem ID registrado.", type: 'error' });
+            return;
+        }
+
         setIsClientSearchOpen(false);
         try {
             const { data, error } = await supabase
                 .from('commands')
-                .insert([{ client_id: client.id, status: 'open' }])
+                .insert([{ 
+                    client_id: client.id, 
+                    status: 'open',
+                    total_amount: 0 
+                }])
                 .select('*, clients(*), command_items(*)')
                 .single();
+
             if (error) throw error;
-            if (currentTab !== 'paid') setTabs(prev => [data, ...prev]);
-            setToast({ message: `Comanda aberta!`, type: 'success' });
+            
+            if (currentTab !== 'paid') {
+                setTabs(prev => [data, ...prev]);
+            }
+            
+            setToast({ message: `Comanda aberta para ${client.nome}!`, type: 'success' });
         } catch (e: any) {
-            setToast({ message: "Erro ao abrir comanda.", type: 'error' });
+            setToast({ message: "Erro ao abrir comanda no banco.", type: 'error' });
         }
     };
 
@@ -125,25 +141,26 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         if (item.type === 'produto') {
             handleAddItemToDB(item, null);
         } else {
-            // É serviço: OBRIGATÓRIO vincular profissional
             setPendingItem(item);
             setIsSelectionOpen(false);
             setIsProfSelectionOpen(true);
         }
     };
 
+    // CORREÇÃO 2: Garantir professional_id no payload
     const handleAddItemToDB = async (item: any, professionalId: string | null) => {
         if (!activeTabId) return;
 
-        // CORREÇÃO: Se não há profissional selecionado e é serviço, tenta usar o logado se ele for da equipe
+        // Lógica de Fallback Inteligente
         let finalProfId = professionalId;
-        if (!finalProfId && item.type === 'servico') {
-             // Fallback preventivo: se o usuário não escolheu, pegamos o da equipe (se o logado for equipe)
-             const profLogado = team.find(t => t.id === user?.id);
-             finalProfId = profLogado ? profLogado.id : null;
-             
-             if (!finalProfId) {
-                 setToast({ message: "Por favor, selecione um profissional para o serviço.", type: 'error' });
+        
+        if (item.type === 'servico' && !finalProfId) {
+             // Tenta usar o usuário logado se ele for um profissional da equipe
+             const loggedInAsMember = team.find(t => t.id === user?.id);
+             if (loggedInAsMember) {
+                 finalProfId = loggedInAsMember.id;
+             } else {
+                 setToast({ message: "Erro: Selecione um profissional para este serviço.", type: 'error' });
                  setIsProfSelectionOpen(true);
                  return;
              }
@@ -157,7 +174,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                 quantity: 1,
                 product_id: item.type === 'produto' ? item.id : null,
                 service_id: item.type === 'servico' ? item.id : null,
-                professional_id: finalProfId
+                professional_id: finalProfId // OBRIGATÓRIO PARA SERVIÇOS
             };
 
             const { data, error } = await supabase
@@ -182,9 +199,9 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
             setIsSelectionOpen(false);
             setIsProfSelectionOpen(false);
             setPendingItem(null);
-            setToast({ message: "Item lançado!", type: 'success' });
+            setToast({ message: "Item lançado com sucesso!", type: 'success' });
         } catch (e) {
-            setToast({ message: "Erro ao lançar item.", type: 'error' });
+            setToast({ message: "Erro ao gravar item na comanda.", type: 'error' });
         }
     };
 
@@ -207,7 +224,6 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     };
 
     const handleOpenCloseTab = (id: string) => {
-        // Redireciona para o detalhe para o checkout profissional
         const command = tabs.find(t => t.id === id);
         if (command) window.location.hash = `#/comanda/${command.id}`;
     };
