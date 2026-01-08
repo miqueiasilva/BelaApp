@@ -1,6 +1,5 @@
 
 import React, { useState } from 'react';
-// FIX: Added missing imports for types and supabase client.
 import { LegacyAppointment, FinancialTransaction } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import AdminDashboard from '../admin/AdminDashboard';
@@ -13,20 +12,18 @@ interface AtendimentosViewProps {
 }
 
 const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, onNavigateToCommand }) => {
-    // FIX: Defined missing state variables used in handleConvertToCommand to resolve "Cannot find name" errors.
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<any>(null);
 
-    // FIX: Wrapped the previously loose function handleConvertToCommand in a functional component 'AtendimentosView' to resolve "not a module" and scope errors.
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
         setIsLoadingData(true);
         try {
-            // 1. Criar a Comanda Pai vinculada ao Cliente
+            // 1. Criar a Comanda vinculada ao Cliente e Profissional da Agenda
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
-                    client_id: appointment.client?.id, // ID OBRIGATÓRIO PARA IDENTIFICAR O CLIENTE
+                    client_id: appointment.client?.id,
+                    professional_id: appointment.professional.id, // Vínculo principal para a comanda
                     status: 'open',
                     total_amount: Number(appointment.service.price)
                 }])
@@ -35,7 +32,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (cmdError) throw cmdError;
 
-            // 2. Criar o Item da Comanda vinculado ao Profissional (Fundamental para Comissões)
+            // 2. Lançar o item da agenda na comanda com o profissional executor
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
@@ -44,31 +41,26 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     title: appointment.service.name,
                     price: Number(appointment.service.price),
                     quantity: 1,
-                    // CORREÇÃO CRÍTICA: Gravando o profissional que realizou o serviço na comanda
-                    professional_id: appointment.professional.id, 
+                    professional_id: appointment.professional.id, // Fundamental para comissão por item
                     service_id: appointment.service.id !== 0 ? appointment.service.id : null
                 }]);
 
             if (itemError) throw itemError;
 
-            // 3. Atualizar o status na Agenda para evitar duplicidade de cobrança
-            const { error: apptUpdateError } = await supabase
+            // 3. Marcar agendamento como concluído (evita duplo faturamento)
+            await supabase
                 .from('appointments')
                 .update({ status: 'concluido' })
                 .eq('id', appointment.id);
 
-            if (apptUpdateError) throw apptUpdateError;
-
-            setToast({ message: `Comanda gerada com sucesso! Redirecionando... 💳`, type: 'success' });
-            setActiveAppointmentDetail(null);
+            setToast({ message: "Comanda gerada! Redirecionando para o checkout...", type: 'success' });
             
-            // 4. Navegação para o Checkout com os dados persistidos
             if (onNavigateToCommand) {
                 onNavigateToCommand(command.id);
             }
         } catch (e: any) {
-            console.error("Erro crítico na geração de comanda:", e);
-            setToast({ message: `Falha na conversão: ${e.message || "Verifique os IDs de cliente/serviço"}`, type: 'error' });
+            console.error("[BRIDGE_ERROR]", e);
+            setToast({ message: "Falha ao criar comanda: IDs de cliente/profissional inválidos.", type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -78,10 +70,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         <div className="h-full flex flex-col relative">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             {isLoadingData && (
-                <div className="absolute inset-0 bg-white/50 z-50 flex items-center justify-center">
-                    <Loader2 className="animate-spin text-orange-500" size={32} />
+                <div className="absolute inset-0 bg-white/60 z-50 flex items-center justify-center backdrop-blur-sm">
+                    <div className="bg-white p-8 rounded-[32px] shadow-2xl flex flex-col items-center gap-4 border border-slate-100">
+                        <Loader2 className="animate-spin text-orange-500" size={48} />
+                        <p className="text-xs font-black uppercase tracking-widest text-slate-500">Preparando Comanda...</p>
+                    </div>
                 </div>
             )}
+            {/* O AdminDashboard deve receber o callback de conversão via props se houver botões internos */}
             <AdminDashboard />
         </div>
     );
