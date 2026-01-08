@@ -6,7 +6,8 @@ import {
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
     LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
-    CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle
+    CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle,
+    Send, SendHorizonal
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -37,22 +38,6 @@ const STATUS_PRIORITY: Record<string, number> = {
     'faltou': 8,
     'cancelado': 9,
     'bloqueado': 10
-};
-
-const StatusIndicator = ({ status, type }: { status: AppointmentStatus, type?: 'appointment' | 'block' }) => {
-    if (type === 'block') return <ShieldAlert size={10} className="text-rose-500" />;
-
-    switch (status) {
-        case 'agendado': return <Clock size={10} className="text-slate-400" />;
-        case 'confirmado':
-        case 'confirmado_whatsapp': return <ThumbsUp size={10} className="text-blue-500" />;
-        case 'chegou': return <MapPin size={10} className="text-purple-500" />;
-        case 'em_atendimento': return <Scissors size={10} className="text-indigo-600" />;
-        case 'concluido': return <CheckCircle2 size={10} className="text-emerald-600" />;
-        case 'faltou':
-        case 'cancelado': return <Ban size={10} className="text-rose-500" />;
-        default: return <Clock size={10} className="text-amber-500" />; 
-    }
 };
 
 const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) => {
@@ -108,8 +93,8 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     };
 };
 
-const getCardStyle = (app: any, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
-    const baseClasses = "rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50";
+const getCardStyle = (app: any) => {
+    const baseClasses = "rounded-none shadow-sm border-l-4 p-2 cursor-pointer hover:brightness-95 active:scale-[0.98] transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/40 relative";
     
     if (app.type === 'block') {
         return "absolute rounded-none border-l-4 border-rose-400 bg-[repeating-linear-gradient(45deg,#fcfcfc,#fcfcfc_10px,#f8fafc_10px,#f8fafc_20px)] text-slate-500 p-2 overflow-hidden flex flex-col cursor-not-allowed opacity-95 z-[25] pointer-events-auto shadow-sm";
@@ -217,7 +202,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (isMounted.current && requestId === lastRequestId.current) {
                 const mappedAppts = (apptRes.data || []).map(row => ({
                     ...mapRowToAppointment(row, resources),
-                    type: 'appointment'
+                    type: 'appointment',
+                    // Campo adicional de lembrete se existir no banco
+                    reminder_sent: row.reminder_sent || false 
                 }));
 
                 const mappedBlocks = (blocksRes.data || []).map(row => ({
@@ -434,7 +421,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             setToast({ message: `Comanda gerada com sucesso! Redirecionando... 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
             
-            // REDIRECIONAMENTO AUTOMÁTICO
             if (onNavigateToCommand) {
                 onNavigateToCommand(command.id);
             }
@@ -645,7 +631,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         const durationMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
                                         const isShort = durationMinutes <= 25;
                                         const cardColor = app.type === 'block' ? '#f87171' : (app.service.color || '#3b82f6');
-                                        
+                                        const isConfirmed = ['confirmado', 'confirmado_whatsapp'].includes(app.status);
+                                        const reminderSent = app.reminder_sent || false;
+
                                         return (
                                             <div 
                                                 key={app.id} 
@@ -656,36 +644,57 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                         setActiveAppointmentDetail(app); 
                                                     }
                                                 }} 
-                                                className={getCardStyle(app, viewMode)} 
+                                                className={getCardStyle(app)} 
                                                 style={{ 
                                                     ...getAppointmentPosition(app.start, app.end, timeSlot),
                                                     borderLeftColor: cardColor,
-                                                    backgroundColor: `${cardColor}15`
+                                                    backgroundColor: `${cardColor}12` // Opacidade baseada no estilo suave Salão 99
                                                 }}
                                             >
-                                                {/* Badges de Status (Canto superior direito) */}
-                                                <div className="absolute top-1 right-1 flex gap-0.5 z-10">
-                                                    {app.status === 'concluido' && <DollarSign size={10} className="text-emerald-600 font-bold" strokeWidth={3} />}
-                                                    {['confirmado', 'confirmado_whatsapp'].includes(app.status) && <CheckCircle size={10} className="text-blue-600" strokeWidth={3} />}
-                                                    {app.type === 'block' && <ShieldAlert size={10} className="text-rose-400" />}
+                                                {/* Indicadores de Status (Canto superior direito) */}
+                                                <div className="absolute top-1 right-1 flex items-center gap-0.5 z-10 bg-white/40 backdrop-blur-[1px] p-0.5 rounded-lg">
+                                                    {reminderSent && (
+                                                        <Send 
+                                                            size={10} 
+                                                            className="text-blue-700" 
+                                                            strokeWidth={3} 
+                                                            title="Lembrete Enviado"
+                                                        />
+                                                    )}
+                                                    {isConfirmed && (
+                                                        <CheckCircle2 
+                                                            size={11} 
+                                                            className="text-emerald-500" 
+                                                            strokeWidth={3} 
+                                                            title="Cliente Confirmou"
+                                                        />
+                                                    )}
+                                                    {app.status === 'concluido' && (
+                                                        <DollarSign 
+                                                            size={10} 
+                                                            className="text-emerald-700" 
+                                                            strokeWidth={3} 
+                                                            title="Pago"
+                                                        />
+                                                    )}
                                                 </div>
 
                                                 <div className="flex flex-col h-full justify-between relative z-0 pointer-events-none">
-                                                    <div>
+                                                    <div className="min-w-0">
                                                         {/* Linha 1: Horário */}
-                                                        <p className="text-[10px] font-medium text-slate-500 leading-none mb-0.5">
-                                                            {format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}
+                                                        <p className="text-[10px] font-bold text-slate-500 leading-none mb-1">
+                                                            {format(app.start, 'HH:mm')}
                                                         </p>
                                                         
                                                         {/* Linha 2: Cliente */}
-                                                        <p className="text-xs font-bold text-slate-800 truncate leading-tight">
+                                                        <p className="text-xs font-extrabold text-slate-800 truncate leading-tight mb-0.5">
                                                             {app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Bloqueado')}
                                                         </p>
                                                     </div>
 
                                                     {/* Linha 3: Serviço (Oculta se for muito curto) */}
                                                     {!isShort && (
-                                                        <p className="text-[10px] text-slate-500 truncate leading-none mt-auto opacity-80">
+                                                        <p className="text-[10px] font-medium text-slate-600 truncate leading-none mt-auto opacity-90">
                                                             {app.service.name}
                                                         </p>
                                                     )}
