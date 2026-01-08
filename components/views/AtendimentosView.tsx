@@ -31,7 +31,6 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
             const start = startOfDay(date).toISOString();
             const end = endOfDay(date).toISOString();
 
-            // Sincronizado com o select padrão solicitado + Joins para a UI
             const { data, error } = await supabase
                 .from('appointments')
                 .select(`
@@ -46,13 +45,7 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
                 .order('date');
 
             if (error) {
-                console.error("LOAD appointments error:", {
-                    message: error?.message,
-                    details: error?.details,
-                    hint: error?.hint,
-                    code: error?.code,
-                    full: error
-                });
+                console.error("LOAD appointments error:", error.message);
                 throw error;
             }
 
@@ -96,37 +89,35 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
 
     const handleSaveAppointment = async (app: any) => {
         setIsLoadingData(true);
+        
+        // FIX: Removemos Number() e String() pois se os IDs forem UUIDs (Strings), Number() gera NaN e quebra o banco.
+        // Adicionamos duration e value para manter consistência com o Dashboard.
         const payload = {
-            client_id: Number(app.client?.id),
-            service_id: Number(app.service.id),
-            professional_id: String(app.professional.id),
+            client_id: app.client?.id,
+            service_id: app.service.id,
+            professional_id: app.professional.id,
             date: app.start.toISOString(),
             status: app.status || 'agendado',
-            origin: 'agenda'
+            origin: 'agenda',
+            duration: app.service.duration || 30,
+            value: app.service.price || 0
         };
 
         try {
-            console.log("INSERT appointments payload:", payload);
             const { error } = await supabase.from('appointments').insert([payload]);
             
             if (error) {
-                console.error("INSERT appointments error:", {
-                    message: error?.message,
-                    details: error?.details,
-                    hint: error?.hint,
-                    code: error?.code,
-                    full: error
-                });
+                console.error("INSERT appointments error details:", error);
                 throw error;
             }
 
-            setToast({ message: 'Agendamento salvo!', type: 'success' });
+            setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
             setModalState(null);
             
-            // Refetch imediato para atualizar a UI state conforme regra de AGENDA/CALENDAR
             await loadAppointments(currentDate);
         } catch (e: any) {
-            setToast({ message: 'Erro ao salvar. Verifique o console para detalhes.', type: 'error' });
+            // Exibe a mensagem real do erro para o usuário
+            setToast({ message: `Erro ao salvar: ${e.message || 'Verifique os dados.'}`, type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -134,7 +125,7 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
 
     const handleUpdateStatus = async (id: number, newStatus: AppointmentStatus) => {
         const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
-        if (!error) loadAppointments(currentDate);
+        if (!error) await loadAppointments(currentDate);
         setActiveAppointmentDetail(null);
     };
 
