@@ -180,11 +180,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // --- QUERY CORRIGIDA: Colunas em Inglês conforme solicitado ---
+            // --- QUERY REESCRITA COM JOINS ESTRITOS ( professional_id ) ---
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('*, clients(id, name, phone), services(id, name, price, color, duration), team_members(id, name, color)')
+                    .select('*, clients(id, name, phone), services(id, name, price, color, duration), team_members!professional_id(id, name, color)')
                     .gte('date', rangeStart.toISOString())
                     .lte('date', rangeEnd.toISOString())
                     .neq('status', 'cancelado') 
@@ -300,7 +300,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
     }, [resources]);
 
-    // --- MAPPER CORRIGIDO: Propriedades em Inglês para LegacyAppointment ---
+    // --- MAPPER ATUALIZADO CONFORME REQUISITOS (Inglês) ---
     const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = row.duration || 30;
@@ -318,29 +318,30 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             origem: row.origem || 'interno',
             client: { 
                 id: row.client_id, 
-                nome: joinedClient?.name || row.client_name || 'Cliente', // DB 'name' para UI 'nome'
+                nome: joinedClient?.name || 'Cliente', 
                 consent: true 
             },
             professional: { 
-                id: row.resource_id, 
-                name: joinedProf?.name || row.professional_name || 'Profissional', 
+                id: row.professional_id, 
+                name: joinedProf?.name || 'Profissional', 
                 avatarUrl: '' 
             },
             service: { 
                 id: row.service_id, 
-                name: joinedService?.name || row.service_name || 'Serviço', // DB 'name' para UI 'name'
-                price: Number(row.value || joinedService?.price || 0), // DB 'price' para UI 'price'
+                name: joinedService?.name || 'Serviço', 
+                price: Number(row.value || joinedService?.price || 0), 
                 duration: dur, 
-                color: joinedService?.color || '#3b82f6' // DB 'color' para UI 'color'
+                color: joinedService?.color || '#3b82f6' 
             }
         } as LegacyAppointment;
     };
 
+    // --- SALVAMENTO ATUALIZADO ( professional_id ) ---
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
             if (!force) {
-                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('resource_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
+                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
                     return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
@@ -348,9 +349,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
 
+            // PAYLOAD ATUALIZADO: client_id, professional_id, service_id
             const payload = { 
                 client_id: app.client?.id,
-                resource_id: app.professional.id, 
+                professional_id: app.professional.id, 
                 service_id: app.service.id,
                 value: app.service.price, 
                 duration: app.service.duration, 
