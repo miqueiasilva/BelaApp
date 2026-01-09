@@ -10,6 +10,7 @@ import { format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isSame
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
 import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -45,6 +46,7 @@ const QuickAction = ({ icon: Icon, label, color, onClick }: any) => (
 );
 
 const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNavigate }) => {
+    const { activeStudioId } = useStudio();
     const [isLoading, setIsLoading] = useState(true);
     const [appointments, setAppointments] = useState<any[]>([]);
     const [financialGoal, setFinancialGoal] = useState(0);
@@ -97,16 +99,17 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
     // --- CARREGAMENTO DE DADOS ---
     useEffect(() => {
+        if (!activeStudioId) return;
         let mounted = true;
 
         const fetchDashboardData = async () => {
             try {
                 if (mounted) setIsLoading(true);
 
-                // 1. Agendamentos no PERÍODO SELECIONADO para os Cards principais
                 const { data: appts, error: apptsError } = await supabase
                     .from('appointments')
                     .select('*')
+                    .eq('studio_id', activeStudioId)
                     .gte('date', dateRange.start)
                     .lte('date', dateRange.end)
                     .order('date', { ascending: true });
@@ -114,7 +117,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (apptsError) throw apptsError;
                 if (mounted) setAppointments(appts || []);
 
-                // 2. Dados específicos para o card de Meta (Sempre focado no MÊS ATUAL acumulado)
                 const now = new Date();
                 const startMonthStr = startOfMonth(now).toISOString();
                 const endMonthStr = endOfMonth(now).toISOString();
@@ -122,6 +124,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 const { data: monthData, error: monthError } = await supabase
                     .from('appointments')
                     .select('value')
+                    .eq('studio_id', activeStudioId)
                     .eq('status', 'concluido')
                     .gte('date', startMonthStr)
                     .lte('date', endMonthStr);
@@ -131,16 +134,16 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
 
-                // 3. Busca DEDICADA da meta configurada em studio_settings (revenue_goal)
                 const { data: settings, error: settingsError } = await supabase
                     .from('studio_settings')
                     .select('revenue_goal')
+                    .eq('id', activeStudioId) // Supondo que id do studio_settings seja o activeStudioId
                     .maybeSingle();
                 
                 if (settingsError) throw settingsError;
                 
                 if (mounted) {
-                    setFinancialGoal(settings?.revenue_goal || 5000); // Fallback de 5000 se não houver meta
+                    setFinancialGoal(settings?.revenue_goal || 5000);
                 }
 
             } catch (e) {
@@ -155,9 +158,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         return () => {
             mounted = false;
         };
-    }, [dateRange]);
+    }, [dateRange, activeStudioId]);
 
-    // KPIs Dinâmicos baseados no filtro selecionado (Hoje, 7 Dias, etc)
+    // KPIs Dinâmicos
     const kpis = useMemo(() => {
         const revenue = appointments
             .filter(a => a.status === 'concluido')
@@ -192,7 +195,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
                     <div className="absolute inset-0 animate-ping rounded-full border-4 border-orange-100"></div>
                 </div>
-                <p className="text-xs font-black uppercase tracking-[0.3em] animate-pulse mt-4">Sincronizando {dateRange.label}...</p>
+                <p className="text-xs font-black uppercase tracking-[0.3em] mt-4">Sincronizando {dateRange.label}...</p>
             </div>
         );
     }
@@ -211,97 +214,26 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4">
-                    {/* Filtro de Período UI */}
                     <div className="flex flex-col gap-2 items-end">
                         <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                            <button 
-                                onClick={() => setFilter('hoje')}
-                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'hoje' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
-                            >
-                                Hoje
-                            </button>
-                            <button 
-                                onClick={() => setFilter('semana')}
-                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'semana' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
-                            >
-                                7 Dias
-                            </button>
-                            <button 
-                                onClick={() => setFilter('mes')}
-                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'mes' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
-                            >
-                                Mês
-                            </button>
-                            <button 
-                                onClick={() => setFilter('custom')}
-                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'custom' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
-                            >
-                                <span className="flex items-center gap-1"><CalendarRange size={12} /> Personalizado</span>
-                            </button>
+                            <button onClick={() => setFilter('hoje')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'hoje' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Hoje</button>
+                            <button onClick={() => setFilter('semana')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'semana' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>7 Dias</button>
+                            <button onClick={() => setFilter('mes')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'mes' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Mês</button>
+                            <button onClick={() => setFilter('custom')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'custom' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Personalizado</button>
                         </div>
-
-                        {filter === 'custom' && (
-                            <div className="flex items-center gap-2 animate-in slide-in-from-top-2 duration-300">
-                                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
-                                    <span className="text-[9px] font-black text-slate-400 uppercase">De:</span>
-                                    <input 
-                                        type="date" 
-                                        value={tempStart} 
-                                        onChange={(e) => setTempStart(e.target.value)}
-                                        className="text-[11px] font-bold text-slate-700 outline-none"
-                                    />
-                                </div>
-                                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
-                                    <span className="text-[9px] font-black text-slate-400 uppercase">Até:</span>
-                                    <input 
-                                        type="date" 
-                                        value={tempEnd} 
-                                        onChange={(e) => setTempEnd(e.target.value)}
-                                        className="text-[11px] font-bold text-slate-700 outline-none"
-                                    />
-                                </div>
-                                <button 
-                                    onClick={handleApplyCustomFilter}
-                                    className="bg-orange-500 hover:bg-orange-600 text-white p-2 rounded-xl shadow-lg shadow-orange-100 transition-all active:scale-90"
-                                    title="Aplicar Filtro"
-                                >
-                                    <FilterIcon size={16} />
-                                </button>
-                            </div>
-                        )}
                     </div>
-
-                    <button onClick={() => onNavigate('agenda')} className="px-4 py-2.5 bg-orange-500 text-white font-black rounded-xl hover:bg-orange-600 transition shadow-lg shadow-orange-100 flex items-center gap-2 text-sm active:scale-95">
+                    <button onClick={() => onNavigate('agenda')} className="px-4 py-2.5 bg-orange-500 text-white font-black rounded-xl hover:bg-orange-600 transition shadow-lg flex items-center gap-2 text-sm active:scale-95">
                         <PlusCircle size={18} /> Novo Agendamento
                     </button>
                 </div>
             </header>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
-                <StatCard 
-                    title={`Faturamento (${dateRange.label})`} 
-                    value={formatCurrency(kpis.revenue)} 
-                    icon={DollarSign} 
-                    colorClass="bg-green-500" 
-                    subtext="Serviços concluídos"
-                />
-                <StatCard 
-                    title={`Agendados (${dateRange.label})`} 
-                    value={kpis.scheduled} 
-                    icon={Calendar} 
-                    colorClass="bg-blue-500" 
-                    subtext="Total no período"
-                />
-                <StatCard 
-                    title={`Concluídos (${dateRange.label})`} 
-                    value={kpis.completed} 
-                    icon={Users} 
-                    colorClass="bg-purple-500" 
-                    subtext="Finalizados"
-                />
+                <StatCard title={`Faturamento (${dateRange.label})`} value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-green-500" subtext="Serviços concluídos" />
+                <StatCard title={`Agendados (${dateRange.label})`} value={kpis.scheduled} icon={Calendar} colorClass="bg-blue-500" subtext="Total no período" />
+                <StatCard title={`Concluídos (${dateRange.label})`} value={kpis.completed} icon={Users} colorClass="bg-purple-500" subtext="Finalizados" />
                 
-                {/* CARD DE META FINANCEIRA DINÂMICA */}
-                <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group h-full transition-all hover:shadow-xl hover:shadow-slate-200">
+                <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group h-full">
                     <div className="flex justify-between items-start z-10">
                         <p className="text-[10px] font-black uppercase tracking-widest opacity-60">META MENSAL</p>
                         <TrendingUp size={12} className="text-orange-400" />
@@ -312,15 +244,8 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                             <span className="text-[10px] font-bold opacity-60">alvo: {goalMetrics.display}</span>
                         </div>
                         <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mb-1">
-                            <div 
-                                className="h-full bg-orange-500 transition-all duration-1000 ease-out" 
-                                style={{ width: `${goalMetrics.visual}%` }} 
-                            />
+                            <div className="h-full bg-orange-500 transition-all duration-1000 ease-out" style={{ width: `${goalMetrics.visual}%` }} />
                         </div>
-                        <p className="text-[8px] font-black uppercase tracking-tighter opacity-40 mt-1">Sincronizado com fechamentos do mês</p>
-                    </div>
-                    <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                        <TrendingUp size={100} />
                     </div>
                 </div>
             </div>
@@ -334,24 +259,16 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         <QuickAction icon={TrendingUp} label="Caixa" color="bg-slate-700" onClick={() => onNavigate('financeiro')} />
                         <QuickAction icon={Clock} label="Agenda" color="bg-orange-500" onClick={() => onNavigate('agenda')} />
                     </div>
-
                     <JaciBotAssistant fetchInsight={getDashboardInsight} />
-                    
                     <Card title="Atividade Recente" icon={<BarChart3 size={18} className="text-orange-500" />}>
                         <div className="py-10 text-center text-slate-400 flex flex-col items-center">
                             <TrendingUp className="opacity-10 mb-2" size={48} />
-                            <p className="text-sm font-bold uppercase tracking-widest">Análise de fluxo em processamento...</p>
-                            <p className="text-[10px] font-medium text-slate-300 mt-2">Os gráficos são atualizados a cada fechamento de caixa.</p>
+                            <p className="text-sm font-bold uppercase tracking-widest">Análise em processamento...</p>
                         </div>
                     </Card>
                 </div>
-
                 <div className="lg:col-span-1">
-                    <TodayScheduleWidget 
-                        onNavigate={onNavigate} 
-                        appointments={appointments} 
-                        dateLabel={dateRange.label}
-                    />
+                    <TodayScheduleWidget onNavigate={onNavigate} appointments={appointments} dateLabel={dateRange.label} />
                 </div>
             </div>
         </div>

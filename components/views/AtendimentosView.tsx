@@ -20,6 +20,7 @@ import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
 import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
+import { useStudio } from '../../contexts/StudioContext';
 
 const START_HOUR = 8;
 const END_HOUR = 20; 
@@ -123,6 +124,7 @@ interface AtendimentosViewProps {
 
 const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, onNavigateToCommand }) => {
     const { user, loading: authLoading } = useAuth(); 
+    const { activeStudioId } = useStudio();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [appointments, setAppointments] = useState<any[]>([]);
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
@@ -149,7 +151,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const lastRequestId = useRef(0);
 
     const fetchAppointments = async () => {
-        if (!isMounted.current || authLoading || !user) return;
+        if (!isMounted.current || authLoading || !user || !activeStudioId) return;
         
         const requestId = ++lastRequestId.current;
         if (abortControllerRef.current) abortControllerRef.current.abort();
@@ -172,8 +174,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    // TASK 4: Ensure appointments query selects professional_id and resource_id fields explicitly
                     .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem')
+                    .eq('studio_id', activeStudioId)
                     .gte('date', rangeStart.toISOString())
                     .lte('date', rangeEnd.toISOString())
                     .neq('status', 'cancelado') 
@@ -181,6 +183,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 supabase
                     .from('schedule_blocks')
                     .select('*')
+                    .eq('studio_id', activeStudioId)
                     .gte('start_time', rangeStart.toISOString())
                     .lte('start_time', rangeEnd.toISOString())
                     .abortSignal(abortControllerRef.current.signal)
@@ -215,13 +218,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const fetchResources = async () => {
-        if (authLoading || !user) return;
+        if (authLoading || !user || !activeStudioId) return;
         try {
-            // TASK 1: In the calendar UI, change the column key to use team_members.id (uuid)
             const { data, error } = await supabase
                 .from('team_members')
                 .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled') 
                 .eq('active', true)
+                .eq('studio_id', activeStudioId)
                 .order('order_index', { ascending: true }) 
                 .order('name', { ascending: true });
             if (error) throw error;
@@ -239,7 +242,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!authLoading && user && resources.length > 0) {
             fetchAppointments();
         }
-    }, [currentDate, periodType, resources, user, authLoading]);
+    }, [currentDate, periodType, resources, user, authLoading, activeStudioId]);
 
     useEffect(() => {
         isMounted.current = true;
@@ -256,7 +259,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (abortControllerRef.current) abortControllerRef.current.abort();
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, []);
+    }, [activeStudioId]);
 
     const handleReorderProfessional = useCallback(async (e: React.MouseEvent, currentIndex: number, direction: 'left' | 'right') => {
         if (e) {
@@ -293,7 +296,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const start = new Date(row.date);
         const dur = row.duration || 30;
         
-        // TASK 2: Update grouping logic to match professional_id with member.id
         let prof = professionalsList.find(p => String(p.id) === String(row.professional_id));
         if (!prof && row.professional_name) {
             prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
@@ -309,11 +311,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
+        if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
             if (!force) {
-                // TASK 2: Match conflict filter using professional_id
-                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
+                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('studio_id', activeStudioId).eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
                     return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
@@ -321,8 +323,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
             
-            // TASK 3: Ensure insert payload sets professional_id = selected teamMember.id (Do not send resource_id)
             const payload = { 
+                studio_id: activeStudioId,
                 client_id: app.client?.id,
                 client_name: app.client?.nome, 
                 professional_id: app.professional.id, 
@@ -390,11 +392,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
+        if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
+                    studio_id: activeStudioId,
                     client_id: appointment.client?.id,
                     status: 'open',
                     total_amount: appointment.service.price
@@ -504,7 +508,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
         }
-        // TASK 1: Use team_member.id (UUID) as column key for grid rendering
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
     }, [periodType, currentDate, resources]);
 
@@ -628,7 +631,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 {filteredAppointments
                                     .filter(app => {
                                         if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
-                                        // TASK 2: Grouping match: replace appointment.resource_id === member.resource_id with appointment.professional_id === member.id (column key)
                                         if (app.type === 'block' && (app.professional.id === null || String(app.professional.id) === 'null')) {
                                             return true;
                                         }
