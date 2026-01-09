@@ -163,7 +163,7 @@ const PublicBookingPreview: React.FC = () => {
 
                 const { data: profsData } = await supabase
                     .from('team_members')
-                    .select('*')
+                    .select('id, name, photo_url, role')
                     .eq('active', true)
                     .eq('online_booking_enabled', true)
                     .order('order_index');
@@ -239,7 +239,7 @@ const PublicBookingPreview: React.FC = () => {
             const now = new Date();
             const minTimeLimit = addMinutes(now, rules.minNoticeMinutes);
 
-            // Sincronizando com professional_id para busca de slots livres
+            // Sincronizando com professional_id (estável) para busca de slots livres
             const { data: busyAppointments } = await supabase
                 .from('appointments')
                 .select('date, duration')
@@ -326,7 +326,7 @@ const PublicBookingPreview: React.FC = () => {
             const totalValue = selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
             const serviceNames = selectedServices.map(s => s.nome || s.name).join(' + ');
 
-            // Enviar apenas professional_id. resource_id é gerado no DB a partir dele.
+            // Enviar estritamente professional_id. resource_id é gerado no DB como espelho.
             const { error: apptErr } = await supabase
                 .from('appointments')
                 .insert([{
@@ -452,7 +452,7 @@ const PublicBookingPreview: React.FC = () => {
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{selectedServices.length} selecionados</p>
                             <p className="text-xl font-black text-slate-800">Total R$ {totalPrice.toFixed(2)}</p>
                         </div>
-                        <button onClick={() => { setIsBookingOpen(true); setBookingStep(1); }} className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl flex items-center gap-2 transition-all active:scale-95">Continuar <ArrowRight size={20} /></button>
+                        <button onClick={() => { setIsBookingOpen(true); setBookingStep(1); }} className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95">Continuar <ArrowRight size={20} /></button>
                     </div>
                 </div>
             )}

@@ -172,7 +172,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('*')
+                    .select('*') // Inclui professional_id e o virtual resource_id
                     .gte('date', rangeStart.toISOString())
                     .lte('date', rangeEnd.toISOString())
                     .neq('status', 'cancelado') 
@@ -217,6 +217,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (authLoading || !user) return;
         try {
             // STEP A: Carregar profissionais. O ID (UUID) é a identidade da coluna.
+            // Ignoramos a coluna resource_id da tabela team_members para evitar confusão com o espelho do profissional na tabela de agendamentos.
             const { data, error } = await supabase
                 .from('team_members')
                 .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled') 
@@ -311,7 +312,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setIsLoadingData(true);
         try {
             if (!force) {
-                // Sincronização de conflitos agora usa professional_id (estável)
+                // Sincronização de conflitos agora usa professional_id (estável) em vez de resource_id (sala)
                 const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
@@ -320,7 +321,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
             
-            // STEP D: Payload de inserção usa professional_id. resource_id é gerado no banco.
+            // STEP D: Payload de inserção usa professional_id. resource_id é gerado no banco a partir dele.
             const payload = { 
                 client_id: app.client?.id,
                 client_name: app.client?.nome, 
