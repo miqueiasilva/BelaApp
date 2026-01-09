@@ -39,22 +39,6 @@ const STATUS_PRIORITY: Record<string, number> = {
     'bloqueado': 10
 };
 
-const StatusIndicator = ({ status, type }: { status: AppointmentStatus, type?: 'appointment' | 'block' }) => {
-    if (type === 'block') return <ShieldAlert size={10} className="text-rose-500" />;
-
-    switch (status) {
-        case 'agendado': return <Clock size={10} className="text-slate-400" />;
-        case 'confirmado':
-        case 'confirmado_whatsapp': return <ThumbsUp size={10} className="text-blue-500" />;
-        case 'chegou': return <MapPin size={10} className="text-purple-500" />;
-        case 'em_atendimento': return <Scissors size={10} className="text-indigo-600" />;
-        case 'concluido': return <CheckCircle2 size={10} className="text-emerald-600" />;
-        case 'faltou':
-        case 'cancelado': return <Ban size={10} className="text-rose-500" />;
-        default: return <Clock size={10} className="text-amber-500" />; 
-    }
-};
-
 const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) => {
     return (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-300">
@@ -106,16 +90,6 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
         zIndex: 20,
         left: '0px'
     };
-};
-
-const getCardStyle = (app: any, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
-    const baseClasses = "rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50";
-    
-    if (app.type === 'block') {
-        return "absolute rounded-none border-l-4 border-rose-400 bg-[repeating-linear-gradient(45deg,#fcfcfc,#fcfcfc_10px,#f8fafc_10px,#f8fafc_20px)] text-slate-500 p-2 overflow-hidden flex flex-col cursor-not-allowed opacity-95 z-[25] pointer-events-auto shadow-sm";
-    }
-
-    return baseClasses;
 };
 
 const TimelineIndicator = ({ timeSlot }: { timeSlot: number }) => {
@@ -317,7 +291,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const start = new Date(row.date);
         const dur = row.duration || 30;
         
-        let prof = professionalsList.find(p => String(p.id) === String(row.resource_id));
+        // FIX: Usando professional_id em vez de resource_id
+        let prof = professionalsList.find(p => String(p.id) === String(row.professional_id));
         if (!prof && row.professional_name) {
             prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
         }
@@ -335,14 +310,29 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setIsLoadingData(true);
         try {
             if (!force) {
-                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('resource_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
+                // FIX: Mudado de resource_id para professional_id no filtro de conflitos
+                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
                     return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
                 });
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
-            const payload = { client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), status: app.status, notes: app.notas, origem: app.origem || 'interno' };
+            
+            // FIX: Mudado de resource_id para professional_id no payload
+            const payload = { 
+                client_id: app.client?.id,
+                client_name: app.client?.nome, 
+                professional_id: app.professional.id, 
+                professional_name: app.professional.name, 
+                service_name: app.service.name, 
+                value: app.service.price, 
+                duration: app.service.duration, 
+                date: app.start.toISOString(), 
+                status: app.status, 
+                notes: app.notas, 
+                origem: app.origem || 'interno' 
+            };
             
             if (app.id && appointments.some(a => a.id === app.id)) {
                 await supabase.from('appointments').update(payload).eq('id', app.id);
@@ -434,7 +424,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             setToast({ message: `Comanda gerada com sucesso! Redirecionando... 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
             
-            // REDIRECIONAMENTO AUTOMÁTICO
             if (onNavigateToCommand) {
                 onNavigateToCommand(command.id);
             }
@@ -513,6 +502,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
         }
+        // FIX: Identidade baseada em p.id (UUID do team_member)
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
     }, [periodType, currentDate, resources]);
 
@@ -636,6 +626,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 {filteredAppointments
                                     .filter(app => {
                                         if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
+                                        // FIX: Usando professional_id em vez de resource_id
                                         if (app.type === 'block' && (app.professional.id === null || String(app.professional.id) === 'null')) {
                                             return true;
                                         }
@@ -656,14 +647,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                         setActiveAppointmentDetail(app); 
                                                     }
                                                 }} 
-                                                className={getCardStyle(app, viewMode)} 
+                                                className="rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50"
                                                 style={{ 
                                                     ...getAppointmentPosition(app.start, app.end, timeSlot),
                                                     borderLeftColor: cardColor,
                                                     backgroundColor: `${cardColor}15`
                                                 }}
                                             >
-                                                {/* Badges de Status (Canto superior direito) */}
                                                 <div className="absolute top-1 right-1 flex gap-0.5 z-10">
                                                     {app.status === 'concluido' && <DollarSign size={10} className="text-emerald-600 font-bold" strokeWidth={3} />}
                                                     {['confirmado', 'confirmado_whatsapp'].includes(app.status) && <CheckCircle size={10} className="text-blue-600" strokeWidth={3} />}
@@ -672,18 +662,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
                                                 <div className="flex flex-col h-full justify-between relative z-0 pointer-events-none">
                                                     <div>
-                                                        {/* Linha 1: Horário */}
                                                         <p className="text-[10px] font-medium text-slate-500 leading-none mb-0.5">
                                                             {format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}
                                                         </p>
-                                                        
-                                                        {/* Linha 2: Cliente */}
                                                         <p className="text-xs font-bold text-slate-800 truncate leading-tight">
                                                             {app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Bloqueado')}
                                                         </p>
                                                     </div>
-
-                                                    {/* Linha 3: Serviço (Oculta se for muito curto) */}
                                                     {!isShort && (
                                                         <p className="text-[10px] text-slate-500 truncate leading-none mt-auto opacity-80">
                                                             {app.service.name}
