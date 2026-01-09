@@ -172,7 +172,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('*') // Inclui professional_id e o virtual resource_id
+                    // TASK 4: Ensure appointments query selects professional_id and resource_id fields explicitly
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem')
                     .gte('date', rangeStart.toISOString())
                     .lte('date', rangeEnd.toISOString())
                     .neq('status', 'cancelado') 
@@ -216,8 +217,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const fetchResources = async () => {
         if (authLoading || !user) return;
         try {
-            // STEP A: Carregar profissionais. O ID (UUID) é a identidade da coluna.
-            // Ignoramos a coluna resource_id da tabela team_members para evitar confusão com o espelho do profissional na tabela de agendamentos.
+            // TASK 1: In the calendar UI, change the column key to use team_members.id (uuid)
             const { data, error } = await supabase
                 .from('team_members')
                 .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled') 
@@ -293,7 +293,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const start = new Date(row.date);
         const dur = row.duration || 30;
         
-        // STEP C: Mapear agendamentos para colunas usando professional_id (UUID)
+        // TASK 2: Update grouping logic to match professional_id with member.id
         let prof = professionalsList.find(p => String(p.id) === String(row.professional_id));
         if (!prof && row.professional_name) {
             prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
@@ -312,7 +312,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setIsLoadingData(true);
         try {
             if (!force) {
-                // Sincronização de conflitos agora usa professional_id (estável) em vez de resource_id (sala)
+                // TASK 2: Match conflict filter using professional_id
                 const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
@@ -321,7 +321,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
             
-            // STEP D: Payload de inserção usa professional_id. resource_id é gerado no banco a partir dele.
+            // TASK 3: Ensure insert payload sets professional_id = selected teamMember.id (Do not send resource_id)
             const payload = { 
                 client_id: app.client?.id,
                 client_name: app.client?.nome, 
@@ -504,7 +504,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
         }
-        // STEP B: Renderizar colunas usando team_member.id (UUID)
+        // TASK 1: Use team_member.id (UUID) as column key for grid rendering
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
     }, [periodType, currentDate, resources]);
 
@@ -628,7 +628,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 {filteredAppointments
                                     .filter(app => {
                                         if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
-                                        // STEP C: Comparar agendamento com o ID da coluna (UUID do profissional)
+                                        // TASK 2: Grouping match: replace appointment.resource_id === member.resource_id with appointment.professional_id === member.id (column key)
                                         if (app.type === 'block' && (app.professional.id === null || String(app.professional.id) === 'null')) {
                                             return true;
                                         }
