@@ -15,7 +15,8 @@ import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
-import { format, subDays, startOfDay, parseISO, isSameDay } from 'date-fns';
+// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
+import { format, subDays, startOfDay, isSameDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 // --- Subcomponente de KPI Card ---
@@ -61,7 +62,7 @@ const ReviewCard = ({ review, onToggle, onDelete }: any) => (
                     <div className="flex items-center gap-2 mt-1">
                         <StarRating rating={review.rating} size={12} />
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                            {review.created_at ? format(parseISO(review.created_at), 'dd MMM yyyy', { locale: pt }) : '---'}
+                            {review.created_at ? format(new Date(review.created_at), 'dd MMM yyyy', { locale: pt }) : '---'}
                         </span>
                     </div>
                 </div>
@@ -209,7 +210,7 @@ const AgendaOnlineView: React.FC = () => {
 
                 const last7Days = Array.from({ length: 7 }).map((_, i) => {
                     const d = subDays(new Date(), 6 - i);
-                    const dayBookings = appts.filter(a => isSameDay(parseISO(a.date), d)).length;
+                    const dayBookings = appts.filter(a => isSameDay(new Date(a.date), d)).length;
                     const dayViews = Math.floor(Math.random() * 20) + 10; 
                     return {
                         name: format(d, 'dd/MM'),
@@ -311,7 +312,7 @@ const AgendaOnlineView: React.FC = () => {
                         <Globe className="text-blue-500 w-6 h-6" />
                         Agenda Online
                     </h1>
-                    <p className="text-slate-500 text-xs font-medium">Configure a experiência pública do seu estúdio.</p>
+                    <p className="text-slate-500 text-xs font-medium">Configure a experincia pblica do seu estdio.</p>
                 </div>
                 <div className="flex gap-2">
                     <button onClick={() => window.location.hash = '/public-preview'} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 flex items-center gap-2 text-sm transition-all shadow-sm">
@@ -468,7 +469,7 @@ const AgendaOnlineView: React.FC = () => {
                                                 { value: '90', label: 'Até 90 dias (3 meses)' },
                                                 { value: '180', label: 'Até 6 meses' },
                                             ]}
-                                            helperText="Define até que data futura o cliente pode ver seus horários."
+                                            helperText="Define at que data futura o cliente pode ver seus horrios."
                                         />
                                     </div>
                                 </Card>

@@ -326,7 +326,7 @@ const PublicBookingPreview: React.FC = () => {
             const totalValue = selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
             const serviceNames = selectedServices.map(s => s.nome || s.name).join(' + ');
 
-            // Enviar estritamente professional_id. resource_id é gerado no DB como espelho.
+            // Enviar estritamente professional_id. resource_id gerado no DB como espelho.
             const { error: apptErr } = await supabase
                 .from('appointments')
                 .insert([{

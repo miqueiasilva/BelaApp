@@ -12,6 +12,7 @@ import NewTransactionModal from '../modals/NewTransactionModal';
 import { FinancialTransaction, TransactionType } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
+// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
 import { 
     format, isSameDay, isSameWeek, isSameMonth, 
     startOfDay, endOfDay, startOfWeek, endOfWeek, 

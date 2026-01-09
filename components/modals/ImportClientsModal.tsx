@@ -57,7 +57,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
              email: email?.toString().trim() || null,
              gender: genero?.toString().trim() || null,
              birth_date: nascimento || null,
-             user_id: user?.id,
+             // REMOVIDO user_id PARA EVITAR ERROR 42703
              consent: true,
              origem: 'Importação Excel'
            };
@@ -91,8 +91,6 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
     setErrorMsg('');
 
     // --- CORREÇÃO CRÍTICA: DEDUPLICAÇÃO NO FRONTEND ---
-    // O erro 21000 ocorre quando o mesmo WhatsApp aparece duas vezes no mesmo comando UPSERT.
-    // Usamos um Map para garantir unicidade, mantendo o último registro encontrado.
     const deduplicatedData = Array.from(
         parsedData.reduce((map, item) => {
             map.set(item.whatsapp, item);
@@ -110,10 +108,8 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
     }
 
     try {
-        console.log(`🚀 Iniciando importação de ${total} registros únicos em ${chunks.length} lotes.`);
-        
         for (const [index, batch] of chunks.entries()) {
-            // OPERAÇÃO NO BANCO: Upsert por WhatsApp para evitar duplicidade de PK/Unique
+            // OPERAÇÃO NO BANCO: Upsert por WhatsApp para evitar duplicidade
             const { error } = await supabase
                 .from('clients')
                 .upsert(batch, { 
@@ -122,8 +118,6 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                 });
 
             if (error) {
-                // ERRO REAL DO SUPABASE (Ex: erro 21000 ou falha de RLS)
-                console.error(`❌ Erro no Lote ${index + 1}:`, error);
                 throw new Error(`Falha no banco (Lote ${index + 1}): ${error.message} [Cód: ${error.code}]`);
             }
 
@@ -137,11 +131,9 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                 debugText: `Sincronizando lote ${index + 1} de ${chunks.length}...` 
             });
 
-            // Delay para evitar overload e permitir atualização da UI
             await new Promise(resolve => setTimeout(resolve, 50));
         }
 
-        console.log("✅ Importação finalizada com sucesso real.");
         setStatus('done');
         setTimeout(() => {
             onSuccess();
@@ -149,7 +141,6 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
         }, 2000);
 
     } catch (e: any) {
-        console.error("🔥 Abortando importação devido a erro crítico:", e);
         setErrorMsg(e.message || "Erro desconhecido durante o salvamento no banco.");
         setStatus('error');
     }
@@ -249,7 +240,6 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                 <div className="mt-4 bg-white p-4 rounded-2xl border border-rose-200 text-left">
                     <p className="text-xs font-mono text-rose-600 break-words leading-relaxed">{errorMsg}</p>
                 </div>
-                <p className="text-[10px] text-rose-400 font-bold uppercase mt-4">Nota: Se o erro for '21000', verifique duplicatas na mesma linha da planilha.</p>
               </div>
               <button 
                 onClick={() => { setStatus('idle'); setErrorMsg(''); }} 

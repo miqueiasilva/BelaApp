@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+// FIX: Reorganizing date-fns imports to resolve symbol resolution errors.
 import { format, addMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { 

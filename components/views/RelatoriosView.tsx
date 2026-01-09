@@ -13,8 +13,9 @@ import {
     ArrowUp, ArrowDown, PieChart, Receipt, Target, LayoutDashboard,
     HardDrive, History, Archive, Cake, Gauge, FileDown, Sheet
 } from 'lucide-react';
+// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
 import { 
-    format, startOfMonth, endOfMonth, parseISO, 
+    format, startOfMonth, endOfMonth, 
     differenceInDays, subMonths, isSameDay, startOfDay, endOfDay,
     eachDayOfInterval, isWithinInterval, subDays, startOfYesterday, endOfYesterday
 } from 'date-fns';
@@ -82,8 +83,8 @@ const RelatoriosView: React.FC = () => {
         if (!activeStudioId) return;
         setIsLoading(true);
         try {
-            const currentStart = startOfDay(parseISO(startDate));
-            const currentEnd = endOfDay(parseISO(endDate));
+            const currentStart = startOfDay(new Date(startDate));
+            const currentEnd = endOfDay(new Date(endDate));
             const diffDays = differenceInDays(currentEnd, currentStart) + 1;
             const prevStart = subDays(currentStart, diffDays);
             const prevEnd = subDays(currentEnd, diffDays);
@@ -131,10 +132,10 @@ const RelatoriosView: React.FC = () => {
 
         const criticalStock = products.filter(p => p.stock_quantity <= (p.min_stock || 5));
 
-        const days = eachDayOfInterval({ start: parseISO(startDate), end: parseISO(endDate) });
+        const days = eachDayOfInterval({ start: new Date(startDate), end: new Date(endDate) });
         const evolutionData = days.map(day => {
             const dStr = format(day, 'yyyy-MM-dd');
-            const dayTrans = transactions.filter(t => format(parseISO(t.date), 'yyyy-MM-dd') === dStr);
+            const dayTrans = transactions.filter(t => format(new Date(t.date), 'yyyy-MM-dd') === dStr);
             return {
                 day: format(day, 'dd/MM'),
                 receita: dayTrans.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0),
@@ -183,7 +184,7 @@ const RelatoriosView: React.FC = () => {
         };
         doc.text(titleMap[type], 14, 42);
         doc.setFontSize(9);
-        doc.text(`Período: ${format(parseISO(startDate), 'dd/MM/yy')} até ${format(parseISO(endDate), 'dd/MM/yy')}`, 14, 48);
+        doc.text(`Período: ${format(new Date(startDate), 'dd/MM/yy')} at ${format(new Date(endDate), 'dd/MM/yy')}`, 14, 48);
 
         doc.save(`Relatorio_${type}_${activeStudioId?.split('-')[0]}.pdf`);
     };
@@ -212,7 +213,7 @@ const RelatoriosView: React.FC = () => {
                         </label>
                         <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
                             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent border-none text-[10px] font-bold text-slate-600 outline-none px-2" />
-                            <span className="text-slate-300 text-xs font-bold">até</span>
+                            <span className="text-slate-300 text-xs font-bold">at</span>
                             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent border-none text-[10px] font-bold text-slate-600 outline-none px-2" />
                         </div>
                         <button onClick={refreshAllData} className="p-2.5 bg-slate-800 text-white rounded-xl shadow-md active:scale-95"><RefreshCw size={16} className={isLoading ? 'animate-spin' : ''}/></button>

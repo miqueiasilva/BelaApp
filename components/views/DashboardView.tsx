@@ -6,7 +6,10 @@ import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import WeeklyChart from '../charts/WeeklyChart';
 import { getDashboardInsight } from '../../services/geminiService';
 import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, ChevronRight, CalendarRange, Filter as FilterIcon } from 'lucide-react';
-import { format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isSameDay, parseISO } from 'date-fns';
+// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
+import { 
+    format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isSameDay 
+} from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
 import { supabase } from '../../services/supabaseClient';
@@ -84,9 +87,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 };
             case 'custom':
                 return {
-                    start: startOfDay(parseISO(customStart)).toISOString(),
-                    end: endOfDay(parseISO(customEnd)).toISOString(),
-                    label: `Período: ${format(parseISO(customStart), 'dd/MM')} a ${format(parseISO(customEnd), 'dd/MM')}`
+                    start: startOfDay(new Date(customStart)).toISOString(),
+                    end: endOfDay(new Date(customEnd)).toISOString(),
+                    label: `Período: ${format(new Date(customStart), 'dd/MM')} a ${format(new Date(customEnd), 'dd/MM')}`
                 };
             default:
                 return { 

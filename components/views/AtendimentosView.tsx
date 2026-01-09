@@ -8,7 +8,12 @@ import {
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
     CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle
 } from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
+// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
+import { 
+    format, addDays, addWeeks, addMonths, eachDayOfInterval, 
+    isSameDay, isWithinInterval, isSameMonth, addMinutes, 
+    startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth 
+} from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
