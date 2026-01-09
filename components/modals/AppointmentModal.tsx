@@ -234,6 +234,23 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     setSelectionModal(null);
   };
 
+  const handlePersistAndSelectClient = async (clientData: Client) => {
+    if (!activeStudioId) return;
+    try {
+        const { data, error } = await supabase
+            .from('clients')
+            .insert([{ ...clientData, studio_id: activeStudioId }])
+            .select()
+            .single();
+        
+        if (error) throw error;
+        handleSelectClient(data);
+        setIsClientModalOpen(false);
+    } catch (err: any) {
+        alert("Erro ao cadastrar cliente: " + err.message);
+    }
+  };
+
   const handleAddService = (service: LegacyService) => {
     setSelectedServices(prev => [...prev, service]);
     setSelectionModal(null);
@@ -313,7 +330,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         {selectionModal === 'client' && (<ClientSearchModal onClose={() => setSelectionModal(null)} onSelect={handleSelectClient} onNewClient={() => { setSelectionModal(null); setIsClientModalOpen(true); }} />)}
         {selectionModal === 'service' && (<SelectionModal title={formData.professional ? `Serviços de ${formData.professional.name}` : "Selecione o Serviço"} items={filteredServicesToSelect} onClose={() => setSelectionModal(null)} onSelect={(item) => handleAddService(dbServices.find(s=>s.id === item.id)!)} searchPlaceholder="Buscar Serviço..." renderItemIcon={() => <Tag size={20}/>} />)}
         {selectionModal === 'professional' && (<SelectionModal title="Selecione o Profissional" items={dbProfessionals} onClose={() => setSelectionModal(null)} onSelect={(item) => handleSelectProfessional(dbProfessionals.find(p => p.id === item.id)!)} searchPlaceholder="Buscar Profissional..." renderItemIcon={() => <Briefcase size={20}/>} />)}
-        {isClientModalOpen && (<ClientModal client={null} onClose={() => setIsClientModalOpen(false)} onSave={async (c) => handleSelectClient(c)} />)}
+        {isClientModalOpen && (<ClientModal client={null} onClose={() => setIsClientModalOpen(false)} onSave={handlePersistAndSelectClient} />)}
       </div>
     </div>
   );

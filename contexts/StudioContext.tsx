@@ -5,12 +5,7 @@ import { supabase } from "../services/supabaseClient";
 type Studio = {
   id: string;
   name?: string | null;
-};
-
-type Membership = {
-  studio_id: string;
   role?: string | null;
-  studios?: Studio | null;
 };
 
 type StudioContextValue = {
@@ -25,7 +20,6 @@ const StudioContext = createContext<StudioContextValue | null>(null);
 
 const STORAGE_KEY = "belaapp.activeStudioId";
 
-// Added optional children type to satisfy strict TypeScript prop checks in index.tsx
 export function StudioProvider({ children }: { children?: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [studios, setStudios] = useState<Studio[]>([]);
@@ -36,52 +30,69 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
   const setActiveStudioId = (id: string) => {
     setActiveStudioIdState(id);
     localStorage.setItem(STORAGE_KEY, id);
-    // Opcional: window.location.reload() se quiser resetar todos os estados de busca do banco ao trocar
   };
 
   const refreshStudios = async () => {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const user = sessionData?.session?.user;
-    if (!user) {
-      setStudios([]);
-      setActiveStudioIdState(null);
-      setLoading(false);
-      return;
-    }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const user = sessionData?.session?.user;
+      
+      if (!user) {
+        setStudios([]);
+        setActiveStudioIdState(null);
+        return;
+      }
 
-    // Busca vinculações: user_studios -> studios
-    const { data, error } = await supabase
-      .from("user_studios")
-      .select("studio_id, role, studios:studio_id ( id, name )")
-      .eq("user_id", user.id);
+      // 1. Busca memberships para pegar studio_id e role
+      const { data: memberships, error: mErr } = await supabase
+        .from("user_studios")
+        .select("studio_id, role")
+        .eq("user_id", user.id);
 
-    if (error) {
-      console.error("[StudioProvider] refreshStudios error:", error);
-      setStudios([]);
-      setLoading(false);
-      return;
-    }
+      if (mErr) throw mErr;
 
-    const memberships = (data ?? []) as unknown as Membership[];
-    const studiosList: Studio[] = memberships
-      .map((m) => m.studios)
-      .filter(Boolean) as Studio[];
+      if (!memberships || memberships.length === 0) {
+        setStudios([]);
+        setActiveStudioIdState(null);
+        localStorage.removeItem(STORAGE_KEY);
+        return;
+      }
 
-    setStudios(studiosList);
+      const studioIds = memberships.map(m => m.studio_id);
 
-    if (studiosList.length > 0) {
+      // 2. Busca detalhes dos studios
+      const { data: studiosData, error: sErr } = await supabase
+        .from("studios")
+        .select("id, name")
+        .in("id", studioIds);
+
+      if (sErr) throw sErr;
+
+      // 3. Mapeia combinando as informações
+      const mappedStudios = studiosData.map(s => ({
+        id: s.id,
+        name: s.name,
+        role: memberships.find(m => m.studio_id === s.id)?.role
+      }));
+
+      setStudios(mappedStudios);
+
+      // 4. Gerencia qual studio está ativo
       const saved = localStorage.getItem(STORAGE_KEY);
-      const savedStillValid = saved && studiosList.some((s) => s.id === saved);
-      if (!savedStillValid) setActiveStudioId(studiosList[0].id);
-      else setActiveStudioIdState(saved!);
-    } else {
-      setActiveStudioIdState(null);
-      localStorage.removeItem(STORAGE_KEY);
+      const savedStillValid = saved && mappedStudios.some((s) => s.id === saved);
+      
+      if (!savedStillValid) {
+        setActiveStudioId(mappedStudios[0].id);
+      } else {
+        setActiveStudioIdState(saved!);
+      }
+    } catch (err) {
+      console.error("[StudioProvider] refreshStudios error:", err);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   useEffect(() => {

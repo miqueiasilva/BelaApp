@@ -101,43 +101,22 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!command || !activeStudioId || isFinishing || addedPayments.length === 0) return;
         setIsFinishing(true);
 
-        const shortId = command.id.split('-')[0].toUpperCase();
-        const clientName = command.clients?.nome || 'Cliente';
-
         try {
-            for (const payment of addedPayments) {
-                const { error: finError } = await supabase.from('financial_transactions').insert([{
-                    studio_id: activeStudioId,
-                    description: `Recebimento Comanda #${shortId} (${payment.method.toUpperCase()}) - ${clientName}`,
-                    amount: payment.amount,
-                    type: 'income',
-                    category: 'servico',
-                    payment_method: payment.method,
-                    client_id: command.client_id,
-                    date: new Date().toISOString(),
-                    status: 'paid'
-                }]);
-                if (finError) throw finError;
-            }
+            // Chamada da RPC otimizada para fechar comanda e gerar transações
+            // O backend deve validar o studio_id via RLS ou argumento
+            const { error } = await supabase.rpc('close_command_and_generate_transactions', {
+                p_command_id: command.id,
+                p_studio_id: activeStudioId,
+                p_discount: parseFloat(discount) || 0,
+                p_payments: addedPayments.map(p => ({ method: p.method, amount: p.amount }))
+            });
 
-            const finalMethodLabel = addedPayments.length > 1 ? 'multiple' : addedPayments[0].method;
-            const { error: cmdError } = await supabase
-                .from('commands')
-                .update({ 
-                    status: 'paid',
-                    closed_at: new Date().toISOString(),
-                    total_amount: totals.total,
-                    payment_method: finalMethodLabel 
-                })
-                .eq('id', command.id)
-                .eq('studio_id', activeStudioId);
-
-            if (cmdError) throw cmdError;
+            if (error) throw error;
 
             setToast({ message: "Comanda finalizada com sucesso! 💰", type: 'success' });
             setTimeout(onBack, 2000);
         } catch (e: any) {
-            console.error("Erro no checkout:", e);
+            console.error("Erro no checkout via RPC:", e);
             setToast({ message: `Falha ao finalizar checkout: ${e.message}`, type: 'error' });
         } finally {
             setIsFinishing(false);
