@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { isConfigured, saveSupabaseConfig } from '../services/supabaseClient';
 import { Database, Save, AlertTriangle } from 'lucide-react';
@@ -8,9 +7,14 @@ interface EnvGateProps {
 }
 
 const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
-  // Credenciais padrão sincronizadas com o client
+  // Configuração automática: Credenciais do Supabase preenchidas
   const [url, setUrl] = useState('https://rxtwmwrgcilmsldtqdfe.supabase.co');
   const [key, setKey] = useState('sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x');
+
+  useEffect(() => {
+    // Log para depuração em produção se necessário
+    if (!isConfigured) console.log('EnvGate: Aguardando configuração do Supabase...');
+  }, []);
 
   if (isConfigured) {
     return <>{children}</>;
@@ -30,9 +34,9 @@ const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
           <div className="w-16 h-16 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mb-4">
             <Database size={32} />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">Configuração do Supabase</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Configuração Necessária</h1>
           <p className="text-slate-500 text-sm mt-2">
-            As chaves de conexão não foram detectadas automaticamente. Confirme os dados abaixo para conectar ao banco de dados.
+            As variáveis de ambiente do Supabase não foram detectadas. Por favor, confirme as configurações abaixo para continuar.
           </p>
         </div>
 
@@ -41,43 +45,45 @@ const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
             <div className="flex gap-2">
               <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
               <p className="text-xs text-amber-700">
-                Esses dados serão salvos no <strong>LocalStorage</strong> para habilitar a conexão neste ambiente.
+                Esses dados serão salvos no <strong>LocalStorage</strong> do seu navegador para habilitar a conexão neste ambiente.
               </p>
             </div>
           </div>
 
           <div>
-            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 ml-1">
-              Supabase URL
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+              Supabase URL (VITE_SUPABASE_URL)
             </label>
             <input
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-orange-50 font-medium"
+              placeholder="https://xyz.supabase.co"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all"
               required
             />
           </div>
 
           <div>
-            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 ml-1">
-              Anon Key
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+              Supabase Anon Key (VITE_SUPABASE_ANON_KEY)
             </label>
             <input
               type="password"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-orange-50 font-medium"
+              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all"
               required
             />
           </div>
 
           <button
             type="submit"
-            className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-xl shadow-lg shadow-orange-200 transition-all flex items-center justify-center gap-2 mt-4"
+            className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-orange-200 transition-all flex items-center justify-center gap-2 mt-4"
           >
             <Save size={18} />
-            Conectar e Iniciar App
+            Salvar e Conectar
           </button>
         </form>
       </div>

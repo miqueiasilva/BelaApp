@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { User as SupabaseUser } from '@supabase/supabase-js';
+import { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
 export type AppUser = SupabaseUser & {
   papel?: string;
@@ -26,23 +26,16 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Refs para controle de estabilidade (Protocolo de Estabilidade)
   const lastProcessedId = useRef<string | null>(null);
+  const isMounted = useRef(true);
 
-  // Fix: Session issued in the future - Limpeza de Hash da URL
-  useEffect(() => {
-    if (window.location.hash.includes("access_token")) {
-      window.history.replaceState(
-        null,
-        document.title,
-        window.location.pathname + window.location.search
-      );
-    }
-  }, []);
-
+  // Helper para buscar perfil detalhado
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
-      const { data: profData, error: profError } = await supabase
-        .from('team_members')
+      const { data: profData } = await supabase
+        .from('professionals')
         .select('role, photo_url, permissions, name')
         .eq('email', authUser.email)
         .maybeSingle();
@@ -56,48 +49,77 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
           permissions: profData.permissions
         };
       }
+
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('full_name, papel, avatar_url')
+        .eq('id', authUser.id)
+        .maybeSingle();
+
       return {
         ...authUser,
-        papel: 'profissional',
-        nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
-        avatar_url: authUser.user_metadata?.avatar_url
+        papel: profileData?.papel || 'profissional',
+        nome: profileData?.full_name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
+        avatar_url: profileData?.avatar_url || authUser.user_metadata?.avatar_url
       };
     } catch (e) {
-      return { ...authUser, papel: 'profissional' };
+      return { 
+        ...authUser, 
+        papel: 'profissional', 
+        nome: authUser.user_metadata?.full_name || 'Usuário' 
+      };
     }
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
-      try {
-        const currentId = currentSession?.user?.id || null;
-        if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT') {
-          setLoading(false);
-          return;
-        }
-        lastProcessedId.current = currentId;
+    isMounted.current = true;
 
-        if (!currentSession?.user) {
+    // Listener Único para todo o ciclo de vida da Autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      const currentId = currentSession?.user?.id || null;
+
+      // Estabilidade: Evita processar o mesmo ID múltiplas vezes (Corrige o loop de 4 disparos)
+      if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
+        setLoading(false);
+        return;
+      }
+
+      lastProcessedId.current = currentId;
+
+      if (!currentSession?.user) {
+        if (isMounted.current) {
           setUser(null);
           setLoading(false);
-          return;
         }
+        return;
+      }
 
+      try {
         const appUser = await fetchProfile(currentSession.user);
-        setUser(appUser);
-      } catch (err: any) {
-        console.error("Auth Listener Error (Clock Skew?):", err.message);
+        if (isMounted.current) {
+          setUser(appUser);
+        }
+      } catch (err) {
+        console.error("AuthContext: Erro ao carregar perfil:", err);
       } finally {
-        setLoading(false);
+        if (isMounted.current) {
+          setLoading(false);
+        }
       }
     });
 
-    // Safety Timeout para evitar UI travada caso o Supabase falhe em responder
-    const timer = setTimeout(() => setLoading(false), 5000);
+    // Safety Timeout para evitar travamento da UI em falhas de rede severas
+    const safetyTimer = setTimeout(() => {
+      if (isMounted.current && loading) {
+        console.warn("AuthContext: Safety timeout atingido. Liberando UI.");
+        setLoading(false);
+      }
+    }, 5000);
 
     return () => {
+      isMounted.current = false;
       subscription.unsubscribe();
-      clearTimeout(timer);
+      clearTimeout(safetyTimer);
     };
   }, []);
 
@@ -106,14 +128,31 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const signInWithGoogle = async () => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/` } });
   const resetPassword = async (email: string) => supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
   const updatePassword = async (newPassword: string) => supabase.auth.updateUser({ password: newPassword });
+  
   const signOut = async () => {
-    lastProcessedId.current = null;
-    await supabase.auth.signOut();
-    setUser(null);
-    window.location.href = '/';
+    try {
+      lastProcessedId.current = null;
+      await supabase.auth.signOut();
+    } finally {
+      localStorage.clear(); 
+      sessionStorage.clear();
+      setUser(null);
+      setLoading(false);
+      window.location.href = '/login'; 
+    }
   };
 
-  const value = useMemo(() => ({ user, loading, signIn, signUp, signInWithGoogle, resetPassword, updatePassword, signOut }), [user, loading]);
+  const value = useMemo(() => ({ 
+    user, 
+    loading, 
+    signIn, 
+    signUp, 
+    signInWithGoogle, 
+    resetPassword, 
+    updatePassword, 
+    signOut 
+  }), [user, loading]);
+
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
