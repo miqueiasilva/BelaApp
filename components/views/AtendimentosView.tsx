@@ -166,7 +166,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         try {
             let rangeStart: Date, rangeEnd: Date;
             if (periodType === 'Semana') {
-                // FIX: Manual calculation for startOfWeek to avoid non-exported member error.
                 rangeStart = new Date(currentDate);
                 const day = rangeStart.getDay();
                 const diff = (day < 1 ? -6 : 1) - day;
@@ -175,11 +174,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 
                 rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
             } else if (periodType === 'Mês') {
-                // FIX: Manual calculation for startOfMonth to avoid non-exported member error.
                 rangeStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0);
                 rangeEnd = endOfMonth(currentDate);
             } else {
-                // FIX: Manual calculation for startOfDay to avoid non-exported member error.
                 rangeStart = new Date(currentDate);
                 rangeStart.setHours(0, 0, 0, 0);
                 rangeEnd = endOfDay(currentDate);
@@ -329,7 +326,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setIsLoadingData(true);
         try {
             if (!force) {
-                // FIX: Manual calculation for startOfDay and endOfDay to avoid non-exported member error.
                 const startDay = new Date(app.start);
                 startDay.setHours(0, 0, 0, 0);
                 const endDay = new Date(app.start);
@@ -415,7 +411,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // CRIAR COMANDA SEM user_id
+            // CRIAR COMANDA
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
@@ -432,15 +428,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 throw cmdError;
             }
 
-            // CRIAR ITEM DA COMANDA: unit_price e qty (NÃO quantity)
+            // CRIAR ITEM DA COMANDA: price e quantity (Conforme Schema real)
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
+                    studio_id: activeStudioId, // Obrigatório pelo schema
                     title: appointment.service.name,
-                    unit_price: appointment.service.price,
-                    qty: 1,
+                    price: appointment.service.price,
+                    quantity: 1,
                     professional_id: appointment.professional.id
                 }]);
 
@@ -534,7 +531,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const columns = useMemo(() => {
         if (periodType === 'Semana') {
-            // FIX: Manual calculation for startOfWeek to avoid non-exported member error.
             const start = new Date(currentDate);
             const day = start.getDay();
             const diff = (day < 1 ? -6 : 1) - day;
@@ -550,7 +546,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         let baseList = appointments.filter(a => {
             if (periodType === 'Dia' || periodType === 'Lista') return isSameDay(a.start, currentDate);
             if (periodType === 'Semana') {
-                // FIX: Manual calculation for startOfWeek to avoid non-exported member error.
                 const start = new Date(currentDate);
                 const day = start.getDay();
                 const diff = (day < 1 ? -6 : 1) - day;

@@ -141,18 +141,21 @@ export interface FinancialTransaction {
 export interface CommandItem {
     id: string;
     command_id: string;
-    service_id?: number;
-    product_id?: number;
+    service_id?: string; // Alterado para string (UUID)
+    product_id?: string; // Alterado para string (UUID)
     appointment_id?: number;
     title: string;
-    unit_price: number;
-    qty: number;
+    price: number; // Alterado de unit_price para price
+    quantity: number; // Alterado de qty para quantity
     created_at: string;
+    professional_id?: string;
+    studio_id?: string;
 }
 
 export interface Command {
     id: string;
     client_id: number;
+    studio_id: string;
     status: 'open' | 'paid' | 'canceled';
     total_amount: number;
     created_at: string;

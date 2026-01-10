@@ -66,7 +66,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const totals = useMemo(() => {
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
         
-        const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.unit_price) * Number(i.qty)), 0);
+        // CORREÇÃO: Usando 'price' e 'quantity' conforme schema real
+        const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.price) * Number(i.quantity)), 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
@@ -202,12 +203,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <div>
                                                 <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
                                                 <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
-                                                    {item.qty} un. x R$ {Number(item.unit_price).toFixed(2)}
+                                                    {item.quantity} un. x R$ {Number(item.price).toFixed(2)}
                                                 </p>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-8">
-                                            <p className="font-black text-slate-800 text-xl">R$ {(item.unit_price * item.qty).toFixed(2)}</p>
+                                            <p className="font-black text-slate-800 text-xl">R$ {(item.price * item.quantity).toFixed(2)}</p>
                                         </div>
                                     </div>
                                 ))}
