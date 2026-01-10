@@ -82,7 +82,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 phone: (initialProf as any).phone || '',
                 birth_date: (initialProf as any).birth_date || '',
                 order_index: (initialProf as any).order_index ?? 0,
-                commission_rate: (initialProf as any).commission_rate ?? 30,
+                // Tenta commission_rate depois commission_percent
+                commission_rate: (initialProf as any).commission_rate ?? (initialProf as any).commission_percent ?? 30,
                 permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
                 services_enabled: (initialProf as any).services_enabled || [],
                 work_schedule: (initialProf as any).work_schedule || {},
@@ -134,6 +135,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 active: !!prof.active,
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
                 order_index: parseInt(String(prof.order_index)) || 0,
+                // Salva como commission_rate conforme schema real
                 commission_rate: isNaN(parseFloat(String(prof.commission_rate))) ? 0 : parseFloat(String(prof.commission_rate)),
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,

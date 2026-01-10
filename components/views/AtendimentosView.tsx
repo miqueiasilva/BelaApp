@@ -428,12 +428,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 throw cmdError;
             }
 
+            // Validação simples de UUID para service_id para evitar erro de restrição se vier de mock numérico
+            const isUUID = (val: any) => typeof val === 'string' && val.length > 20;
+
             // CRIAR ITEM DA COMANDA: price e quantity (SCHEMA REAL FIX)
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
+                    service_id: isUUID(appointment.service.id) ? String(appointment.service.id) : null,
                     studio_id: activeStudioId, 
                     title: appointment.service.name,
                     price: appointment.service.price,

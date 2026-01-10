@@ -39,7 +39,8 @@ const RemuneracoesView: React.FC = () => {
         const end = endOfMonth(currentDate).toISOString();
 
         const [teamRes, transRes] = await Promise.all([
-            supabase.from('team_members').select('id, name, photo_url, commission_rate').eq('studio_id', activeStudioId).order('name'),
+            // Selecionando ambos campos de comissão possíveis por segurança
+            supabase.from('team_members').select('id, name, photo_url, commission_rate, commission_percent').eq('studio_id', activeStudioId).order('name'),
             supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).eq('type', 'income').neq('status', 'cancelado').gte('date', start).lte('date', end).not('professional_id', 'is', null)
         ]);
 
@@ -78,7 +79,8 @@ const RemuneracoesView: React.FC = () => {
             : Number(t.amount);
           return acc + (baseValue || 0);
       }, 0);
-      const rate = Number(member.commission_rate) || 0;
+      // FALLBACK: Tenta commission_rate, depois commission_percent, senão 0
+      const rate = Number(member.commission_rate || member.commission_percent || 0);
       const commissionValue = totalBase * (rate / 100);
       return { member, transactions: myTrans, totalBase, commissionValue, count: myTrans.length, rate };
     }).sort((a, b) => b.totalBase - a.totalBase);
