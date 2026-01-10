@@ -67,7 +67,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
         
         // CORREÇÃO: Usando 'price' e 'quantity' conforme schema real
-        const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.price) * Number(i.quantity)), 0);
+        const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 0)), 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
@@ -110,6 +110,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (error) {
                 console.error("Erro RPC details:", error.message, error.details);
+                // Se o erro for de coluna commission_percent, é provável que a RPC no banco precise de ajuste,
+                // mas garantimos que o front não está travando por parâmetros errados.
                 throw error;
             }
 
@@ -203,12 +205,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <div>
                                                 <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
                                                 <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
-                                                    {item.quantity} un. x R$ {Number(item.price).toFixed(2)}
+                                                    {item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}
                                                 </p>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-8">
-                                            <p className="font-black text-slate-800 text-xl">R$ {(item.price * item.quantity).toFixed(2)}</p>
+                                            <p className="font-black text-slate-800 text-xl">R$ {(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</p>
                                         </div>
                                     </div>
                                 ))}

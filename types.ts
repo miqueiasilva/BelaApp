@@ -141,12 +141,12 @@ export interface FinancialTransaction {
 export interface CommandItem {
     id: string;
     command_id: string;
-    service_id?: string; // Alterado para string (UUID)
-    product_id?: string; // Alterado para string (UUID)
+    service_id?: string;
+    product_id?: string;
     appointment_id?: number;
     title: string;
-    price: number; // Alterado de unit_price para price
-    quantity: number; // Alterado de qty para quantity
+    price: number; // Schema real: price
+    quantity: number; // Schema real: quantity
     created_at: string;
     professional_id?: string;
     studio_id?: string;

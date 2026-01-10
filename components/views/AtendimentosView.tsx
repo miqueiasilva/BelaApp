@@ -428,13 +428,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 throw cmdError;
             }
 
-            // CRIAR ITEM DA COMANDA: price e quantity (Conforme Schema real)
+            // CRIAR ITEM DA COMANDA: price e quantity (SCHEMA REAL FIX)
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
-                    studio_id: activeStudioId, // Obrigatório pelo schema
+                    studio_id: activeStudioId, 
                     title: appointment.service.name,
                     price: appointment.service.price,
                     quantity: 1,
