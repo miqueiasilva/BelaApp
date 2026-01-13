@@ -59,9 +59,9 @@ const FinanceiroView: React.FC = () => {
     const [loading, setLoading] = useState(true);
     
     // Filtros
-    const [filterPeriod, setFilterPeriod] = useState<'hoje' | 'mes' | 'custom'>('mes');
-    const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-    const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+    const [filterPeriod, setFilterPeriod] = useState<'hoje' | 'mes' | 'custom'>('hoje');
+    const [startDate, setStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-dd'));
+    const [endDate, setEndDate] = useState(format(endOfDay(new Date()), 'yyyy-MM-dd'));
     
     const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
     const [searchTerm, setSearchTerm] = useState('');
@@ -78,8 +78,8 @@ const FinanceiroView: React.FC = () => {
                 start = startOfDay(new Date());
                 end = endOfDay(new Date());
             } else if (filterPeriod === 'mes') {
-                start = startOfMonth(new Date(startDate));
-                end = endOfMonth(new Date(startDate));
+                start = startOfMonth(new Date());
+                end = endOfMonth(new Date());
             } else {
                 start = startOfDay(new Date(startDate));
                 end = endOfDay(new Date(endDate));
@@ -154,8 +154,8 @@ const FinanceiroView: React.FC = () => {
         }).sort((a, b) => b.value - a.value).slice(0, 5);
 
         // Dados para o gráfico temporal (Passado + Projeção Futura)
-        const rangeStart = filterPeriod === 'custom' ? new Date(startDate) : startOfMonth(new Date(startDate));
-        const rangeEnd = filterPeriod === 'custom' ? new Date(endDate) : endOfMonth(new Date(startDate));
+        const rangeStart = filterPeriod === 'hoje' ? startOfDay(new Date()) : (filterPeriod === 'custom' ? new Date(startDate) : startOfMonth(new Date()));
+        const rangeEnd = filterPeriod === 'hoje' ? endOfDay(new Date()) : (filterPeriod === 'custom' ? new Date(endDate) : endOfMonth(new Date()));
         
         const daysInPeriod = eachDayOfInterval({
             start: rangeStart,
@@ -183,7 +183,7 @@ const FinanceiroView: React.FC = () => {
             grossRevenue, 
             netRevenue, 
             totalExpenses, 
-            balance: netRevenue - totalExpenses,
+            balance: netRevenue - totalExpenses, // SALDO REAL: LÍQUIDO - DESPESAS
             categories,
             categoryMix,
             chartData
@@ -205,14 +205,14 @@ const FinanceiroView: React.FC = () => {
         const ws = XLSX.utils.json_to_sheet(dataToExport);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Extrato");
-        XLSX.writeFile(wb, `Extrato_Financeiro_${format(new Date(), 'dd_MM_yy')}.xlsx`);
+        XLSX.writeFile(wb, `Extrato_Financeiro_BelaRestudio_${format(new Date(), 'dd_MM_yy')}.xlsx`);
         setToast({ message: "Planilha gerada com sucesso!", type: 'success' });
     };
 
     const handleExportPDF = () => {
         const doc = new jsPDF();
         doc.setFontSize(18);
-        doc.text("BelaApp - Relatório de Fluxo de Caixa", 14, 22);
+        doc.text("BelaRestudio - Relatório de Fluxo de Caixa", 14, 22);
         doc.setFontSize(10);
         doc.text(`Período: ${startDate} até ${endDate}`, 14, 30);
 
@@ -229,10 +229,10 @@ const FinanceiroView: React.FC = () => {
             head: [['Data', 'Descrição', 'Categoria', 'Pagamento', 'Valor']],
             body: tableData,
             theme: 'striped',
-            headStyles: { fillStyle: 'orange' }
+            headStyles: { fill: 'orange' }
         });
 
-        doc.save(`Relatorio_Financeiro_${format(new Date(), 'dd_MM_yy')}.pdf`);
+        doc.save(`Relatorio_Financeiro_BelaRestudio_${format(new Date(), 'dd_MM_yy')}.pdf`);
         setToast({ message: "PDF gerado com sucesso!", type: 'success' });
     };
 
@@ -284,70 +284,70 @@ const FinanceiroView: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                    <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-inner">
                         <button 
-                            onClick={() => setFilterPeriod('hoje')}
-                            className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filterPeriod === 'hoje' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-50'}`}
+                            onClick={() => { setFilterPeriod('hoje'); }}
+                            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${filterPeriod === 'hoje' ? 'bg-orange-500 text-white shadow-lg border-orange-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
                         >Hoje</button>
                         <button 
-                            onClick={() => { setFilterPeriod('mes'); setStartDate(format(startOfMonth(new Date()), 'yyyy-MM-dd')); }}
-                            className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filterPeriod === 'mes' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-50'}`}
+                            onClick={() => { setFilterPeriod('mes'); }}
+                            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${filterPeriod === 'mes' ? 'bg-orange-500 text-white shadow-lg border-orange-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
                         >Mês</button>
                         <button 
                             onClick={() => setFilterPeriod('custom')}
-                            className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filterPeriod === 'custom' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-50'}`}
+                            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${filterPeriod === 'custom' ? 'bg-slate-800 text-white shadow-lg border-slate-900' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
                         >Período</button>
                     </div>
-                    <button onClick={() => setShowModal('receita')} className="bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-100 active:scale-95 transition-all">Lançar Entrada</button>
-                    <button onClick={() => setShowModal('despesa')} className="bg-rose-500 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-100 active:scale-95 transition-all">Lançar Saída</button>
+                    <button onClick={() => setShowModal('receita')} className="bg-emerald-500 text-white px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-100 active:scale-95 transition-all">Lançar Entrada</button>
+                    <button onClick={() => setShowModal('despesa')} className="bg-rose-500 text-white px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-100 active:scale-95 transition-all">Lançar Saída</button>
                 </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 custom-scrollbar">
                 
                 {filterPeriod === 'custom' && (
-                    <div className="bg-white p-4 rounded-3xl border border-orange-100 shadow-sm flex flex-wrap items-center gap-4 animate-in slide-in-from-top-2 duration-300">
-                        <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black text-slate-400 uppercase">Início:</span>
-                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-orange-100" />
+                    <div className="bg-white p-6 rounded-[32px] border border-orange-100 shadow-xl flex flex-wrap items-center gap-6 animate-in slide-in-from-top-2 duration-300">
+                        <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Inicial:</span>
+                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-200" />
                         </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black text-slate-400 uppercase">Fim:</span>
-                            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-orange-100" />
+                        <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Final:</span>
+                            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-200" />
                         </div>
-                        <button onClick={fetchData} className="p-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-all"><RefreshCw size={16} /></button>
+                        <button onClick={fetchData} className="p-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-all shadow-lg shadow-orange-100 active:rotate-180 duration-500"><RefreshCw size={20} /></button>
                     </div>
                 )}
 
                 {/* GRID DE MÉTRICAS */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <StatCard 
-                        title="Saldo em Conta (Líquido)" 
+                        title="Saldo em Conta (Dinheiro Vivo)" 
                         value={formatBRL(bi.balance)} 
                         icon={Wallet} 
                         colorClass="bg-slate-800" 
-                        subtext="Bruto - Taxas - Despesas"
+                        subtext="Faturamento Líquido - Despesas"
                     />
                     <StatCard 
                         title="Faturamento Bruto" 
                         value={formatBRL(bi.grossRevenue)} 
                         icon={TrendingUp} 
                         colorClass="bg-blue-600" 
-                        subtext="Total em vendas brutas"
+                        subtext="Total que entrou no salão"
                     />
                     <StatCard 
                         title="Faturamento Líquido" 
                         value={formatBRL(bi.netRevenue)} 
                         icon={CheckCircle} 
                         colorClass="bg-emerald-600" 
-                        subtext="Após taxas administrativas"
+                        subtext="O que realmente cai na conta"
                     />
                     <StatCard 
                         title="Despesas Totais" 
                         value={formatBRL(bi.totalExpenses)} 
                         icon={ArrowDownCircle} 
                         colorClass="bg-rose-600" 
-                        subtext="Gastos do período"
+                        subtext="Custos e retiradas"
                     />
                 </div>
 
@@ -380,7 +380,7 @@ const FinanceiroView: React.FC = () => {
                         </div>
                     </Card>
 
-                    {/* GRÁFICO DE CATEGORIAS (Mestre SaaS) */}
+                    {/* GRÁFICO DE CATEGORIAS (Mix de Gastos) */}
                     <Card title="Mix de Gastos/Receita" icon={<PieChart size={18} className="text-orange-500" />}>
                         <div className="h-64 mt-2">
                             <ResponsiveContainer width="100%" height="100%">
