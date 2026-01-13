@@ -22,7 +22,7 @@ const ServicosView: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
     
-    // Visualização padrão: Lista conforme solicitado
+    // Visualização padrão: Lista
     const [viewMode, setViewMode] = useState<'kanban' | 'list'>('list');
     
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,7 +30,7 @@ const ServicosView: React.FC = () => {
     const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Busca Categorias Reais do Banco
+    // 1. Busca Categorias Reais do Banco (Sincronização em Tempo Real)
     const fetchCategories = useCallback(async () => {
         if (!activeStudioId) return;
         try {
@@ -64,6 +64,7 @@ const ServicosView: React.FC = () => {
         }
     }, [activeStudioId]);
 
+    // Inicialização e sincronização
     useEffect(() => { 
         fetchServices();
         fetchCategories();

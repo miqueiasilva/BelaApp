@@ -24,6 +24,7 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
     const [name, setName] = useState('');
     const [selectedColor, setSelectedColor] = useState(colors[0]);
 
+    // Busca as categorias existentes para o estúdio logado
     const fetchCategories = useCallback(async () => {
         if (!activeStudioId) return;
         setLoading(true);
@@ -36,7 +37,7 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
             if (error) throw error;
             setCategories(data || []);
         } catch (e) {
-            console.error(e);
+            console.error("Erro ao listar categorias:", e);
         } finally {
             setLoading(false);
         }
@@ -44,6 +45,7 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
 
     useEffect(() => { fetchCategories(); }, [fetchCategories]);
 
+    // Função para Salvar (Insert ou Update)
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name.trim() || !activeStudioId) return;
@@ -57,14 +59,21 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
             };
 
             const { error } = editingId 
-                ? await supabase.from('service_categories').update(payload).eq('id', editingId).eq('studio_id', activeStudioId)
-                : await supabase.from('service_categories').insert([payload]);
+                ? await supabase.from('service_categories')
+                    .update(payload)
+                    .eq('id', editingId)
+                    .eq('studio_id', activeStudioId)
+                : await supabase.from('service_categories')
+                    .insert([payload]);
 
             if (error) throw error;
 
+            // Reset do formulário
             setName('');
             setEditingId(null);
             setSelectedColor(colors[0]);
+            
+            // Notifica o pai e atualiza lista local
             await fetchCategories();
             onUpdate();
         } catch (e: any) {
@@ -74,14 +83,19 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
         }
     };
 
+    // Prepara formulário para Edição
     const handleEdit = (cat: any) => {
         setEditingId(cat.id);
         setName(cat.name);
         setSelectedColor(cat.color_hex || colors[0]);
+        // Scroll opcional para o topo do formulário
+        const form = document.querySelector('form');
+        form?.scrollIntoView({ behavior: 'smooth' });
     };
 
+    // Função de Exclusão
     const handleDelete = async (id: string) => {
-        if (!confirm("⚠️ ATENÇÃO: Serviços vinculados a esta categoria ficarão sem categoria no catálogo.\n\nDeseja realmente excluir?")) return;
+        if (!confirm("⚠️ ATENÇÃO: Serviços vinculados a esta categoria não serão excluídos, mas ficarão sem categoria no catálogo.\n\nDeseja prosseguir com a exclusão?")) return;
         
         try {
             const { error } = await supabase
@@ -91,6 +105,7 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
                 .eq('studio_id', activeStudioId);
 
             if (error) throw error;
+            
             await fetchCategories();
             onUpdate();
         } catch (e: any) {
@@ -105,15 +120,15 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
                     <div>
                         <h2 className="text-xl font-black text-slate-800 flex items-center gap-3">
                             <Tag className="text-orange-500" size={20} />
-                            Gestão de Categorias
+                            Gerenciar Categorias
                         </h2>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sincronização Ativa SaaS</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Organização de Catálogo</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={24} /></button>
                 </header>
 
                 <div className="p-8 space-y-8 max-h-[80vh] overflow-y-auto custom-scrollbar">
-                    {/* FORMULÁRIO DE ADIÇÃO/EDIÇÃO */}
+                    {/* FORMULÁRIO DE CADASTRO/EDIÇÃO */}
                     <form onSubmit={handleSave} className="space-y-5 bg-slate-50 p-6 rounded-[32px] border-2 border-slate-100 shadow-inner relative">
                         {editingId && (
                             <div className="absolute -top-3 left-6 px-3 py-1 bg-blue-500 text-white text-[8px] font-black uppercase tracking-widest rounded-full shadow-md animate-bounce">
@@ -128,8 +143,8 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
                                 required
                                 value={name}
                                 onChange={e => setName(e.target.value)}
-                                className="w-full bg-white border-2 border-slate-200 rounded-2xl px-5 py-3.5 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 font-black text-slate-700 shadow-sm"
-                                placeholder="Ex: Manicure, Cabelo, Barba..."
+                                className="w-full bg-white border-2 border-slate-200 rounded-2xl px-5 py-3.5 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 font-black text-slate-700 shadow-sm transition-all"
+                                placeholder="Ex: Manicure, Cílios, Cortes..."
                             />
                         </div>
 
@@ -168,12 +183,12 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
                                 className="flex-[2] bg-slate-800 text-white py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                             >
                                 {isSaving ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />}
-                                {editingId ? 'Atualizar Categoria' : 'Criar Categoria'}
+                                {editingId ? 'Atualizar' : 'Criar Categoria'}
                             </button>
                         </div>
                     </form>
 
-                    {/* LISTAGEM */}
+                    {/* LISTAGEM DE CATEGORIAS EXISTENTES */}
                     <div className="space-y-4">
                         <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] ml-1">Categorias no Banco</h4>
                         <div className="space-y-2">
@@ -192,8 +207,20 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
                                             <span className="font-black text-slate-700 text-sm truncate uppercase tracking-tight">{cat.name}</span>
                                         </div>
                                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={() => handleEdit(cat)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Editar"><Edit2 size={16} /></button>
-                                            <button onClick={() => handleDelete(cat.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Excluir"><Trash2 size={16} /></button>
+                                            <button 
+                                                onClick={() => handleEdit(cat)} 
+                                                className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" 
+                                                title="Editar"
+                                            >
+                                                <Edit2 size={16} />
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDelete(cat.id)} 
+                                                className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" 
+                                                title="Excluir"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
                                         </div>
                                     </div>
                                 ))
