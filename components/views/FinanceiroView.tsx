@@ -30,6 +30,12 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// FIX: Added FinanceiroViewProps interface to match props passed from App.tsx
+interface FinanceiroViewProps {
+    transactions: FinancialTransaction[];
+    onAddTransaction: (t: FinancialTransaction) => void;
+}
+
 const formatBRL = (value: number) => 
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
@@ -52,7 +58,8 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass, trend }: any)
     </div>
 );
 
-const FinanceiroView: React.FC = () => {
+// FIX: Updated component definition to accept FinanceiroViewProps
+const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions, onAddTransaction }) => {
     const { activeStudioId } = useStudio();
     const [dbTransactions, setDbTransactions] = useState<any[]>([]);
     const [projections, setProjections] = useState<any[]>([]);
@@ -259,6 +266,11 @@ const FinanceiroView: React.FC = () => {
 
             const { error } = await supabase.from('financial_transactions').insert([payload]);
             if (error) throw error;
+
+            // FIX: If onAddTransaction exists, call it to keep parent state in sync
+            if (onAddTransaction) {
+                onAddTransaction(t as FinancialTransaction);
+            }
 
             setToast({ message: "Lançamento registrado com sucesso!", type: 'success' });
             fetchData();
