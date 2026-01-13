@@ -98,7 +98,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Categoria</label>
                             <div className="flex gap-2">
                                 <div className="relative flex-1 group">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors pointer-events-none">
                                         <Tag size={18} />
                                     </div>
                                     <select 
@@ -117,11 +117,14 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
                                 </div>
                                 <button 
                                     type="button"
-                                    onClick={onOpenCategoryManager}
-                                    className="p-3.5 bg-orange-500 text-white rounded-2xl hover:bg-orange-600 transition-all shadow-lg shadow-orange-100 active:scale-95"
-                                    title="Nova Categoria"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        onOpenCategoryManager();
+                                    }}
+                                    className="p-3.5 bg-orange-500 text-white rounded-2xl hover:bg-orange-600 transition-all shadow-lg shadow-orange-100 active:scale-95 flex items-center justify-center group"
+                                    title="Gerenciar Categorias"
                                 >
-                                    <Plus size={20} strokeWidth={3} />
+                                    <Plus size={22} strokeWidth={3} className="transition-transform group-hover:rotate-90" />
                                 </button>
                             </div>
                         </div>

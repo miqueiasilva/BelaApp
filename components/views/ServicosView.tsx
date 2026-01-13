@@ -30,7 +30,7 @@ const ServicosView: React.FC = () => {
     const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // 1. Busca Categorias Reais do Banco (Sincronização em Tempo Real)
+    // Carregamento dinâmico de categorias com isolamento studio_id
     const fetchCategories = useCallback(async () => {
         if (!activeStudioId) return;
         try {
@@ -58,13 +58,12 @@ const ServicosView: React.FC = () => {
             if (error) throw error;
             setServices(data || []);
         } catch (error: any) {
-            setToast({ message: "Erro ao carregar catálogo.", type: 'error' });
+            setToast({ message: "Erro ao carregar catálogo de serviços.", type: 'error' });
         } finally {
             setLoading(false);
         }
     }, [activeStudioId]);
 
-    // Inicialização e sincronização
     useEffect(() => { 
         fetchServices();
         fetchCategories();
@@ -81,7 +80,7 @@ const ServicosView: React.FC = () => {
             
             if (error) throw error;
             
-            setToast({ message: isEdit ? 'Serviço atualizado!' : 'Novo serviço cadastrado!', type: 'success' });
+            setToast({ message: isEdit ? 'Serviço atualizado com sucesso!' : 'Novo serviço cadastrado!', type: 'success' });
             fetchServices();
             setIsModalOpen(false);
         } catch (error: any) { 
@@ -109,6 +108,8 @@ const ServicosView: React.FC = () => {
 
     const servicesByCategory = useMemo(() => {
         const groups: Record<string, Service[]> = {};
+        
+        // Inicializa grupos com categorias reais do banco
         dbCategories.forEach(cat => { groups[cat.name] = []; });
         if (!groups['Sem Categoria']) groups['Sem Categoria'] = [];
 
@@ -118,6 +119,7 @@ const ServicosView: React.FC = () => {
             groups[cat].push(s);
         });
         
+        // Remove categorias vazias do kanban, a menos que existam no banco e o usuário queira vê-las
         return Object.fromEntries(
             Object.entries(groups).filter(([name, items]) => items.length > 0 || dbCategories.some(c => c.name === name))
         );
@@ -213,7 +215,7 @@ const ServicosView: React.FC = () => {
                             <Filter size={40} />
                         </div>
                         <h3 className="text-lg font-black text-slate-700 uppercase tracking-tighter">Nenhum serviço encontrado</h3>
-                        <p className="text-slate-400 text-sm mt-1 max-w-xs mx-auto font-medium">Tente ajustar sua busca ou mude a categoria selecionada.</p>
+                        <p className="text-slate-400 text-sm mt-1 max-w-xs mx-auto font-medium">Tente ajustar sua busca ou mude a categoria selecionada no filtro acima.</p>
                     </div>
                 ) : viewMode === 'kanban' ? (
                     <div className="flex gap-6 pb-10 min-h-full">
@@ -303,7 +305,10 @@ const ServicosView: React.FC = () => {
             {isCategoryModalOpen && (
                 <CategoryManagerModal 
                     onClose={() => setIsCategoryModalOpen(false)} 
-                    onUpdate={() => { fetchCategories(); fetchServices(); }}
+                    onUpdate={() => { 
+                        fetchCategories(); 
+                        fetchServices(); 
+                    }}
                 />
             )}
         </div>
