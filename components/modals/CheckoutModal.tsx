@@ -9,7 +9,6 @@ import {
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
 
-// --- HELPERS DE FORMATAÇÃO ---
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
@@ -17,7 +16,6 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
-// --- INTERFACES ---
 interface DBPaymentMethod {
     id: string; 
     name: string;
@@ -49,7 +47,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [isFetching, setIsFetching] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // --- ESTADOS DE SELEÇÃO ---
     const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
     const [dbPaymentMethods, setDbPaymentMethods] = useState<DBPaymentMethod[]>([]);
     const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>('');
@@ -57,22 +54,20 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
 
-    // 1. VALIDADOR ESTRITO DE UUID
     const isUUID = (id: any): boolean => {
         if (!id) return false;
         const sid = String(id).trim();
-        return typeof id === 'string' && sid.length > 20 && sid !== 'undefined' && sid !== 'null';
+        return typeof id === 'string' && sid.length > 20;
     };
 
-    // 2. RESET DE ESTADO
     const resetLocalState = () => {
         setSelectedProfessionalId('');
         setSelectedCategory('pix');
         setSelectedMethodId('');
         setInstallments(1);
+        setIsLoading(false);
     };
 
-    // 3. FETCH DE DADOS REAIS - CARREGANDO TAXAS DO BANCO
     const loadSystemData = async () => {
         setIsFetching(true);
         try {
@@ -87,7 +82,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             setDbProfessionals(profsRes.data || []);
             setDbPaymentMethods(methodsRes.data || []);
 
-            // Seleciona automaticamente o primeiro PIX configurado (ou cria um estado inicial)
             if (methodsRes.data && methodsRes.data.length > 0) {
                 const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
                 if (firstPix) {
@@ -100,7 +94,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             }
         } catch (err: any) {
             console.error("[CHECKOUT] Erro na carga de taxas:", err);
-            setToast({ message: "Erro ao sincronizar taxas com o servidor.", type: 'error' });
+            setToast({ message: "Erro ao sincronizar taxas.", type: 'error' });
         } finally {
             setIsFetching(false);
         }
@@ -111,7 +105,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         else resetLocalState();
     }, [isOpen]);
 
-    // 4. SINCRONIZAÇÃO REATIVA
     useEffect(() => {
         if (isOpen && appointment && dbProfessionals.length > 0) {
             if (selectedProfessionalId && isUUID(selectedProfessionalId)) return;
@@ -141,77 +134,52 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return dbPaymentMethods.find(m => m.id === selectedMethodId);
     }, [dbPaymentMethods, selectedMethodId]);
 
-    // CÁLCULO DINÂMICO DE TAXAS BASEADO NO BANCO
     const financialMetrics = useMemo(() => {
         if (!currentMethod) return { rate: 0, netValue: appointment.price };
-        
-        let rate = 0;
-        if (installments === 1) {
-            rate = Number(currentMethod.rate_cash || 0);
-        } else {
-            // Pega a taxa específica da parcela carregada do payment_methods_config
-            rate = Number(currentMethod.installment_rates?.[installments.toString()] || 0);
-        }
-
+        let rate = (installments === 1) ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates?.[installments.toString()] || 0);
         const discount = (appointment.price * rate) / 100;
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 5. CONFIRMAÇÃO DE PAGAMENTO ---
     const handleConfirmPayment = async () => {
-        if (!currentMethod) {
-            setToast({ message: "Selecione o método de pagamento.", type: 'error' });
-            return;
-        }
+        if (!currentMethod) return;
 
         setIsLoading(true);
 
-        let finalProfessionalId: any = selectedProfessionalId || appointment?.professional_id;
-        if (!isUUID(finalProfessionalId) && appointment?.professional_name) {
-            try {
-                const { data: member } = await supabase.from('team_members').select('id').ilike('name', appointment.professional_name.trim()).maybeSingle();
-                if (member?.id && isUUID(member.id)) finalProfessionalId = String(member.id);
-                else finalProfessionalId = null;
-            } catch (err) { finalProfessionalId = null; }
-        }
-        if (!isUUID(finalProfessionalId)) finalProfessionalId = null;
-
         try {
-            await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
-
-            const payload = {
+            // No fluxo de V5, se o agendamento for convertido em comanda, usamos a RPC.
+            // Para liquidação direta de agendamento legada, simulamos o comportamento V5:
+            const { error: finError } = await supabase.from('financial_transactions').insert([{
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
                 tax_rate: financialMetrics.rate, 
-                description: `Venda: ${appointment.service_name} - ${appointment.client_name}`,
+                description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
                 type: 'income',
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: finalProfessionalId,
+                professional_id: isUUID(selectedProfessionalId) ? selectedProfessionalId : null,
                 client_id: isUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
-                installments: installments,
+                installments: Math.floor(installments), // Garantia de inteiro
                 status: 'pago',
                 date: new Date().toISOString()
-            };
+            }]);
 
-            const { error: finError } = await supabase.from('financial_transactions').insert([payload]);
             if (finError) throw finError;
 
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
 
-            setToast({ message: "Recebimento concluído com sucesso! 💰", type: 'success' });
+            setToast({ message: "Pagamento confirmado!", type: 'success' });
             
             setTimeout(() => {
-                resetLocalState();
                 onSuccess(); 
                 onClose(); 
-            }, 1200);
+            }, 1000);
 
         } catch (error: any) {
-            console.error("[CHECKOUT] Erro ao liquidar:", error);
-            setToast({ message: `Erro: ${error.message || "Tente novamente."}`, type: 'error' });
+            console.error("[CHECKOUT] Erro:", error);
+            setToast({ message: `Erro: ${error.message}`, type: 'error' });
             setIsLoading(false);
         }
     };
@@ -234,8 +202,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
-                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Check-out de Atendimento</p>
+                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Checkout V5</h2>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
@@ -243,48 +210,34 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
                 <main className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
                     <div className="bg-slate-900 rounded-[32px] p-6 text-white shadow-xl relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-8 opacity-5"><ShoppingCart size={120} /></div>
-                        <div className="relative z-10 space-y-4">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{appointment.service_name}</p>
-                                    <p className="text-sm font-bold text-slate-300">{appointment.client_name}</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total</p>
-                                    <p className="text-3xl font-black text-emerald-400 tracking-tighter">{formatCurrency(appointment.price)}</p>
-                                </div>
+                        <div className="relative z-10 space-y-4 text-left">
+                            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{appointment.service_name}</p>
+                            <p className="text-sm font-bold text-slate-300">{appointment.client_name}</p>
+                            <div className="mt-4 pt-4 border-t border-white/5">
+                                <p className="text-3xl font-black text-emerald-400 tracking-tighter">{formatCurrency(appointment.price)}</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 text-left">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1.5">
                             <UserCheck size={12} className="text-orange-500" />
-                            1. Quem recebe a comissão?
+                            Profissional do Recebimento
                         </label>
-                        <div className="relative group">
-                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors pointer-events-none">
-                                <User size={18} />
-                            </div>
-                            <select 
-                                value={selectedProfessionalId}
-                                onChange={(e) => setSelectedProfessionalId(e.target.value)}
-                                className={`w-full pl-12 pr-10 py-4 bg-slate-50 border-2 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold cursor-pointer shadow-sm ${!selectedProfessionalId ? 'border-slate-100 text-slate-400 italic' : 'border-slate-100 text-slate-700'}`}
-                            >
-                                <option value="">Auto-Detectar do Agendamento</option>
-                                {dbProfessionals.map(prof => (
-                                    <option key={prof.id} value={prof.id}>{prof.name}</option>
-                                ))}
-                            </select>
-                            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">
-                                <ChevronDown size={18} />
-                            </div>
-                        </div>
+                        <select 
+                            value={selectedProfessionalId}
+                            onChange={(e) => setSelectedProfessionalId(e.target.value)}
+                            className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-orange-100 font-bold text-slate-700"
+                        >
+                            <option value="">Selecionar Profissional...</option>
+                            {dbProfessionals.map(prof => (
+                                <option key={prof.id} value={prof.id}>{prof.name}</option>
+                            ))}
+                        </select>
                     </div>
 
-                    <div className="space-y-3">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">2. Método de Recebimento</label>
+                    <div className="space-y-3 text-left">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Forma de Pagamento</label>
                         <div className="grid grid-cols-4 gap-2">
                             {categories.map((cat) => (
                                 <button
@@ -302,57 +255,46 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     {isFetching ? (
                         <div className="py-4 flex justify-center"><Loader2 className="animate-spin text-orange-500" /></div>
                     ) : filteredMethods.length > 0 ? (
-                        <div className="space-y-4">
+                        <div className="space-y-4 text-left">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">3. Operadora / Taxa</label>
-                                <div className="relative">
-                                    <select 
-                                        value={selectedMethodId}
-                                        onChange={(e) => setSelectedMethodId(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none appearance-none focus:ring-4 focus:ring-orange-100"
-                                    >
-                                        {filteredMethods.map(m => (
-                                            <option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={18} />
-                                </div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Operadora Selecionada</label>
+                                <select 
+                                    value={selectedMethodId}
+                                    onChange={(e) => setSelectedMethodId(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700"
+                                >
+                                    {filteredMethods.map(m => (
+                                        <option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>
+                                    ))}
+                                </select>
                             </div>
 
-                            {currentMethod?.type === 'credit' && currentMethod.allow_installments && (
+                            {currentMethod?.type === 'credit' && (
                                 <div className="space-y-1.5 animate-in slide-in-from-top-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">4. Parcelamento</label>
-                                    <div className="relative">
-                                        <select 
-                                            value={installments}
-                                            onChange={(e) => setInstallments(parseInt(e.target.value))}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none appearance-none focus:ring-4 focus:ring-orange-100"
-                                        >
-                                            <option value={1}>À vista (1x)</option>
-                                            {Array.from({ length: (currentMethod.max_installments || 1) - 1 }, (_, i) => i + 2).map(n => (
-                                                <option key={n} value={n}>{n} Vezes</option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={18} />
-                                    </div>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Plano de Parcelas</label>
+                                    <select 
+                                        value={installments}
+                                        onChange={(e) => setInstallments(parseInt(e.target.value))}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700"
+                                    >
+                                        <option value={1}>À vista (1x)</option>
+                                        {Array.from({ length: (currentMethod.max_installments || 1) - 1 }, (_, i) => i + 2).map(n => (
+                                            <option key={n} value={n}>{n} Vezes</option>
+                                        ))}
+                                    </select>
                                 </div>
                             )}
                         </div>
-                    ) : (
-                        <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex items-center gap-3">
-                            <AlertTriangle className="text-amber-500" size={18} />
-                            <p className="text-[10px] font-bold text-amber-700 uppercase leading-tight">Nenhum método configurado para {selectedCategory}.</p>
-                        </div>
-                    )}
+                    ) : null}
 
                     {currentMethod && (
-                        <div className="p-5 bg-slate-50 border-2 border-slate-100 rounded-[28px] space-y-3 shadow-inner">
+                        <div className="p-5 bg-slate-50 border-2 border-slate-100 rounded-[28px] space-y-3 shadow-inner text-left">
                             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                <span className="flex items-center gap-1.5"><Percent size={12} className="text-orange-500" /> Taxa Aplicada ({installments}x)</span>
-                                <span className="text-rose-600 font-black">{financialMetrics.rate}%</span>
+                                <span>Taxa Calculada ({installments}x)</span>
+                                <span className="text-rose-600">{financialMetrics.rate}%</span>
                             </div>
                             <div className="flex justify-between items-center pt-2 border-t border-slate-200/50">
-                                <span className="text-xs font-bold text-slate-500">Recebimento Líquido</span>
+                                <span className="text-xs font-bold text-slate-500">Líquido Estimado</span>
                                 <span className="text-lg font-black text-emerald-600">{formatCurrency(financialMetrics.netValue)}</span>
                             </div>
                         </div>
@@ -360,7 +302,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 </main>
 
                 <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
-                    <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl transition-all">Cancelar</button>
+                    <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl">Cancelar</button>
                     <button
                         onClick={handleConfirmPayment}
                         disabled={isLoading || !currentMethod}
