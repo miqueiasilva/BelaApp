@@ -205,12 +205,14 @@ const ProdutosView: React.FC = () => {
                             <h3 className="font-black text-slate-400 uppercase tracking-widest">Estoque Vazio</h3>
                         </div>
                     ) : (
-                        Object.entries(filteredAndGrouped).map(([category, items]) => (
+                        /* FIX: Cast entries from Object.entries to resolve 'unknown' type issues with length and map */
+                        (Object.entries(filteredAndGrouped) as [string, Product[]][]).map(([category, items]) => (
                             <section key={category} className="animate-in fade-in duration-500">
                                 <header className="flex items-center gap-4 mb-4 px-2">
                                     <div className="h-px flex-1 bg-slate-200"></div>
                                     <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">{category}</h2>
-                                    <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-lg text-[9px] font-black">{items.length} ITENS</span>
+                                    {/* FIX: Type assertion to resolve property 'length' does not exist on type 'unknown' */}
+                                    <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-lg text-[9px] font-black">{(items as any).length} ITENS</span>
                                     <div className="h-px flex-1 bg-slate-200"></div>
                                 </header>
 
@@ -226,7 +228,8 @@ const ProdutosView: React.FC = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-50">
-                                            {items.map(p => {
+                                            {/* FIX: Type assertion to resolve property 'map' does not exist on type 'unknown' */}
+                                            {(items as any).map(p => {
                                                 const isLow = p.stock_quantity <= (p.min_stock || 0);
                                                 const isWarning = p.stock_quantity <= (p.min_stock || 0) * 1.5;
                                                 const progress = Math.min(100, (p.stock_quantity / ((p.min_stock || 1) * 3)) * 100);

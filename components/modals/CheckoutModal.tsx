@@ -72,7 +72,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         setInstallments(1);
     };
 
-    // 3. FETCH DE DADOS REAIS
+    // 3. FETCH DE DADOS REAIS - CARREGANDO TAXAS DO BANCO
     const loadSystemData = async () => {
         setIsFetching(true);
         try {
@@ -87,13 +87,20 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             setDbProfessionals(profsRes.data || []);
             setDbPaymentMethods(methodsRes.data || []);
 
+            // Seleciona automaticamente o primeiro PIX configurado (ou cria um estado inicial)
             if (methodsRes.data && methodsRes.data.length > 0) {
                 const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
-                if (firstPix) setSelectedMethodId(firstPix.id);
+                if (firstPix) {
+                    setSelectedCategory('pix');
+                    setSelectedMethodId(firstPix.id);
+                } else {
+                    setSelectedCategory(methodsRes.data[0].type);
+                    setSelectedMethodId(methodsRes.data[0].id);
+                }
             }
         } catch (err: any) {
-            console.error("[CHECKOUT] Erro na carga:", err);
-            setToast({ message: "Erro ao sincronizar com o servidor.", type: 'error' });
+            console.error("[CHECKOUT] Erro na carga de taxas:", err);
+            setToast({ message: "Erro ao sincronizar taxas com o servidor.", type: 'error' });
         } finally {
             setIsFetching(false);
         }
@@ -134,9 +141,18 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return dbPaymentMethods.find(m => m.id === selectedMethodId);
     }, [dbPaymentMethods, selectedMethodId]);
 
+    // CÁLCULO DINÂMICO DE TAXAS BASEADO NO BANCO
     const financialMetrics = useMemo(() => {
         if (!currentMethod) return { rate: 0, netValue: appointment.price };
-        let rate = installments === 1 ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates[installments.toString()] || 0);
+        
+        let rate = 0;
+        if (installments === 1) {
+            rate = Number(currentMethod.rate_cash || 0);
+        } else {
+            // Pega a taxa específica da parcela carregada do payment_methods_config
+            rate = Number(currentMethod.installment_rates?.[installments.toString()] || 0);
+        }
+
         const discount = (appointment.price * rate) / 100;
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
@@ -163,7 +179,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         try {
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
-            // PAYLOAD LIMPO: Sem user_id para evitar erro 42703
             const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -195,7 +210,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             }, 1200);
 
         } catch (error: any) {
-            console.error("[CHECKOUT] Erro:", error);
+            console.error("[CHECKOUT] Erro ao liquidar:", error);
             setToast({ message: `Erro: ${error.message || "Tente novamente."}`, type: 'error' });
             setIsLoading(false);
         }
@@ -305,8 +320,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                             </div>
 
                             {currentMethod?.type === 'credit' && currentMethod.allow_installments && (
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">4. Parcelas</label>
+                                <div className="space-y-1.5 animate-in slide-in-from-top-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">4. Parcelamento</label>
                                     <div className="relative">
                                         <select 
                                             value={installments}
@@ -331,14 +346,14 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     )}
 
                     {currentMethod && (
-                        <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-2">
+                        <div className="p-5 bg-slate-50 border-2 border-slate-100 rounded-[28px] space-y-3 shadow-inner">
                             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                <span>Taxa Aplicada ({installments}x)</span>
-                                <span className="text-slate-600">{financialMetrics.rate}%</span>
+                                <span className="flex items-center gap-1.5"><Percent size={12} className="text-orange-500" /> Taxa Aplicada ({installments}x)</span>
+                                <span className="text-rose-600 font-black">{financialMetrics.rate}%</span>
                             </div>
-                            <div className="flex justify-between items-center">
+                            <div className="flex justify-between items-center pt-2 border-t border-slate-200/50">
                                 <span className="text-xs font-bold text-slate-500">Recebimento Líquido</span>
-                                <span className="text-sm font-black text-slate-700">{formatCurrency(financialMetrics.netValue)}</span>
+                                <span className="text-lg font-black text-emerald-600">{formatCurrency(financialMetrics.netValue)}</span>
                             </div>
                         </div>
                     )}
@@ -352,7 +367,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-                        Finalizar e Baixar
+                        Confirmar Recebimento
                     </button>
                 </footer>
             </div>

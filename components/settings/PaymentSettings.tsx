@@ -15,7 +15,7 @@ interface PaymentMethod {
     type: 'credit' | 'debit' | 'pix' | 'money';
     brand?: string;
     rate_cash: number | string; 
-    rate_installment_12x: number | string; // Restaurada propriedade específica do schema
+    rate_installment_12x: number | string;
     allow_installments: boolean;
     max_installments: number;
     installment_rates: Record<string, number | string>; 
@@ -23,7 +23,6 @@ interface PaymentMethod {
 }
 
 const CARD_BRANDS = ['VISA', 'MASTER', 'ELO', 'HIPER', 'AMEX', 'OUTRAS'];
-const INSTALLMENT_OPTIONS = Array.from({ length: 11 }, (_, i) => i + 2); // 2x até 12x
 
 const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [methods, setMethods] = useState<PaymentMethod[]>([]);
@@ -72,9 +71,18 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 }
             }
 
+            // Mapeamento SENIOR para o campo method_type do banco
+            const methodTypeMapping: Record<string, string> = {
+                'credit': 'card',
+                'debit': 'card',
+                'pix': 'transfer',
+                'money': 'money'
+            };
+
             const payload: any = {
                 name: editingMethod.name,
                 type: editingMethod.type,
+                method_type: methodTypeMapping[editingMethod.type] || 'other', // Novo campo exigido
                 brand: (editingMethod.type === 'credit' || editingMethod.type === 'debit') ? editingMethod.brand : null,
                 rate_cash: parseFloat(String(editingMethod.rate_cash || 0)),
                 rate_installment_12x: editingMethod.type === 'credit' ? parseFloat(String(editingMethod.rate_installment_12x || 0)) : 0,
@@ -95,7 +103,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             if (error) throw error;
 
-            setToast({ message: 'Configurações de taxas atualizadas!', type: 'success' });
+            setToast({ message: 'Configurações de taxas sincronizadas com o banco!', type: 'success' });
             setEditingMethod(null);
             fetchMethods();
         } catch (err: any) {
