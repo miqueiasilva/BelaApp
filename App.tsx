@@ -1,35 +1,44 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useStudio } from './contexts/StudioContext';
 import { ViewState, FinancialTransaction, UserRole } from './types';
 import EnvGate from './components/EnvGate';
 import { hasAccess } from './utils/permissions';
+import { Loader2, ShieldAlert, LogOut } from 'lucide-react';
 
-// Layout & Views
+// Componentes estáticos (Carregamento Imediato)
 import MainLayout from './components/layout/MainLayout';
 import LoginView from './components/views/LoginView';
-import ResetPasswordView from './components/views/ResetPasswordView';
-import DashboardView from './components/views/DashboardView';
-import AtendimentosView from './components/views/AtendimentosView';
-import AgendaOnlineView from './components/views/AgendaOnlineView';
-import WhatsAppView from './components/views/WhatsAppView';
-import FinanceiroView from './components/views/FinanceiroView';
-import ClientesView from './components/views/ClientesView';
-import RelatoriosView from './components/views/RelatoriosView';
-import ConfiguracoesView from './components/views/ConfiguracoesView';
-import RemuneracoesView from './components/views/RemuneracoesView';
-import VendasView from './components/views/VendasView';
-import ComandasView from './components/views/ComandasView';
-import CommandDetailView from './components/views/CommandDetailView';
-import CaixaView from './components/views/CaixaView';
-import ProdutosView from './components/views/ProdutosView';
-import ServicosView from './components/views/ServicosView';
-import EquipeView from './components/views/EquipeView';
-import PublicBookingPreview from './components/views/PublicBookingPreview';
+
+// Views Lazy Load (Code Splitting)
+const ResetPasswordView = lazy(() => import('./components/views/ResetPasswordView'));
+const DashboardView = lazy(() => import('./components/views/DashboardView'));
+const AtendimentosView = lazy(() => import('./components/views/AtendimentosView'));
+const AgendaOnlineView = lazy(() => import('./components/views/AgendaOnlineView'));
+const WhatsAppView = lazy(() => import('./components/views/WhatsAppView'));
+const FinanceiroView = lazy(() => import('./components/views/FinanceiroView'));
+const ClientesView = lazy(() => import('./components/views/ClientesView'));
+const RelatoriosView = lazy(() => import('./components/views/RelatoriosView'));
+const ConfiguracoesView = lazy(() => import('./components/views/ConfiguracoesView'));
+const RemuneracoesView = lazy(() => import('./components/views/RemuneracoesView'));
+const VendasView = lazy(() => import('./components/views/VendasView'));
+const ComandasView = lazy(() => import('./components/views/ComandasView'));
+const CommandDetailView = lazy(() => import('./components/views/CommandDetailView'));
+const CaixaView = lazy(() => import('./components/views/CaixaView'));
+const ProdutosView = lazy(() => import('./components/views/ProdutosView'));
+const ServicosView = lazy(() => import('./components/views/ServicosView'));
+const EquipeView = lazy(() => import('./components/views/EquipeView'));
+const PublicBookingPreview = lazy(() => import('./components/views/PublicBookingPreview'));
 
 import { mockTransactions } from './data/mockData';
-import { ShieldAlert, LogOut } from 'lucide-react';
+
+const ViewLoader = () => (
+  <div className="h-full w-full flex flex-col items-center justify-center bg-slate-50/50 backdrop-blur-sm">
+    <Loader2 className="animate-spin text-orange-500 mb-2" size={32} />
+    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Carregando Módulo...</p>
+  </div>
+);
 
 const AppContent: React.FC = () => {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -61,11 +70,10 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (hash === '#/public-preview') return <PublicBookingPreview />;
-  if (pathname === '/reset-password' || hash === '#/reset-password') return <ResetPasswordView />;
+  if (hash === '#/public-preview') return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
+  if (pathname === '/reset-password' || hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
   if (!user) return <LoginView />;
 
-  // Caso o usuário esteja logado mas não tenha estúdios vinculados
   if (!activeStudioId) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
@@ -98,28 +106,34 @@ const AppContent: React.FC = () => {
         return <DashboardView onNavigate={setCurrentView} />;
     }
 
-    switch (currentView) {
-      case 'dashboard': return <DashboardView onNavigate={setCurrentView} />;
-      case 'agenda': return <AtendimentosView onAddTransaction={handleAddTransaction} onNavigateToCommand={navigateToCommand} />;
-      case 'agenda_online': return <AgendaOnlineView />;
-      case 'whatsapp': return <WhatsAppView />;
-      case 'financeiro': return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
-      case 'clientes': return <ClientesView />;
-      case 'relatorios': return <RelatoriosView />;
-      case 'configuracoes': return <ConfiguracoesView />;
-      case 'remuneracoes': return <RemuneracoesView />;
-      case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
-      case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} />;
-      case 'comanda_detalhe': return <CommandDetailView commandId={activeCommandId!} onBack={() => setCurrentView('comandas')} />;
-      case 'caixa': return <CaixaView />;
-      case 'produtos': return <ProdutosView />;
-      case 'servicos': return <ServicosView />;
-      case 'equipe': return <EquipeView />;
-      case 'public_preview':
-        window.location.hash = '/public-preview';
-        return null;
-      default: return <DashboardView onNavigate={setCurrentView} />;
-    }
+    return (
+      <Suspense fallback={<ViewLoader />}>
+        {(() => {
+          switch (currentView) {
+            case 'dashboard': return <DashboardView onNavigate={setCurrentView} />;
+            case 'agenda': return <AtendimentosView onAddTransaction={handleAddTransaction} onNavigateToCommand={navigateToCommand} />;
+            case 'agenda_online': return <AgendaOnlineView />;
+            case 'whatsapp': return <WhatsAppView />;
+            case 'financeiro': return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
+            case 'clientes': return <ClientesView />;
+            case 'relatorios': return <RelatoriosView />;
+            case 'configuracoes': return <ConfiguracoesView />;
+            case 'remuneracoes': return <RemuneracoesView />;
+            case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
+            case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} />;
+            case 'comanda_detalhe': return <CommandDetailView commandId={activeCommandId!} onBack={() => setCurrentView('comandas')} />;
+            case 'caixa': return <CaixaView />;
+            case 'produtos': return <ProdutosView />;
+            case 'servicos': return <ServicosView />;
+            case 'equipe': return <EquipeView />;
+            case 'public_preview':
+              window.location.hash = '/public-preview';
+              return null;
+            default: return <DashboardView onNavigate={setCurrentView} />;
+          }
+        })()}
+      </Suspense>
+    );
   };
 
   return (

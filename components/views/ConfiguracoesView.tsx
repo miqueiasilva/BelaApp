@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Settings } from 'lucide-react';
 import SettingsHub from '../settings/SettingsHub';
 import PaymentSettings from '../settings/PaymentSettings';
@@ -33,8 +33,6 @@ const ConfiguracoesView: React.FC = () => {
                 return <ResourcesSettings onBack={() => setSubView('hub')} />;
             case 'theme':
                 return <UnderConstruction title="Tema do Sistema" onBack={() => setSubView('hub')} />;
-            case 'resources':
-                return <ResourcesSettings onBack={() => setSubView('hub')} />;
             case 'discounts':
                 return <UnderConstruction title="Cupons e Descontos" onBack={() => setSubView('hub')} />;
             default:
