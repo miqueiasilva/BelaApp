@@ -38,6 +38,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [discount, setDiscount] = useState<string>('0');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
+    // Estado para armazenar o retorno oficial da RPC para exibição final
+    const [serverReceipt, setServerReceipt] = useState<{ net_amount: number; fee_applied: number } | null>(null);
+
     const fetchCommand = async () => {
         if (!activeStudioId) return;
         setLoading(true);
@@ -66,7 +69,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const totals = useMemo(() => {
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
         
-        // CORREÇÃO: Usando 'price' e 'quantity' conforme schema real
         const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 0)), 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
@@ -102,25 +104,40 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!command || !activeStudioId || isFinishing || addedPayments.length === 0) return;
         setIsFinishing(true);
 
+        // Mapeamento para os tipos aceitos pela v4 da RPC
+        const methodMapping: Record<string, string> = {
+            'pix': 'pix',
+            'cartao_credito': 'credit',
+            'cartao_debito': 'debit',
+            'dinheiro': 'pix' // Fallback para dinheiro se a RPC v4 usar pix/credit/debit
+        };
+
+        const primaryMethod = methodMapping[addedPayments[0].method] || 'pix';
+
         try {
-            // Chamada da RPC otimizada para fechar comanda com p_command_id uuid
-            const { error } = await supabase.rpc('close_command_and_generate_transactions', {
-                p_command_id: command.id
+            // Chamada da RPC v4 - Inteligência de cálculo agora 100% no Banco
+            const { data, error } = await supabase.rpc('pay_and_close_command_v4', {
+                p_command_id: command.id,
+                p_payment_method: primaryMethod
             });
 
-            if (error) {
-                console.error("Erro RPC details:", error.message, error.details);
-                // Se o erro for de coluna commission_percent, é provável que a RPC no banco precise de ajuste,
-                // mas garantimos que o front não está travando por parâmetros errados.
-                throw error;
+            if (error) throw error;
+
+            // Atualiza estado visual com dados RETORNADOS do banco (Segurança SaaS)
+            if (data) {
+                setServerReceipt({
+                    net_amount: data.net_amount || 0,
+                    fee_applied: data.fee_applied || 0
+                });
             }
 
-            setToast({ message: "Comanda finalizada com sucesso! 💰", type: 'success' });
-            setTimeout(onBack, 2000);
+            setToast({ message: "Pagamento processado com sucesso! Redirecionando...", type: 'success' });
+            
+            // Delay para o usuário ver os valores oficiais retornados na tela (opcional)
+            setTimeout(onBack, 2500);
         } catch (e: any) {
-            console.error("Erro no checkout via RPC:", e);
-            setToast({ message: `Falha ao finalizar checkout: ${e.message}`, type: 'error' });
-        } finally {
+            console.error("Erro no checkout v4:", e);
+            setToast({ message: `Erro ao finalizar: ${e.message}`, type: 'error' });
             setIsFinishing(false);
         }
     };
@@ -273,7 +290,22 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total da Conta</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                 </div>
-                                {totals.paid > 0 && (
+
+                                {/* EXIBIÇÃO DE DADOS DO SERVIDOR (APÓS RPC) */}
+                                {serverReceipt && (
+                                    <div className="mt-4 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-3xl animate-in zoom-in">
+                                        <div className="flex justify-between text-xs font-bold text-emerald-300">
+                                            <span>Taxa Bancária (DB):</span>
+                                            <span>R$ {serverReceipt.fee_applied.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm font-black text-white mt-1">
+                                            <span>Líquido Real (DB):</span>
+                                            <span>R$ {serverReceipt.net_amount.toFixed(2)}</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {totals.paid > 0 && !serverReceipt && (
                                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-3">
                                         <div className="flex justify-between text-xs font-bold"><span className="text-slate-400">Total Pago:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
                                         <div className="flex justify-between items-center pt-2 border-t border-white/5"><span className="text-xs font-black uppercase tracking-widest text-orange-400">A Pagar:</span><span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white animate-pulse'}`}>R$ {totals.remaining.toFixed(2)}</span></div>
