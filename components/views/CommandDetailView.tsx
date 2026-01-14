@@ -38,7 +38,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [discount, setDiscount] = useState<string>('0');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Estado para armazenar o retorno oficial da RPC para exibição final
+    // Estado para armazenar o retorno oficial da RPC para exibição final (Single Source of Truth)
     const [serverReceipt, setServerReceipt] = useState<{ net_amount: number; fee_applied: number } | null>(null);
 
     const fetchCommand = async () => {
@@ -100,30 +100,38 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setAddedPayments(prev => prev.filter(p => p.id !== id));
     };
 
+    /**
+     * Lógica Sênior: Delegação de processamento para RPC.
+     * Não há cálculos de taxas ou valores líquidos no frontend.
+     */
     const handleFinishPayment = async () => {
         if (!command || !activeStudioId || isFinishing || addedPayments.length === 0) return;
+        
         setIsFinishing(true);
 
-        // Mapeamento para os tipos aceitos pela v4 da RPC
+        // Mapeamento para o contrato da RPC v4
         const methodMapping: Record<string, string> = {
             'pix': 'pix',
             'cartao_credito': 'credit',
             'cartao_debito': 'debit',
-            'dinheiro': 'pix' // Fallback para dinheiro se a RPC v4 usar pix/credit/debit
+            'dinheiro': 'pix' // Tratado como pix para fins de conciliação imediata na v4
         };
 
         const primaryMethod = methodMapping[addedPayments[0].method] || 'pix';
 
         try {
-            // Chamada da RPC v4 - Inteligência de cálculo agora 100% no Banco
+            // Chamada da RPC pay_and_close_command_v4
             const { data, error } = await supabase.rpc('pay_and_close_command_v4', {
                 p_command_id: command.id,
                 p_payment_method: primaryMethod
             });
 
-            if (error) throw error;
+            if (error) {
+                // Tratamento de erro específico do banco (ex: estoque insuficiente, comanda já fechada)
+                throw new Error(error.message || "Erro interno no servidor ao processar pagamento.");
+            }
 
-            // Atualiza estado visual com dados RETORNADOS do banco (Segurança SaaS)
+            // A RPC retorna net_amount e fee_applied. Sincronizamos o visual imediatamente.
             if (data) {
                 setServerReceipt({
                     net_amount: data.net_amount || 0,
@@ -131,13 +139,16 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 });
             }
 
-            setToast({ message: "Pagamento processado com sucesso! Redirecionando...", type: 'success' });
+            setToast({ message: "Comanda fechada com sucesso!", type: 'success' });
             
-            // Delay para o usuário ver os valores oficiais retornados na tela (opcional)
-            setTimeout(onBack, 2500);
+            // Aguarda breve visualização do recibo oficial antes de retornar
+            setTimeout(() => {
+                onBack();
+            }, 3000);
+
         } catch (e: any) {
-            console.error("Erro no checkout v4:", e);
-            setToast({ message: `Erro ao finalizar: ${e.message}`, type: 'error' });
+            console.error("[RPC_PAYMENT_ERROR]", e);
+            setToast({ message: `Falha no fechamento: ${e.message}`, type: 'error' });
             setIsFinishing(false);
         }
     };
@@ -146,14 +157,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         return (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
                 <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                <p className="text-xs font-black uppercase tracking-widest animate-pulse">Sincronizando Checkout...</p>
+                <p className="text-xs font-black uppercase tracking-widest animate-pulse">Carregando Comanda...</p>
             </div>
         );
     }
 
     if (!command) return null;
 
-    const clientNameDisplay = command.clients?.nome || 'Cliente sem nome';
+    const clientNameDisplay = command.clients?.nome || 'Cliente Consumidor';
     const clientPhone = command.clients?.whatsapp || 'Sem telefone';
 
     const paymentMethods = [
@@ -174,13 +185,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </button>
                     <div>
                         <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                            Checkout Comanda <span className="text-orange-500 font-mono">#{command.id.split('-')[0].toUpperCase()}</span>
+                            Checkout <span className="text-orange-500 font-mono">#{command.id.split('-')[0].toUpperCase()}</span>
                         </h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Processamento de Recebimento</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Processamento Financeiro SaaS</p>
                     </div>
                 </div>
                 <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${command.status === 'open' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
-                    {command.status === 'open' ? 'Em Aberto' : 'Pago'}
+                    {command.status === 'open' ? 'Aguardando Pagamento' : 'Comanda Liquidada'}
                 </div>
             </header>
 
@@ -200,7 +211,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     </div>
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
                                         <Calendar size={14} className="text-orange-500" />
-                                        {format(new Date(command.created_at), "dd 'de' MMMM 'às' HH:mm", { locale: pt })}
+                                        Aberta em {format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt })}
                                     </div>
                                 </div>
                             </div>
@@ -209,7 +220,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
                                 <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
-                                    <ShoppingCart size={18} className="text-orange-500" /> Itens Lançados
+                                    <ShoppingCart size={18} className="text-orange-500" /> Detalhes do Consumo
                                 </h3>
                             </header>
                             <div className="divide-y divide-slate-50">
@@ -238,7 +249,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
                                     <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2">
-                                        <CheckCircle size={16} /> Parcelas de Recebimento
+                                        <CheckCircle size={16} /> Fluxo de Recebimento
                                     </h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
@@ -252,9 +263,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             </div>
                                             <div className="flex items-center gap-6">
                                                 <span className="font-black text-slate-800">R$ {p.amount.toFixed(2)}</span>
-                                                <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors">
-                                                    <X size={18} strokeWidth={3} />
-                                                </button>
+                                                {!serverReceipt && (
+                                                    <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors">
+                                                        <X size={18} strokeWidth={3} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -271,71 +284,107 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400">
-                                        <span>Subtotal</span>
+                                        <span>Total Bruto</span>
                                         <span>R$ {totals.subtotal.toFixed(2)}</span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400">
-                                            <Percent size={14} /> Desconto (R$)
+                                            <Percent size={14} /> Desconto
                                         </div>
                                         <input 
                                             type="number" 
+                                            disabled={!!serverReceipt}
                                             value={discount}
                                             onChange={e => setDiscount(e.target.value)}
-                                            className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all"
+                                            className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all disabled:opacity-50"
                                         />
                                     </div>
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total da Conta</p>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Valor Final a Receber</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                 </div>
 
-                                {/* EXIBIÇÃO DE DADOS DO SERVIDOR (APÓS RPC) */}
+                                {/* EXIBIÇÃO DE DADOS DO SERVIDOR (RESULTADO DA RPC) */}
                                 {serverReceipt && (
-                                    <div className="mt-4 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-3xl animate-in zoom-in">
-                                        <div className="flex justify-between text-xs font-bold text-emerald-300">
-                                            <span>Taxa Bancária (DB):</span>
-                                            <span>R$ {serverReceipt.fee_applied.toFixed(2)}</span>
+                                    <div className="mt-8 p-6 bg-white/5 border border-white/10 rounded-[32px] animate-in zoom-in duration-500">
+                                        <div className="flex items-center gap-2 mb-4 text-[10px] font-black uppercase text-emerald-400 tracking-widest">
+                                            <ShieldCheck size={14} /> Conciliação de Taxas
                                         </div>
-                                        <div className="flex justify-between text-sm font-black text-white mt-1">
-                                            <span>Líquido Real (DB):</span>
-                                            <span>R$ {serverReceipt.net_amount.toFixed(2)}</span>
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between text-xs font-bold">
+                                                <span className="text-slate-400">Taxa Administrativa (Banco)</span>
+                                                <span className="text-rose-400">- R$ {serverReceipt.fee_applied.toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-end pt-3 border-t border-white/5">
+                                                <span className="text-xs font-black uppercase text-slate-400">Líquido em Conta</span>
+                                                <span className="text-2xl font-black text-white">R$ {serverReceipt.net_amount.toFixed(2)}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
 
                                 {totals.paid > 0 && !serverReceipt && (
                                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-3">
-                                        <div className="flex justify-between text-xs font-bold"><span className="text-slate-400">Total Pago:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-white/5"><span className="text-xs font-black uppercase tracking-widest text-orange-400">A Pagar:</span><span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white animate-pulse'}`}>R$ {totals.remaining.toFixed(2)}</span></div>
+                                        <div className="flex justify-between text-xs font-bold"><span className="text-slate-400">Total Informado:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
+                                        <div className="flex justify-between items-center pt-2 border-t border-white/5"><span className="text-xs font-black uppercase tracking-widest text-orange-400">Pendente:</span><span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white animate-pulse'}`}>R$ {totals.remaining.toFixed(2)}</span></div>
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><CreditCard size={14} className="text-orange-500" /> Adicionar Pagamento</h4>
-                            {activeMethod ? (
-                                <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95">
-                                    <div className="flex justify-between items-center mb-4"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Valor no {activeMethod.toUpperCase()}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-500"><X size={20}/></button></div>
-                                    <div className="relative mb-4"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input autoFocus type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-orange-100"/></div>
-                                    <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg"><Plus size={18} /> Confirmar Parcela</button>
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-2 gap-3">
-                                    {paymentMethods.map(pm => (
-                                        <button key={pm.id} onClick={() => handleInitPayment(pm.id as PaymentMethod)} className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-transparent bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-white transition-all active:scale-95"><pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500" /><span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span></button>
-                                    ))}
-                                </div>
-                            )}
-                            <button onClick={handleFinishPayment} disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0} className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}>{isFinishing ? (<Loader2 size={24} className="animate-spin" />) : (<><CheckCircle size={24} /> {totals.remaining > 0 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'Fechar Conta'}</>)}</button>
-                        </div>
+                        {!serverReceipt && (
+                            <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><CreditCard size={14} className="text-orange-500" /> Forma de Pagamento</h4>
+                                {activeMethod ? (
+                                    <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95">
+                                        <div className="flex justify-between items-center mb-4"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Valor no {activeMethod.toUpperCase()}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-500"><X size={20}/></button></div>
+                                        <div className="relative mb-4"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input autoFocus type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-orange-100"/></div>
+                                        <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg"><Plus size={18} /> Confirmar Parcela</button>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {paymentMethods.map(pm => (
+                                            <button key={pm.id} onClick={() => handleInitPayment(pm.id as PaymentMethod)} className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-transparent bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-white transition-all active:scale-95"><pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500" /><span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span></button>
+                                        ))}
+                                    </div>
+                                )}
+                                <button 
+                                    onClick={handleFinishPayment} 
+                                    disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
+                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
+                                >
+                                    {isFinishing ? (<Loader2 size={24} className="animate-spin" />) : (<><CheckCircle size={24} /> {totals.remaining > 0 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'Fechar e Gerar Venda'}</>)}
+                                </button>
+                            </div>
+                        )}
+                        
+                        {serverReceipt && (
+                            <button 
+                                onClick={onBack}
+                                className="w-full py-6 rounded-[32px] bg-slate-800 text-white font-black text-lg uppercase tracking-widest shadow-xl hover:bg-slate-900 transition-all active:scale-95 flex items-center justify-center gap-3"
+                            >
+                                <ArrowLeft size={24} /> Voltar para Comandas
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
         </div>
     );
 };
+
+const ShieldCheck = ({ size, className }: { size: number, className?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        <path d="m9 12 2 2 4-4" />
+    </svg>
+);
+
+const ArrowLeft = ({ size, className }: { size: number, className?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>
+    </svg>
+);
 
 export default CommandDetailView;
