@@ -125,7 +125,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             if (error) throw error;
             fetchMethods();
-            setEditingMethod(null);
+            if (editingMethod?.id === id) setEditingMethod(null);
             setToast({ message: "Método removido.", type: 'info' });
         } catch (err: any) {
             setToast({ message: "Erro ao excluir: " + err.message, type: 'error' });
@@ -203,8 +203,20 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 <div className="p-3 bg-slate-50 rounded-2xl group-hover:bg-orange-50 group-hover:text-orange-600 transition-colors">
                                     {getIcon(method.type)}
                                 </div>
-                                <div className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter ${method.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                    {method.is_active ? 'Ativo' : 'Pausado'}
+                                <div className="flex items-center gap-2">
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (method.id) handleDelete(method.id);
+                                        }}
+                                        className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                        title="Excluir Método"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                    <div className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter ${method.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                        {method.is_active ? 'Ativo' : 'Pausado'}
+                                    </div>
                                 </div>
                             </div>
                             
