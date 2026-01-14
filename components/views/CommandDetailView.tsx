@@ -6,7 +6,7 @@ import {
     Phone, Scissors, ShoppingBag, Receipt,
     Percent, Calendar, ShoppingCart, X, Coins,
     ArrowRight, ShieldCheck, Tag, CreditCard as CardIcon,
-    AlertCircle
+    AlertCircle, Sparkles, CheckCircle2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -35,6 +35,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [command, setCommand] = useState<Command | null>(null);
     const [loading, setLoading] = useState(true);
     const [isFinishing, setIsFinishing] = useState(false);
+    const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
     
     // Estados de Checkout
     const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
@@ -60,6 +61,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (error) throw error;
             setCommand(data);
+            
+            // Se já estiver paga, ativa o estado de sucesso
+            if (data.status === 'paid') {
+                setIsSuccessfullyClosed(true);
+            }
         } catch (e: any) {
             setToast({ message: "Erro ao localizar comanda.", type: 'error' });
             setTimeout(onBack, 2000);
@@ -117,8 +123,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const primaryEntry = addedPayments[0];
 
         try {
-            // Chamada da RPC v5 - Atômica
-            // Garantimos o envio de p_payment_method, p_brand e p_installments
+            // Chamada da RPC v5 - Atômica enviando parâmetros exigidos pela Zelda (Backend)
             const { data, error } = await supabase.rpc('pay_and_close_command_v5', {
                 p_command_id: command.id,
                 p_payment_method: primaryEntry.method,
@@ -128,12 +133,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (error) throw error;
 
-            // --- RESET CRÍTICO DE ESTADO PARA EVITAR VIOLAÇÃO DE RESTRICÃO NULA ---
-            // Limpamos o carrinho de pagamentos local assim que o banco confirma o sucesso
-            setAddedPayments([]);
-            setDiscount('0');
-            setActiveMethod(null);
-
+            // Sucesso: Sincroniza recebimento e limpa PDV
             if (data) {
                 setServerReceipt({
                     net_amount: data.net_amount || 0,
@@ -141,14 +141,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 });
             }
 
-            setToast({ message: "Venda finalizada e estoque atualizado!", type: 'success' });
+            setIsSuccessfullyClosed(true);
+            setAddedPayments([]);
+            setDiscount('0');
+            setToast({ message: "Comanda Finalizada com Sucesso! 🥂", type: 'success' });
             
-            // Recarrega a comanda para refletir o status de 'paid' no sistema
+            // Recarrega dados finais
             fetchCommand();
 
         } catch (e: any) {
-            console.error("[RPC_V5_CRITICAL_FAIL]", e);
-            setToast({ message: `Erro no processamento: ${e.message}`, type: 'error' });
+            console.error("[RPC_ERROR]", e);
+            setToast({ message: `Falha na liquidação: ${e.message}`, type: 'error' });
             setIsFinishing(false);
         }
     };
@@ -157,7 +160,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         return (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
                 <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                <p className="text-xs font-black uppercase tracking-[0.2em]">Acessando Terminal v5...</p>
+                <p className="text-xs font-black uppercase tracking-[0.2em]">Iniciando Checkout v5...</p>
             </div>
         );
     }
@@ -184,20 +187,39 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
                             Checkout <span className="text-orange-500 font-mono">#{command.id.split('-')[0].toUpperCase()}</span>
                         </h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Dependências do Banco Limpas • V5</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Processamento SaaS v5</p>
                     </div>
                 </div>
-                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${command.status === 'open' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
-                    {command.status === 'open' ? 'Aberto' : 'Liquidado'}
+                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isSuccessfullyClosed ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
+                    {isSuccessfullyClosed ? 'Liquidado' : 'Em Aberto'}
                 </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
+                    
+                    {/* COLUNA DA ESQUERDA: CLIENTE E ITENS */}
                     <div className="lg:col-span-2 space-y-6">
-                        {/* CLIENT CARD */}
+                        
+                        {/* CARD DE SUCESSO (LIMPEZA DO PDV) */}
+                        {isSuccessfullyClosed && (
+                            <div className="bg-emerald-600 rounded-[40px] p-10 text-white shadow-2xl animate-in zoom-in-95 duration-500 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-8 opacity-10 rotate-12">
+                                    <Sparkles size={120} />
+                                </div>
+                                <div className="relative z-10 flex flex-col items-center text-center">
+                                    <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mb-6 backdrop-blur-md">
+                                        <CheckCircle2 size={48} className="text-white" />
+                                    </div>
+                                    <h2 className="text-3xl font-black mb-2 uppercase tracking-tighter">Comanda Finalizada!</h2>
+                                    <p className="text-emerald-100 font-medium max-w-sm">O PDV está livre para o próximo cliente. Os dados financeiros e estoque já foram atualizados.</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* CLIENTE (OCULTO APÓS SUCESSO SE PREFERIR, OU MANTÉM COMO RESUMO) */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
-                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner border-4 border-white">
+                            <div className={`w-20 h-20 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner border-4 border-white ${isSuccessfullyClosed ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
                                 {command.clients?.nome?.charAt(0).toUpperCase() || 'C'}
                             </div>
                             <div className="flex-1 text-center md:text-left">
@@ -213,65 +235,29 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* ITEMS LIST */}
-                        <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-                            <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
-                                    <ShoppingCart size={18} className="text-orange-500" /> Itens da Comanda
-                                </h3>
-                            </header>
-                            <div className="divide-y divide-slate-50">
-                                {command.command_items.map(item => (
-                                    <div key={item.id} className="p-8 flex items-center justify-between group hover:bg-slate-50/50 transition-colors">
-                                        <div className="flex items-center gap-5">
-                                            <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
-                                                {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
-                                            </div>
-                                            <div>
-                                                <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
-                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
-                                                    {item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <p className="font-black text-slate-800 text-xl">R$ {(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* PAYMENTS LIST */}
-                        {addedPayments.length > 0 && (
-                            <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
-                                <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50 flex justify-between">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2">
-                                        <CheckCircle size={16} /> Meios de Pagamento Selecionados
+                        {/* LISTA DE SERVIÇOS (LIMPA APÓS SUCESSO) */}
+                        {!isSuccessfullyClosed && (
+                            <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-4">
+                                <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+                                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
+                                        <ShoppingCart size={18} className="text-orange-500" /> Serviços Listados
                                     </h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
-                                    {addedPayments.map(p => (
-                                        <div key={p.id} className="px-8 py-4 flex items-center justify-between group">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500">
-                                                    <Coins size={16} />
+                                    {command.command_items.map(item => (
+                                        <div key={item.id} className="p-8 flex items-center justify-between group hover:bg-slate-50/50 transition-colors">
+                                            <div className="flex items-center gap-5">
+                                                <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                    {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
                                                 </div>
                                                 <div>
-                                                    <span className="text-sm font-black text-slate-700 uppercase">{p.method}</span>
-                                                    {(p.method === 'credit' || p.method === 'debit') && (
-                                                        <span className="ml-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                                            {p.brand} {p.method === 'credit' && `(${p.installments}x)`}
-                                                        </span>
-                                                    )}
+                                                    <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
+                                                    <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
+                                                        {item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}
+                                                    </p>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-6">
-                                                <span className="font-black text-slate-800">R$ {p.amount.toFixed(2)}</span>
-                                                {!serverReceipt && (
-                                                    <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors">
-                                                        <X size={18} strokeWidth={3} />
-                                                    </button>
-                                                )}
-                                            </div>
+                                            <p className="font-black text-slate-800 text-xl">R$ {(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</p>
                                         </div>
                                     ))}
                                 </div>
@@ -279,37 +265,42 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         )}
                     </div>
 
+                    {/* COLUNA DA DIREITA: RESUMO E PAGAMENTO */}
                     <div className="space-y-6">
                         {/* TOTALIZER CARD */}
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden group">
-                            <div className="relative z-10 space-y-6">
+                            <div className="relative z-10 space-y-6 text-left">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400">
-                                        <span>Subtotal</span>
+                                        <span>Bruto Total</span>
                                         <span>R$ {totals.subtotal.toFixed(2)}</span>
                                     </div>
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400">
-                                            <Percent size={14} /> Desconto
+                                    {!isSuccessfullyClosed && (
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400">
+                                                <Percent size={14} /> Desconto
+                                            </div>
+                                            <input 
+                                                type="number" 
+                                                value={discount}
+                                                onChange={e => setDiscount(e.target.value)}
+                                                className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all"
+                                            />
                                         </div>
-                                        <input 
-                                            type="number" 
-                                            disabled={!!serverReceipt}
-                                            value={discount}
-                                            onChange={e => setDiscount(e.target.value)}
-                                            className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all disabled:opacity-50"
-                                        />
-                                    </div>
+                                    )}
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total a Pagar</p>
-                                    <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Valor da Venda</p>
+                                    <h2 className={`text-5xl font-black tracking-tighter ${isSuccessfullyClosed ? 'text-emerald-400' : 'text-white'}`}>
+                                        R$ {totals.total.toFixed(2)}
+                                    </h2>
                                 </div>
 
+                                {/* EXIBIÇÃO DO VALOR LÍQUIDO REAL (RETORNO DO BANCO) */}
                                 {serverReceipt && (
-                                    <div className="mt-8 p-6 bg-white/5 border border-white/10 rounded-[32px] animate-in zoom-in duration-500">
+                                    <div className="mt-8 p-6 bg-white/5 border border-white/10 rounded-[32px] animate-in slide-in-from-top-4">
                                         <div className="flex items-center gap-2 mb-4 text-[10px] font-black uppercase text-emerald-400 tracking-widest">
-                                            <ShieldCheck size={14} /> Liquidação v5 Concluída
+                                            <ShieldCheck size={14} /> Liquidação v5 (Zelda Engine)
                                         </div>
                                         <div className="space-y-3">
                                             <div className="flex justify-between text-xs font-bold">
@@ -317,7 +308,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 <span className="text-rose-400">- R$ {serverReceipt.fee_applied.toFixed(2)}</span>
                                             </div>
                                             <div className="flex justify-between items-end pt-3 border-t border-white/5">
-                                                <span className="text-xs font-black uppercase text-slate-400">Saldo Líquido</span>
+                                                <span className="text-[10px] font-black uppercase text-slate-400">Valor Líquido (Real)</span>
                                                 <span className="text-2xl font-black text-white">R$ {serverReceipt.net_amount.toFixed(2)}</span>
                                             </div>
                                         </div>
@@ -326,15 +317,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* PAYMENT SELECTION */}
-                        {!serverReceipt && command.status === 'open' && (
-                            <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
-                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Escolha o Meio</h4>
+                        {/* SELEÇÃO DE PAGAMENTO (OCULTO APÓS SUCESSO) */}
+                        {!isSuccessfullyClosed && (
+                            <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6 text-left">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Forma de Pagamento</h4>
                                 
                                 {activeMethod === 'credit' ? (
                                     <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
                                         <div className="flex justify-between items-center">
-                                            <span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Configurar Crédito</span>
+                                            <span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Configuração de Crédito</span>
                                             <button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-500"><X size={20}/></button>
                                         </div>
                                         
@@ -366,7 +357,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
                                             <div className="relative">
                                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span>
-                                                <input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none"/>
+                                                <input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-orange-100 transition-all shadow-inner"/>
                                             </div>
                                         </div>
                                         
@@ -375,7 +366,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 ) : activeMethod ? (
                                     <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95">
                                         <div className="flex justify-between items-center mb-4"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Valor no {activeMethod.toUpperCase()}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-500"><X size={20}/></button></div>
-                                        <div className="relative mb-4"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input autoFocus type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none"/></div>
+                                        <div className="relative mb-4"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input autoFocus type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-orange-100 transition-all shadow-inner"/></div>
                                         <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg">Adicionar</button>
                                     </div>
                                 ) : (
@@ -392,19 +383,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <button 
                                     onClick={handleFinishPayment} 
                                     disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
-                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
+                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> {totals.remaining > 0 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'Liquidar Comanda'}</>}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> {totals.remaining > 0 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'LIQUIDAR COMANDA'}</>}
                                 </button>
                             </div>
                         )}
                         
-                        {(serverReceipt || command.status === 'paid') && (
+                        {isSuccessfullyClosed && (
                             <button 
                                 onClick={onBack}
                                 className="w-full py-6 rounded-[32px] bg-slate-800 text-white font-black text-lg uppercase tracking-widest shadow-xl hover:bg-slate-900 transition-all active:scale-95 flex items-center justify-center gap-3"
                             >
-                                <ArrowRight size={24} /> Voltar para Comandas
+                                <ArrowRight size={24} /> Próximo Cliente
                             </button>
                         )}
                     </div>
