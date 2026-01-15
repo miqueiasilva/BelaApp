@@ -33,15 +33,23 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
   };
 
   const refreshStudios = async () => {
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
 
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+      if (sessionErr) throw sessionErr;
+      
       const user = sessionData?.session?.user;
       
       if (!user) {
         setStudios([]);
         setActiveStudioIdState(null);
+        setLoading(false);
         return;
       }
 
@@ -57,6 +65,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         setStudios([]);
         setActiveStudioIdState(null);
         localStorage.removeItem(STORAGE_KEY);
+        setLoading(false);
         return;
       }
 
@@ -71,7 +80,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       if (sErr) throw sErr;
 
       // 3. Mapeia combinando as informações
-      const mappedStudios = studiosData.map(s => ({
+      const mappedStudios = (studiosData || []).map(s => ({
         id: s.id,
         name: s.name,
         role: memberships.find(m => m.studio_id === s.id)?.role
@@ -79,17 +88,23 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
       setStudios(mappedStudios);
 
-      // 4. Gerencia qual studio está ativo
-      const saved = localStorage.getItem(STORAGE_KEY);
-      const savedStillValid = saved && mappedStudios.some((s) => s.id === saved);
-      
-      if (!savedStillValid) {
-        setActiveStudioId(mappedStudios[0].id);
+      // 4. Gerencia qual studio está ativo (Verificação de segurança contra array vazio)
+      if (mappedStudios.length > 0) {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        const savedStillValid = saved && mappedStudios.some((s) => s.id === saved);
+        
+        if (!savedStillValid) {
+          setActiveStudioId(mappedStudios[0].id);
+        } else {
+          setActiveStudioIdState(saved!);
+        }
       } else {
-        setActiveStudioIdState(saved!);
+        setActiveStudioIdState(null);
+        localStorage.removeItem(STORAGE_KEY);
       }
-    } catch (err) {
-      console.error("[StudioProvider] refreshStudios error:", err);
+    } catch (err: any) {
+      const errorMsg = err?.message || err?.details || "Erro desconhecido ao carregar unidades.";
+      console.error("[StudioProvider] refreshStudios error:", errorMsg);
     } finally {
       setLoading(false);
     }
@@ -97,6 +112,8 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
   useEffect(() => {
     refreshStudios();
+
+    if (!supabase) return;
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {

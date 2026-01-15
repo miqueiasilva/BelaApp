@@ -141,18 +141,34 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         let grossValueSnapshot = totals.total;
 
         try {
+            // Mapeamento de métodos para o padrão esperado pela register_payment_transaction
+            const methodMap: Record<string, string> = {
+                'money': 'cash',
+                'credit': 'credit',
+                'debit': 'debit',
+                'pix': 'pix'
+            };
+
             for (const entry of addedPayments) {
-                // ATUALIZAÇÃO: Uso da RPC pay_and_close_command_api_v1
-                const { data, error } = await supabase.rpc('pay_and_close_command_api_v1', {
+                const payload = {
                     p_command_id: command.id,
                     p_amount: entry.amount,
-                    p_method: entry.method,
-                    p_brand: entry.brand.toLowerCase() === 'outros' ? null : entry.brand.toLowerCase(),
+                    p_method: methodMap[entry.method] || entry.method,
+                    p_brand: (entry.method === 'credit' || entry.method === 'debit') 
+                        ? (entry.brand.toLowerCase() === 'outros' ? null : entry.brand.toLowerCase()) 
+                        : null,
                     p_installments: Math.floor(entry.installments)
-                });
+                };
 
-                if (error) throw error;
+                const { data, error } = await supabase.rpc('pay_and_close_command_api_v1', payload);
+
+                if (error) {
+                    console.error("[RPC_ERROR_DETAIL]", error);
+                    throw error;
+                }
                 
+                // Se a RPC não retornar net_amount (pois agora delega para register_payment_transaction),
+                // usamos o valor bruto para a UI. No banco as taxas estarão corretas.
                 totalNetValue += (data?.net_amount || data?.net_value || entry.amount);
             }
 
@@ -174,7 +190,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         } catch (e: any) {
             console.error("[RPC_API_V1_FAIL]", e);
-            setToast({ message: `Falha na liquidação: ${e.message}`, type: 'error' });
+            // Previne a exibição de [object Object] extraindo a mensagem real
+            const displayError = e?.message || e?.hint || (typeof e === 'string' ? e : "Erro interno no servidor.");
+            setToast({ message: `Falha na liquidação: ${displayError}`, type: 'error' });
             setIsFinishing(false);
         }
     };
