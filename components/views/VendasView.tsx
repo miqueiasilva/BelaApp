@@ -39,7 +39,7 @@ const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, o
             <div className="p-6 space-y-4">
                 <div className="text-center space-y-1 border-b border-slate-100 pb-4">
                     <p className="text-xs text-slate-400 uppercase font-bold">Valor Total</p>
-                    <p className="text-3xl font-extrabold text-slate-800">R$ {Number(transaction.amount).toFixed(2)}</p>
+                    <p className="text-3xl font-extrabold text-slate-800">R$ {Number(transaction.amount || transaction.p_amount).toFixed(2)}</p>
                     <p className="text-sm text-slate-500 capitalize">{transaction.payment_method?.replace('_', ' ') || 'Pix'}</p>
                 </div>
 
@@ -47,10 +47,6 @@ const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, o
                     <div className="flex justify-between">
                         <span>Data:</span>
                         <span className="font-medium">{format(new Date(), 'dd/MM/yyyy HH:mm')}</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span>Resumo:</span>
-                        <span className="font-medium truncate max-w-[200px]">{transaction.description?.replace('Venda PDV: ', '')}</span>
                     </div>
                 </div>
 
@@ -117,7 +113,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         setPaymentMethod('pix');
         setLastTransaction(null);
         setSearchTerm('');
-        setToast({ message: "Ambiente pronto para nova venda! 🧼", type: 'info' });
     };
 
     const filteredItems = useMemo(() => {
@@ -164,24 +159,30 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             const itemsResumo = cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
             const description = selectedClient ? `Venda PDV - ${selectedClient.nome}: ${itemsResumo}` : `Venda PDV: ${itemsResumo}`;
 
-            const transactionData = {
-                studio_id: activeStudioId,
-                description,
-                amount: total,
-                net_value: total, // Para vendas PDV sem integração complexa de taxa JIT
-                type: 'income',
-                category: cart.some(i => i.type === 'produto') ? 'produto' : 'servico',
-                payment_method: paymentMethod,
-                client_id: selectedClient?.id || null,
-                status: 'pago',
-                date: new Date().toISOString()
+            // ATUALIZAÇÃO: Uso da RPC register_payment_transaction
+            const methodMapping: Record<string, string> = {
+                'pix': 'pix',
+                'dinheiro': 'cash',
+                'cartao_credito': 'credit',
+                'cartao_debito': 'debit'
             };
 
-            const { data: transaction, error: transError } = await supabase.from('financial_transactions').insert([transactionData]).select().single();
-            if (transError) throw transError;
+            const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                p_studio_id: activeStudioId,
+                p_professional_id: null,
+                p_amount: total,
+                p_method: methodMapping[paymentMethod] || 'pix',
+                p_brand: 'default',
+                p_installments: 1,
+                p_description: description,
+                p_command_id: null,
+                p_client_id: selectedClient?.id || null
+            });
 
-            setLastTransaction(transaction);
-            setToast({ message: "Venda registrada!", type: 'success' });
+            if (rpcError) throw rpcError;
+
+            setLastTransaction({ ...transaction, amount: total });
+            setToast({ message: "Venda registrada com sucesso!", type: 'success' });
             fetchPOSData(); 
 
         } catch (error: any) {
@@ -192,10 +193,10 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     };
 
     const paymentMethodsConfig = [
-        { id: 'pix', label: 'Pix', icon: Smartphone, color: 'bg-teal-500' },
-        { id: 'cartao_credito', label: 'Crédito', icon: CreditCard, color: 'bg-blue-500' },
-        { id: 'cartao_debito', label: 'Débito', icon: CreditCard, color: 'bg-cyan-500' },
-        { id: 'dinheiro', label: 'Dinheiro', icon: Banknote, color: 'bg-green-500' },
+        { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-500' },
+        { id: 'cartao_credito', label: 'Crédito', icon: CreditCard, color: 'text-blue-500' },
+        { id: 'cartao_debito', label: 'Débito', icon: CreditCard, color: 'text-cyan-500' },
+        { id: 'dinheiro', label: 'Dinheiro', icon: Banknote, color: 'text-green-500' },
     ];
 
     return (
@@ -248,7 +249,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             <div className="w-full md:w-[420px] bg-white flex flex-col shadow-2xl z-10">
                 <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <div><h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg flex items-center gap-2"><ShoppingCart className="text-orange-500" size={22} /> Carrinho</h3><p className="text-[10px] text-slate-400 font-bold uppercase">{cart.length} itens</p></div>
-                    {selectedClient && <div className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full font-black text-[10px] flex items-center gap-2">{selectedClient.nome} <X size={12} className="cursor-pointer" onClick={() => setSelectedClient(null)}/></div>}
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">

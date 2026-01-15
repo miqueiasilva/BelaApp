@@ -44,7 +44,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [isFinishing, setIsFinishing] = useState(false);
     const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
     
-    // Estados de Checkout (Motor de Pagamentos Múltiplos)
     const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
     const [activeMethod, setActiveMethod] = useState<'credit' | 'debit' | 'pix' | 'money' | null>(null);
     const [selectedBrand, setSelectedBrand] = useState<string>('Visa');
@@ -90,7 +89,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
-        // SOMA DOS PAGAMENTOS ADICIONADOS NA LISTA
         const paid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
         const remaining = Math.max(0, totalAfterDiscount - paid);
         
@@ -99,7 +97,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const handleInitPayment = (method: 'credit' | 'debit' | 'pix' | 'money') => {
         setActiveMethod(method);
-        // Preenche automaticamente o valor restante
         setAmountToPay(totals.remaining.toFixed(2));
         setSelectedBrand('Visa');
         setSelectedInstallments(1);
@@ -109,7 +106,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const val = parseFloat(amountToPay);
         if (!activeMethod || val <= 0) return;
 
-        // Tolerância para ponto flutuante
         if (val > totals.remaining + 0.01) {
             setToast({ message: `Valor superior ao restante (R$ ${totals.remaining.toFixed(2)})`, type: 'error' });
             return;
@@ -135,7 +131,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const handleFinishPayment = async () => {
         if (!command || !activeStudioId || isFinishing || addedPayments.length === 0) return;
         
-        // Verificação final do total
         if (totals.remaining > 0.01) {
             setToast({ message: "A soma dos pagamentos não atinge o total da venda!", type: 'error' });
             return;
@@ -146,24 +141,21 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         let grossValueSnapshot = totals.total;
 
         try {
-            // PROCESSAMENTO MULTI-PAGAMENTO: Loop pela lista de pagamentos
             for (const entry of addedPayments) {
-                // A cada chamada, a Zelda Engine v5 calcula o líquido específico para aquele método/bandeira/parcela
-                const { data, error } = await supabase.rpc('pay_and_close_command_v5', {
+                // ATUALIZAÇÃO: Uso da RPC pay_and_close_command_api_v1
+                const { data, error } = await supabase.rpc('pay_and_close_command_api_v1', {
                     p_command_id: command.id,
-                    p_payment_method: entry.method,
                     p_amount: entry.amount,
-                    p_brand: entry.brand.toLowerCase(),
+                    p_method: entry.method,
+                    p_brand: entry.brand.toLowerCase() === 'outros' ? null : entry.brand.toLowerCase(),
                     p_installments: Math.floor(entry.installments)
                 });
 
                 if (error) throw error;
                 
-                // Acumula o valor líquido real retornado pelo motor de taxas do banco
                 totalNetValue += (data?.net_amount || data?.net_value || entry.amount);
             }
 
-            // Cálculo detalhado das taxas retidas
             const totalFee = grossValueSnapshot - totalNetValue;
 
             setServerReceipt({
@@ -172,7 +164,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 fee_amount: totalFee > 0 ? totalFee : 0
             });
 
-            // LIMPEZA DO PDV PARA PRÓXIMO CLIENTE
             setIsSuccessfullyClosed(true);
             setAddedPayments([]);
             setDiscount('0');
@@ -182,7 +173,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             fetchCommand();
 
         } catch (e: any) {
-            console.error("[RPC_V5_LIQUIDATION_FAIL]", e);
+            console.error("[RPC_API_V1_FAIL]", e);
             setToast({ message: `Falha na liquidação: ${e.message}`, type: 'error' });
             setIsFinishing(false);
         }
@@ -230,7 +221,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     
-                    {/* COLUNA ESQUERDA: ITENS E PAGAMENTOS LANÇADOS */}
                     <div className="lg:col-span-2 space-y-6">
                         
                         {isSuccessfullyClosed && (
@@ -267,7 +257,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
                         {!isSuccessfullyClosed && (
                             <div className="space-y-6">
-                                {/* ITENS DA COMANDA */}
                                 <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-4">
                                     <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
                                         <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
@@ -294,7 +283,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     </div>
                                 </div>
 
-                                {/* PAGAMENTOS ADICIONADOS */}
                                 <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-6 duration-500">
                                     <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-800 text-white">
                                         <h3 className="font-black text-sm uppercase tracking-widest flex items-center gap-2">
@@ -335,7 +323,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         )}
                     </div>
 
-                    {/* COLUNA DIREITA: SUMÁRIO E SELEÇÃO DE MÉTODOS */}
                     <div className="space-y-6">
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden group">
                             <div className="relative z-10 space-y-6 text-left">
@@ -365,15 +352,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     </h2>
                                 </div>
 
-                                {/* RESUMO DA LIQUIDAÇÃO REAL (RETORNO DO BANCO) */}
                                 {serverReceipt && (
                                     <div className="mt-8 p-6 bg-white/5 border border-white/10 rounded-[32px] animate-in slide-in-from-top-4">
                                         <div className="flex items-center gap-2 mb-4 text-[10px] font-black uppercase text-emerald-400 tracking-widest">
-                                            <ShieldCheck size={14} /> Detalhamento de Taxas v5
+                                            <ShieldCheck size={14} /> Detalhamento de Taxas
                                         </div>
                                         <div className="space-y-3">
                                             <div className="flex justify-between text-xs font-bold">
-                                                <span className="text-slate-400">Taxas Retidas (Adquirentes)</span>
+                                                <span className="text-slate-400">Taxas Retidas</span>
                                                 <span className="text-rose-400">- R$ {serverReceipt.fee_amount.toFixed(2)}</span>
                                             </div>
                                             <div className="flex justify-between items-end pt-3 border-t border-white/5">
@@ -392,7 +378,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* SELETOR DE MÉTODOS (ZELDA UI) */}
                         {!isSuccessfullyClosed && (
                             <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6 text-left">
                                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2">
@@ -424,7 +409,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 </div>
                                             </div>
 
-                                            {/* SÓ MOSTRA PARCELAS SE FOR CRÉDITO */}
                                             {activeMethod === 'credit' && (
                                                 <div className="space-y-1.5">
                                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Parcelamento: {selectedInstallments}x</label>

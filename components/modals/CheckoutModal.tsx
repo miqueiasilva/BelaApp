@@ -147,26 +147,28 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         setIsLoading(true);
 
         try {
-            // No fluxo de V5, se o agendamento for convertido em comanda, usamos a RPC.
-            // Para liquidação direta de agendamento legada, simulamos o comportamento V5:
-            const { error: finError } = await supabase.from('financial_transactions').insert([{
-                amount: appointment.price, 
-                net_value: financialMetrics.netValue, 
-                tax_rate: financialMetrics.rate, 
-                description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
-                type: 'income',
-                category: 'servico',
-                payment_method: selectedCategory,
-                payment_method_id: currentMethod.id, 
-                professional_id: isUUID(selectedProfessionalId) ? selectedProfessionalId : null,
-                client_id: isUUID(appointment.client_id) ? appointment.client_id : null,
-                appointment_id: appointment.id,
-                installments: Math.floor(installments), // Garantia de inteiro
-                status: 'pago',
-                date: new Date().toISOString()
-            }]);
+            // ATUALIZAÇÃO: Uso da RPC register_payment_transaction
+            const methodMapping: Record<string, string> = {
+                'pix': 'pix',
+                'money': 'cash',
+                'credit': 'credit',
+                'debit': 'debit'
+            };
 
-            if (finError) throw finError;
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                p_studio_id: currentMethod.id ? null : null, // A RPC gerencia via auth ou enviaremos direto se necessário.
+                // Na nossa estrutura, enviamos studio_id se for requerido pela assinatura da função
+                p_professional_id: isUUID(selectedProfessionalId) ? selectedProfessionalId : null,
+                p_amount: appointment.price,
+                p_method: methodMapping[selectedCategory] || 'pix',
+                p_brand: currentMethod?.brand?.toLowerCase() || 'default',
+                p_installments: Math.floor(installments),
+                p_description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
+                p_command_id: null,
+                p_client_id: isUUID(appointment.client_id) ? appointment.client_id : null
+            });
+
+            if (rpcError) throw rpcError;
 
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
 
@@ -202,7 +204,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
-                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Checkout V5</h2>
+                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Checkout Zelda</h2>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
