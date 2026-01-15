@@ -55,7 +55,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [serverReceipt, setServerReceipt] = useState<ServerReceipt | null>(null);
 
     const fetchCommand = async () => {
-        if (!activeStudioId) return;
+        if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
             const { data, error } = await supabase
@@ -85,7 +85,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const totals = useMemo(() => {
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
-        const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 0)), 0);
+        
+        // FONTE DA VERDADE: total_amount do header da comanda
+        const subtotal = Number(command.total_amount || 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
@@ -104,7 +106,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const handleConfirmPartialPayment = () => {
         const val = parseFloat(amountToPay);
-        if (!activeMethod || val <= 0) return;
+        if (!activeMethod || isNaN(val) || val <= 0) return;
 
         if (val > totals.remaining + 0.01) {
             setToast({ message: `Valor superior ao restante (R$ ${totals.remaining.toFixed(2)})`, type: 'error' });
@@ -115,7 +117,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             id: Math.random().toString(36).substring(2, 9),
             method: activeMethod,
             amount: val,
-            brand: (activeMethod === 'credit' || activeMethod === 'debit') ? selectedBrand : 'outros',
+            brand: (activeMethod === 'credit' || activeMethod === 'debit') ? selectedBrand : 'default',
             installments: activeMethod === 'credit' ? selectedInstallments : 1
         };
 
@@ -129,9 +131,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     const handleFinishPayment = async () => {
-        if (!command || !activeStudioId || isFinishing || addedPayments.length === 0) return;
+        if (!command?.id || !activeStudioId || isFinishing || addedPayments.length === 0) {
+            console.warn("[CHECKOUT] Tentativa de fechamento bloqueada: Dados incompletos.");
+            return;
+        }
         
-        if (totals.remaining > 0.01) {
+        if (totals.remaining > 0.05) {
             setToast({ message: "A soma dos pagamentos não atinge o total da venda!", type: 'error' });
             return;
         }
@@ -141,7 +146,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         let grossValueSnapshot = totals.total;
 
         try {
-            // Mapeamento de métodos para o padrão esperado pela register_payment_transaction
             const methodMap: Record<string, string> = {
                 'money': 'cash',
                 'credit': 'credit',
@@ -150,34 +154,33 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             };
 
             for (const entry of addedPayments) {
+                // BLINDAGEM: Sanitização do payload para evitar Erro 400
                 const payload = {
                     p_command_id: command.id,
                     p_amount: entry.amount,
                     p_method: methodMap[entry.method] || entry.method,
                     p_brand: (entry.method === 'credit' || entry.method === 'debit') 
-                        ? (entry.brand.toLowerCase() === 'outros' ? null : entry.brand.toLowerCase()) 
-                        : null,
-                    p_installments: Math.floor(entry.installments)
+                        ? (entry.brand.toLowerCase() === 'outros' ? 'default' : entry.brand.toLowerCase()) 
+                        : 'default',
+                    p_installments: Math.max(1, Math.floor(entry.installments))
                 };
 
                 const { data, error } = await supabase.rpc('pay_and_close_command_api_v1', payload);
 
                 if (error) {
-                    console.error("[RPC_ERROR_DETAIL]", error);
-                    throw error;
+                    // RESOLVE [object Object]: Extraindo mensagem real
+                    const errorDetail = error.message || JSON.stringify(error);
+                    console.error("[RPC_ERROR_DETAIL]", errorDetail);
+                    throw new Error(errorDetail);
                 }
                 
-                // Se a RPC não retornar net_amount (pois agora delega para register_payment_transaction),
-                // usamos o valor bruto para a UI. No banco as taxas estarão corretas.
                 totalNetValue += (data?.net_amount || data?.net_value || entry.amount);
             }
-
-            const totalFee = grossValueSnapshot - totalNetValue;
 
             setServerReceipt({
                 gross_amount: grossValueSnapshot,
                 net_amount: totalNetValue,
-                fee_amount: totalFee > 0 ? totalFee : 0
+                fee_amount: Math.max(0, grossValueSnapshot - totalNetValue)
             });
 
             setIsSuccessfullyClosed(true);
@@ -185,14 +188,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setDiscount('0');
             setActiveMethod(null);
             
-            setToast({ message: "Liquidação processada com sucesso!", type: 'success' });
+            setToast({ message: "Comanda liquidada com sucesso!", type: 'success' });
             fetchCommand();
 
         } catch (e: any) {
-            console.error("[RPC_API_V1_FAIL]", e);
-            // Previne a exibição de [object Object] extraindo a mensagem real
-            const displayError = e?.message || e?.hint || (typeof e === 'string' ? e : "Erro interno no servidor.");
-            setToast({ message: `Falha na liquidação: ${displayError}`, type: 'error' });
+            const displayError = e?.message || "Erro ao processar fechamento no servidor.";
+            console.error("[COMMAND_CLOSE_FAIL]", displayError);
+            setToast({ message: `Falha: ${displayError}`, type: 'error' });
             setIsFinishing(false);
         }
     };
@@ -201,7 +203,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         return (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
                 <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                <p className="text-xs font-black uppercase tracking-[0.2em]">Iniciando Checkout v5...</p>
+                <p className="text-xs font-black uppercase tracking-[0.2em]">Sincronizando Checkout...</p>
             </div>
         );
     }
@@ -228,11 +230,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
                             Checkout <span className="text-orange-500 font-mono">#{command.id.split('-')[0].toUpperCase()}</span>
                         </h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Motor Multi-Pagamento Zelda v5</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Protocolo Seguro Belare</p>
                     </div>
                 </div>
                 <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isSuccessfullyClosed ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
-                    {isSuccessfullyClosed ? 'Venda Finalizada' : 'Caixa Aberto'}
+                    {isSuccessfullyClosed ? 'Liquidação Concluída' : 'Caixa Aberto'}
                 </div>
             </header>
 
@@ -251,7 +253,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                         <CheckCircle2 size={48} className="text-white" />
                                     </div>
                                     <h2 className="text-3xl font-black mb-2 uppercase tracking-widest">Venda Finalizada!</h2>
-                                    <p className="text-emerald-100 font-medium max-w-sm">Os pagamentos foram processados individualmente e integrados ao Fluxo de Caixa.</p>
+                                    <p className="text-emerald-100 font-medium max-w-sm">A comanda foi fechada e o pagamento registrado via motor de transações.</p>
                                 </div>
                             </div>
                         )}
@@ -278,7 +280,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-4">
                                     <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
                                         <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
-                                            <ShoppingCart size={18} className="text-orange-500" /> Itens na Comanda
+                                            <ShoppingCart size={18} className="text-orange-500" /> Detalhes dos Itens
                                         </h3>
                                     </header>
                                     <div className="divide-y divide-slate-50">
@@ -304,9 +306,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-6 duration-500">
                                     <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-800 text-white">
                                         <h3 className="font-black text-sm uppercase tracking-widest flex items-center gap-2">
-                                            <CheckCircle size={18} className="text-emerald-400" /> Pagamentos Lançados
+                                            <CheckCircle size={18} className="text-emerald-400" /> Métodos Lançados
                                         </h3>
-                                        <span className="text-[10px] font-black uppercase bg-white/10 px-3 py-1 rounded-full">Recebido: R$ {totals.paid.toFixed(2)}</span>
+                                        <span className="text-[10px] font-black uppercase bg-white/10 px-3 py-1 rounded-full">Liquidado: R$ {totals.paid.toFixed(2)}</span>
                                     </header>
                                     <div className="divide-y divide-slate-50">
                                         {addedPayments.length === 0 ? (
@@ -321,7 +323,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                         <div>
                                                             <p className="font-black text-slate-700 text-sm uppercase">
                                                                 {p.method === 'credit' ? 'Crédito' : p.method === 'debit' ? 'Débito' : p.method === 'pix' ? 'Pix' : 'Dinheiro'}
-                                                                {p.brand !== 'outros' && ` • ${p.brand}`}
+                                                                {p.brand !== 'default' && ` • ${p.brand}`}
                                                             </p>
                                                             {p.method === 'credit' && <p className="text-[9px] font-black text-orange-500 uppercase tracking-widest">{p.installments}x no Cartão</p>}
                                                         </div>
@@ -346,7 +348,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             <div className="relative z-10 space-y-6 text-left">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400">
-                                        <span>Subtotal Bruto</span>
+                                        <span>Valor Base Comanda</span>
                                         <span>R$ {totals.subtotal.toFixed(2)}</span>
                                     </div>
                                     {!isSuccessfullyClosed && (
@@ -364,7 +366,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     )}
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total da Venda</p>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total a Liquidar</p>
                                     <h2 className={`text-5xl font-black tracking-tighter ${isSuccessfullyClosed ? 'text-emerald-400' : 'text-white'}`}>
                                         R$ {isSuccessfullyClosed && serverReceipt ? serverReceipt.gross_amount.toFixed(2) : totals.total.toFixed(2)}
                                     </h2>
@@ -373,17 +375,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 {serverReceipt && (
                                     <div className="mt-8 p-6 bg-white/5 border border-white/10 rounded-[32px] animate-in slide-in-from-top-4">
                                         <div className="flex items-center gap-2 mb-4 text-[10px] font-black uppercase text-emerald-400 tracking-widest">
-                                            <ShieldCheck size={14} /> Detalhamento de Taxas
+                                            <ShieldCheck size={14} /> Recebimento Líquido
                                         </div>
                                         <div className="space-y-3">
                                             <div className="flex justify-between text-xs font-bold">
-                                                <span className="text-slate-400">Taxas Retidas</span>
+                                                <span className="text-slate-400">Custos de Transação</span>
                                                 <span className="text-rose-400">- R$ {serverReceipt.fee_amount.toFixed(2)}</span>
                                             </div>
                                             <div className="flex justify-between items-end pt-3 border-t border-white/5">
                                                 <div className="flex flex-col">
-                                                    <span className="text-[10px] font-black uppercase text-slate-400">Recebimento Líquido</span>
-                                                    <span className="text-[8px] font-bold text-slate-500">SALDO REAL EM CAIXA</span>
+                                                    <span className="text-[10px] font-black uppercase text-slate-400">Valor em Caixa</span>
+                                                    <span className="text-[8px] font-bold text-slate-500">SALDO EFETIVO</span>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-2xl font-black text-white">R$ {serverReceipt.net_amount.toFixed(2)}</span>
@@ -399,7 +401,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {!isSuccessfullyClosed && (
                             <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6 text-left">
                                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2">
-                                    <Tag size={14} className="text-orange-500" /> Forma de Recebimento
+                                    <Tag size={14} className="text-orange-500" /> Selecione o Método
                                 </h4>
                                 
                                 { (activeMethod === 'credit' || activeMethod === 'debit') ? (
@@ -467,9 +469,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <button 
                                     onClick={handleFinishPayment} 
                                     disabled={isFinishing || totals.remaining > 0.01 || addedPayments.length === 0} 
-                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining < 0.02 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
+                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining < 0.05 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> {totals.remaining > 0.01 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'LIQUIDAR COMANDA'}</>}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> {totals.remaining > 0.05 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'LIQUIDAR COMANDA'}</>}
                                 </button>
                             </div>
                         )}

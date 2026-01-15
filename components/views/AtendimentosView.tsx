@@ -8,7 +8,6 @@ import {
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
     CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle
 } from 'lucide-react';
-// FIX: Grouping date-fns imports and removing problematic members startOfDay, startOfWeek, startOfMonth.
 import { 
     format, addDays, addWeeks, addMonths, eachDayOfInterval, 
     isSameDay, isWithinInterval, isSameMonth, addMinutes, 
@@ -53,7 +52,7 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
                     <div className="w-20 h-20 bg-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200 animate-bounce">
                         <AlertTriangle size={40} />
                     </div>
-                    <h2 className="text-2xl font-black text-slate-800 leading-tight">Conflito de Horário Detectado!</h2>
+                    <h2 className="text-2xl font-black text-slate-800 leading-tight">Conflito de Horário!</h2>
                 </div>
                 <div className="p-8 space-y-6">
                     <div className="space-y-4">
@@ -408,7 +407,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
-        if (!activeStudioId) return;
+        if (!activeStudioId || !appointment?.id) return;
         setIsLoadingData(true);
         try {
             // CRIAR COMANDA
@@ -423,15 +422,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 .select()
                 .single();
 
-            if (cmdError) {
-                console.error("Erro ao criar comanda:", cmdError.message, cmdError.details);
-                throw cmdError;
-            }
+            if (cmdError) throw cmdError;
 
-            // Validação simples de UUID para service_id para evitar erro de restrição se vier de mock numérico
             const isUUID = (val: any) => typeof val === 'string' && val.length > 20;
 
-            // CRIAR ITEM DA COMANDA: price e quantity (SCHEMA REAL FIX)
+            // CRIAR ITEM DA COMANDA - BLINDAGEM: Garantindo professional_id para evitar 400 no checkout
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
@@ -442,29 +437,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     title: appointment.service.name,
                     price: appointment.service.price,
                     quantity: 1,
-                    professional_id: appointment.professional.id
+                    professional_id: appointment.professional.id || null
                 }]);
 
-            if (itemError) {
-                console.error("Erro ao criar item da comanda:", itemError.message, itemError.details);
-                throw itemError;
-            }
+            if (itemError) throw itemError;
 
-            const { error: apptUpdateError } = await supabase
+            await supabase
                 .from('appointments')
                 .update({ status: 'concluido' })
                 .eq('id', appointment.id);
 
-            if (apptUpdateError) throw apptUpdateError;
-
-            setToast({ message: `Comanda gerada com sucesso! Redirecionando... 💳`, type: 'success' });
+            setToast({ message: `Comanda gerada com sucesso! 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
             
             if (onNavigateToCommand) {
                 onNavigateToCommand(command.id);
             }
         } catch (e: any) {
-            console.error("Falha ao gerar comanda (detalhes):", e);
+            console.error("Falha ao gerar comanda:", e.message || e);
             setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
         } finally {
             setIsLoadingData(false);
@@ -480,14 +470,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
         if (!isAdmin && isFinished) {
             setToast({ 
-                message: "Permissão Negada: Apenas o Gestor pode excluir registros com financeiro lançado.", 
+                message: "Permissão Negada: Apenas o Gestor pode excluir registros com faturamento.", 
                 type: 'error' 
             });
             return;
         }
 
         const confirmMsg = isFinished 
-            ? "⚠️ AÇÃO AUDITADA: Este registro possui financeiro vinculado. A exclusão removerá o recebimento e gerará um Log de Segurança. Prosseguir?"
+            ? "⚠️ AÇÃO AUDITADA: Este registro possui faturamento. Prosseguir com a exclusão?"
             : "Deseja realmente apagar este agendamento?";
 
         if (!window.confirm(confirmMsg)) return;
@@ -504,10 +494,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     old_value: {
                         client: appointment.client?.nome,
                         service: appointment.service.name,
-                        value: appointment.service.price,
-                        date: appointment.start.toISOString(),
-                        professional: appointment.professional.name,
-                        status: appointment.status
+                        value: appointment.service.price
                     }
                 }]);
             }
