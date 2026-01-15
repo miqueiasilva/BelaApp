@@ -59,7 +59,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     // 1. FETCH DE TAXAS ATIVAS (FINANCIAL ENGINE)
     const fetchSystemData = async () => {
-        if (!activeStudioId || !commandId) return;
+        // CLÁUSULA DE GUARDA NO CARREGAMENTO
+        if (!activeStudioId || !commandId) {
+            console.log('[CHECKOUT] Aguardando parâmetros de estúdio ou comanda...');
+            return;
+        }
+        
         setLoading(true);
         try {
             const [cmdRes, methodsRes] = await Promise.all([
@@ -80,7 +85,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         }
     };
 
-    useEffect(() => { fetchSystemData(); }, [commandId, activeStudioId]);
+    // Garantindo que a função seja chamada novamente se IDs mudarem
+    useEffect(() => { 
+        fetchSystemData(); 
+    }, [commandId, activeStudioId]);
 
     const totals = useMemo(() => {
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0, totalNet: 0 };
@@ -95,13 +103,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         return { subtotal, total: totalAfterDiscount, paid, remaining, totalNet };
     }, [command, discount, addedPayments]);
 
-    // 2. LÓGICA CONDICIONAL DE UI (INTERCEPTADOR DE CARTÃO)
     const handleInitPayment = (category: 'credit' | 'debit' | 'pix' | 'money') => {
         setActiveCategory(category);
         setAmountToPay(totals.remaining.toFixed(2));
         setSelectedInstallments(1);
         
-        // Se for Pix ou Dinheiro, já busca o método padrão se existir
         const defaultMethod = dbMethods.find(m => m.type === category);
         if (defaultMethod) setSelectedMethodObj(defaultMethod);
         else setSelectedMethodObj(null);
@@ -116,7 +122,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             return;
         }
 
-        // Cálculo Matemático de Taxas
         let rate = 0;
         if (activeCategory === 'credit' || activeCategory === 'debit') {
             if (!selectedMethodObj) {
@@ -150,7 +155,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     const handleFinishPayment = async () => {
-        if (!command?.id || isFinishing || addedPayments.length === 0) return;
+        // --- CLÁUSULA DE GUARDA RIGOROSA (PROTEÇÃO CONTRA ERRO 400) ---
+        if (!command?.id || !activeStudioId) {
+            console.warn('[CHECKOUT] Abortando: Comanda ou Estúdio não carregados corretamente.');
+            setToast({ message: "Aguardando sincronização de dados...", type: 'info' });
+            return;
+        }
+
+        if (isFinishing || addedPayments.length === 0) return;
+        
         if (totals.remaining > 0.05) {
             setToast({ message: "O valor total ainda não foi atingido.", type: 'error' });
             return;
@@ -169,8 +182,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_installments: entry.installments
                 };
 
+                // Execução do RPC Blindada
                 const { error } = await supabase.rpc('pay_and_close_command_api_v1', payload);
-                if (error) throw new Error(error.message || JSON.stringify(error));
+                if (error) {
+                    // Tratamento detalhado para o erro de coluna do Postgres
+                    const errorMsg = error.message.includes('column "total" does not exist') 
+                        ? "Erro de esquema no banco (coluna 'total' inválida). Contate o suporte." 
+                        : error.message;
+                    throw new Error(errorMsg);
+                }
             }
 
             setServerReceipt({
@@ -228,7 +248,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         )}
 
-                        {/* LISTAGEM DE ITENS */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-2">
                                 <ShoppingCart size={18} className="text-orange-500" />
@@ -247,7 +266,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* MÉTODOS LANÇADOS */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-5 bg-slate-800 text-white flex justify-between items-center">
                                 <h3 className="font-black text-sm uppercase tracking-widest">Pagamentos Registrados</h3>
@@ -279,7 +297,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         </div>
                     </div>
 
-                    {/* COLUNA DE AÇÕES E TOTAIS */}
                     <div className="space-y-6">
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
                             <div className="relative z-10 space-y-6">
@@ -312,7 +329,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <button onClick={() => setActiveCategory(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18}/></button>
                                         </div>
 
-                                        {/* 3. MODAL INTERMEDIÁRIO DE SELEÇÃO DE BANDEIRA (DINÂMICO) */}
                                         {(activeCategory === 'credit' || activeCategory === 'debit') && (
                                             <div className="space-y-3">
                                                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Selecione a Bandeira / Taxa</label>
