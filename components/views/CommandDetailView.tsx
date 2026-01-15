@@ -7,7 +7,7 @@ import {
     Percent, Calendar, ShoppingCart, X, Coins,
     ArrowRight, ShieldCheck, Tag, CreditCard as CardIcon,
     AlertCircle, Sparkles, CheckCircle2, ArrowUpRight,
-    Trash2
+    Trash2, ChevronDown, Check
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -26,6 +26,9 @@ interface PaymentEntry {
     method: 'credit' | 'debit' | 'pix' | 'money';
     amount: number;
     brand: string;
+    rate: number;
+    fee: number;
+    net: number;
     installments: number;
 }
 
@@ -35,8 +38,6 @@ interface ServerReceipt {
     fee_amount: number;
 }
 
-const BRANDS = ['Visa', 'Mastercard', 'Elo', 'Hipercard', 'Amex', 'Outros'];
-
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
     const { activeStudioId } = useStudio();
     const [command, setCommand] = useState<Command | null>(null);
@@ -44,9 +45,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [isFinishing, setIsFinishing] = useState(false);
     const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
     
+    // --- PAYMENTS STATE ---
+    const [dbMethods, setDbMethods] = useState<any[]>([]);
     const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
-    const [activeMethod, setActiveMethod] = useState<'credit' | 'debit' | 'pix' | 'money' | null>(null);
-    const [selectedBrand, setSelectedBrand] = useState<string>('Visa');
+    const [activeCategory, setActiveCategory] = useState<'credit' | 'debit' | 'pix' | 'money' | null>(null);
+    const [selectedMethodObj, setSelectedMethodObj] = useState<any>(null);
     const [selectedInstallments, setSelectedInstallments] = useState<number>(1);
     const [amountToPay, setAmountToPay] = useState<string>('0');
     
@@ -54,147 +57,143 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [serverReceipt, setServerReceipt] = useState<ServerReceipt | null>(null);
 
-    const fetchCommand = async () => {
+    // 1. FETCH DE TAXAS ATIVAS (FINANCIAL ENGINE)
+    const fetchSystemData = async () => {
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('commands')
-                .select('*, clients(*), command_items(*)')
-                .eq('id', commandId)
-                .eq('studio_id', activeStudioId)
-                .single();
+            const [cmdRes, methodsRes] = await Promise.all([
+                supabase.from('commands').select('*, clients(*), command_items(*)').eq('id', commandId).single(),
+                supabase.from('payment_methods_config').select('*').eq('is_active', true)
+            ]);
 
-            if (error) throw error;
-            setCommand(data);
+            if (cmdRes.error) throw cmdRes.error;
+            setCommand(cmdRes.data);
+            setDbMethods(methodsRes.data || []);
             
-            if (data.status === 'paid') {
-                setIsSuccessfullyClosed(true);
-            }
+            if (cmdRes.data.status === 'paid') setIsSuccessfullyClosed(true);
         } catch (e: any) {
-            setToast({ message: "Erro ao localizar comanda.", type: 'error' });
+            setToast({ message: "Erro ao sincronizar dados do checkout.", type: 'error' });
             setTimeout(onBack, 2000);
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        if (commandId && activeStudioId) fetchCommand();
-    }, [commandId, activeStudioId]);
+    useEffect(() => { fetchSystemData(); }, [commandId, activeStudioId]);
 
     const totals = useMemo(() => {
-        if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
+        if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0, totalNet: 0 };
         const subtotal = Number(command.total_amount || 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
+        
         const paid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
+        const totalNet = addedPayments.reduce((acc, p) => acc + p.net, 0);
         const remaining = Math.max(0, totalAfterDiscount - paid);
-        return { subtotal, total: totalAfterDiscount, paid, remaining };
+        
+        return { subtotal, total: totalAfterDiscount, paid, remaining, totalNet };
     }, [command, discount, addedPayments]);
 
-    const handleInitPayment = (method: 'credit' | 'debit' | 'pix' | 'money') => {
-        setActiveMethod(method);
+    // 2. LÓGICA CONDICIONAL DE UI (INTERCEPTADOR DE CARTÃO)
+    const handleInitPayment = (category: 'credit' | 'debit' | 'pix' | 'money') => {
+        setActiveCategory(category);
         setAmountToPay(totals.remaining.toFixed(2));
-        setSelectedBrand('Visa');
         setSelectedInstallments(1);
+        
+        // Se for Pix ou Dinheiro, já busca o método padrão se existir
+        const defaultMethod = dbMethods.find(m => m.type === category);
+        if (defaultMethod) setSelectedMethodObj(defaultMethod);
+        else setSelectedMethodObj(null);
     };
 
     const handleConfirmPartialPayment = () => {
         const val = parseFloat(amountToPay);
-        if (!activeMethod || isNaN(val) || val <= 0) return;
-        if (val > totals.remaining + 0.01) {
+        if (!activeCategory || isNaN(val) || val <= 0) return;
+
+        if (val > totals.remaining + 0.05) {
             setToast({ message: `Valor superior ao restante (R$ ${totals.remaining.toFixed(2)})`, type: 'error' });
             return;
         }
+
+        // Cálculo Matemático de Taxas
+        let rate = 0;
+        if (activeCategory === 'credit' || activeCategory === 'debit') {
+            if (!selectedMethodObj) {
+                setToast({ message: "Selecione a bandeira do cartão", type: 'error' });
+                return;
+            }
+            rate = (selectedInstallments === 1) 
+                ? Number(selectedMethodObj.rate_cash || 0) 
+                : Number(selectedMethodObj.installment_rates?.[selectedInstallments.toString()] || selectedMethodObj.rate_installment_12x || 0);
+        } else if (activeCategory === 'pix') {
+            rate = Number(selectedMethodObj?.rate_cash || 0);
+        }
+
+        const feeAmount = val * (rate / 100);
+        const netAmount = val - feeAmount;
+
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(2, 9),
-            method: activeMethod,
+            method: activeCategory,
             amount: val,
-            brand: (activeMethod === 'credit' || activeMethod === 'debit') ? selectedBrand : 'default',
-            installments: activeMethod === 'credit' ? selectedInstallments : 1
+            brand: selectedMethodObj?.brand || 'Default',
+            rate: rate,
+            fee: feeAmount,
+            net: netAmount,
+            installments: selectedInstallments
         };
-        setAddedPayments(prev => [...prev, newPayment]);
-        setActiveMethod(null);
-        setAmountToPay('0');
-    };
 
-    const handleRemovePayment = (id: string) => {
-        setAddedPayments(prev => prev.filter(p => p.id !== id));
+        setAddedPayments(prev => [...prev, newPayment]);
+        setActiveCategory(null);
+        setSelectedMethodObj(null);
     };
 
     const handleFinishPayment = async () => {
-        // --- CLÁUSULA DE GUARDA RIGOROSA ---
-        if (!command?.id || !command?.client_id) {
-            console.warn("[CHECKOUT] Abortando: Aguardando IDs de Comanda/Cliente para processamento.");
+        if (!command?.id || isFinishing || addedPayments.length === 0) return;
+        if (totals.remaining > 0.05) {
+            setToast({ message: "O valor total ainda não foi atingido.", type: 'error' });
             return;
         }
         
-        if (isFinishing || addedPayments.length === 0) return;
-        
         setIsFinishing(true);
-        let totalNetValue = 0;
-        let grossValueSnapshot = totals.total;
-
         try {
-            const methodMap: Record<string, string> = {
-                'money': 'cash',
-                'credit': 'credit',
-                'debit': 'debit',
-                'pix': 'pix'
-            };
+            const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // Sanitização final de parâmetros para evitar Erro 400 (Bad Request)
                 const payload = {
                     p_command_id: command.id,
                     p_amount: entry.amount,
-                    p_method: methodMap[entry.method] || entry.method,
-                    p_brand: entry.brand.toLowerCase() === 'outros' ? 'default' : entry.brand.toLowerCase(),
-                    p_installments: Math.max(1, entry.installments)
+                    p_method: methodMap[entry.method],
+                    p_brand: entry.brand.toLowerCase(),
+                    p_installments: entry.installments
                 };
 
-                const { data, error } = await supabase.rpc('pay_and_close_command_api_v1', payload);
-
-                if (error) {
-                    // Extração de erro detalhada para evitar [object Object]
-                    const errorMessage = error.message || error.details || JSON.stringify(error);
-                    throw new Error(errorMessage);
-                }
-                
-                totalNetValue += (data?.net_amount || data?.net_value || entry.amount);
+                const { error } = await supabase.rpc('pay_and_close_command_api_v1', payload);
+                if (error) throw new Error(error.message || JSON.stringify(error));
             }
 
             setServerReceipt({
-                gross_amount: grossValueSnapshot,
-                net_amount: totalNetValue,
-                fee_amount: Math.max(0, grossValueSnapshot - totalNetValue)
+                gross_amount: totals.total,
+                net_amount: totals.totalNet,
+                fee_amount: totals.total - totals.totalNet
             });
 
             setIsSuccessfullyClosed(true);
             setAddedPayments([]);
-            setToast({ message: "Venda finalizada com sucesso!", type: 'success' });
-            fetchCommand();
+            setToast({ message: "Venda liquidada com sucesso!", type: 'success' });
+            fetchSystemData();
 
         } catch (e: any) {
-            console.error("[CHECKOUT_RPC_FAIL]", e.message);
-            setToast({ message: `Falha no processamento: ${e.message}`, type: 'error' });
+            setToast({ message: `Falha: ${e.message}`, type: 'error' });
             setIsFinishing(false);
         }
     };
 
-    if (loading) {
-        return (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
-                <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                <p className="text-xs font-black uppercase tracking-[0.2em]">Sincronizando Checkout...</p>
-            </div>
-        );
-    }
-
+    if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={40} /></div>;
     if (!command) return null;
 
-    const paymentMethods = [
+    const paymentCategories = [
         { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
         { id: 'money', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
         { id: 'credit', label: 'Crédito', icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -211,14 +210,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         <ChevronLeft size={24} />
                     </button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                            Checkout <span className="text-orange-500 font-mono">#{command.id.split('-')[0].toUpperCase()}</span>
-                        </h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Protocolo Seguro Belare</p>
+                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500">#{command.id.split('-')[0].toUpperCase()}</span></h1>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Painel de Liquidação Direta</p>
                     </div>
-                </div>
-                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isSuccessfullyClosed ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
-                    {isSuccessfullyClosed ? 'Liquidação Concluída' : 'Caixa Aberto'}
                 </div>
             </header>
 
@@ -226,224 +220,142 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     
                     <div className="lg:col-span-2 space-y-6">
-                        
                         {isSuccessfullyClosed && (
-                            <div className="bg-emerald-600 rounded-[40px] p-10 text-white shadow-2xl animate-in zoom-in-95 duration-500 relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-8 opacity-10 rotate-12">
-                                    <Sparkles size={120} />
-                                </div>
-                                <div className="relative z-10 flex flex-col items-center text-center">
-                                    <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mb-6 backdrop-blur-md">
-                                        <CheckCircle2 size={48} className="text-white" />
-                                    </div>
-                                    <h2 className="text-3xl font-black mb-2 uppercase tracking-widest">Venda Finalizada!</h2>
-                                    <p className="text-emerald-100 font-medium max-w-sm">A comanda foi fechada e o pagamento registrado via motor de transações.</p>
-                                </div>
+                            <div className="bg-emerald-600 rounded-[40px] p-10 text-white shadow-2xl animate-in zoom-in-95 duration-500 flex flex-col items-center text-center">
+                                <CheckCircle2 size={64} className="mb-4" />
+                                <h2 className="text-3xl font-black uppercase tracking-widest">Venda Finalizada!</h2>
+                                <p className="text-emerald-100 mt-2">A comanda foi baixada e as taxas de processamento foram aplicadas.</p>
                             </div>
                         )}
 
-                        <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
-                            <div className={`w-20 h-20 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner border-4 border-white ${isSuccessfullyClosed ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
-                                {command.clients?.nome?.charAt(0).toUpperCase() || 'C'}
-                            </div>
-                            <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800">{command.clients?.nome || 'Consumidor Final'}</h3>
-                                <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
-                                        <Phone size={14} className="text-orange-500" /> {command.clients?.whatsapp || 'Sem contato'}
+                        {/* LISTAGEM DE ITENS */}
+                        <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+                            <header className="px-8 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-2">
+                                <ShoppingCart size={18} className="text-orange-500" />
+                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Itens da Comanda</h3>
+                            </header>
+                            <div className="divide-y divide-slate-50">
+                                {command.command_items.map(item => (
+                                    <div key={item.id} className="p-6 flex justify-between items-center">
+                                        <div>
+                                            <p className="font-black text-slate-700">{item.title}</p>
+                                            <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} un x R$ {Number(item.price).toFixed(2)}</p>
+                                        </div>
+                                        <p className="font-black text-slate-800">R$ {(item.price * item.quantity).toFixed(2)}</p>
                                     </div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
-                                        <Calendar size={14} className="text-orange-500" /> {format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt })}
-                                    </div>
-                                </div>
+                                ))}
                             </div>
                         </div>
 
-                        {!isSuccessfullyClosed && (
-                            <div className="space-y-6">
-                                <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-4">
-                                    <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                                        <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
-                                            <ShoppingCart size={18} className="text-orange-500" /> Detalhes dos Itens
-                                        </h3>
-                                    </header>
-                                    <div className="divide-y divide-slate-50">
-                                        {command.command_items.map(item => (
-                                            <div key={item.id} className="p-8 flex items-center justify-between group hover:bg-slate-50/50 transition-colors">
-                                                <div className="flex items-center gap-5">
-                                                    <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
-                                                        {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
-                                                        <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
-                                                            {item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}
-                                                        </p>
-                                                    </div>
+                        {/* MÉTODOS LANÇADOS */}
+                        <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+                            <header className="px-8 py-5 bg-slate-800 text-white flex justify-between items-center">
+                                <h3 className="font-black text-sm uppercase tracking-widest">Pagamentos Registrados</h3>
+                                <span className="text-[10px] font-black bg-white/10 px-3 py-1 rounded-full">TOTAL: R$ {totals.paid.toFixed(2)}</span>
+                            </header>
+                            <div className="divide-y divide-slate-50">
+                                {addedPayments.length === 0 ? (
+                                    <div className="p-10 text-center text-slate-300 italic text-sm">Aguardando lançamento...</div>
+                                ) : (
+                                    addedPayments.map(p => (
+                                        <div key={p.id} className="p-6 flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                                <div className="p-3 bg-slate-50 rounded-2xl text-slate-400">
+                                                    {p.method === 'pix' ? <Smartphone size={20}/> : p.method === 'money' ? <Coins size={20}/> : <CreditCard size={20}/>}
                                                 </div>
-                                                <p className="font-black text-slate-800 text-xl">R$ {(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</p>
+                                                <div>
+                                                    <p className="font-black text-slate-700 text-sm uppercase">{p.method} {p.brand !== 'Default' && `• ${p.brand}`}</p>
+                                                    <p className="text-[9px] font-black text-rose-400 uppercase tracking-tighter">Taxa Aplicada: {p.rate}% (- R$ {p.fee.toFixed(2)})</p>
+                                                </div>
                                             </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-6 duration-500">
-                                    <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-800 text-white">
-                                        <h3 className="font-black text-sm uppercase tracking-widest flex items-center gap-2">
-                                            <CheckCircle size={18} className="text-emerald-400" /> Métodos Lançados
-                                        </h3>
-                                        <span className="text-[10px] font-black uppercase bg-white/10 px-3 py-1 rounded-full">Liquidado: R$ {totals.paid.toFixed(2)}</span>
-                                    </header>
-                                    <div className="divide-y divide-slate-50">
-                                        {addedPayments.length === 0 ? (
-                                            <div className="p-12 text-center text-slate-300 italic text-sm font-medium">Nenhum pagamento registrado. Escolha um método ao lado.</div>
-                                        ) : (
-                                            addedPayments.map(p => (
-                                                <div key={p.id} className="p-6 flex items-center justify-between group animate-in fade-in slide-in-from-top-1">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="p-3 bg-slate-50 rounded-2xl text-slate-400">
-                                                            {p.method === 'pix' ? <Smartphone size={20}/> : p.method === 'money' ? <Coins size={20}/> : <CreditCard size={20}/>}
-                                                        </div>
-                                                        <div>
-                                                            <p className="font-black text-slate-700 text-sm uppercase">
-                                                                {p.method === 'credit' ? 'Crédito' : p.method === 'debit' ? 'Débito' : p.method === 'pix' ? 'Pix' : 'Dinheiro'}
-                                                                {p.brand !== 'default' && ` • ${p.brand}`}
-                                                            </p>
-                                                            {p.method === 'credit' && <p className="text-[9px] font-black text-orange-500 uppercase tracking-widest">{p.installments}x no Cartão</p>}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-6">
-                                                        <span className="font-black text-slate-800 text-xl">R$ {p.amount.toFixed(2)}</span>
-                                                        <button onClick={() => handleRemovePayment(p.id)} className="p-2 text-slate-200 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all">
-                                                            <Trash2 size={20} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
+                                            <div className="text-right">
+                                                <p className="font-black text-slate-800">R$ {p.amount.toFixed(2)}</p>
+                                                <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="text-[10px] text-rose-500 font-bold hover:underline">Remover</button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
                             </div>
-                        )}
+                        </div>
                     </div>
 
+                    {/* COLUNA DE AÇÕES E TOTAIS */}
                     <div className="space-y-6">
-                        <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden group">
-                            <div className="relative z-10 space-y-6 text-left">
+                        <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
+                            <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
-                                    <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400">
-                                        <span>Valor Base Comanda</span>
+                                    <div className="flex justify-between text-xs font-black uppercase text-slate-400">
+                                        <span>Subtotal</span>
                                         <span>R$ {totals.subtotal.toFixed(2)}</span>
                                     </div>
                                     {!isSuccessfullyClosed && (
-                                        <div className="flex justify-between items-center">
-                                            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400">
-                                                <Percent size={14} /> Desconto
-                                            </div>
-                                            <input 
-                                                type="number" 
-                                                value={discount}
-                                                onChange={e => setDiscount(e.target.value)}
-                                                className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50 focus:border-orange-500 transition-all"
-                                            />
+                                        <div className="flex justify-between items-center text-orange-400">
+                                            <span className="text-xs font-black uppercase">Desconto</span>
+                                            <input type="number" value={discount} onChange={e => setDiscount(e.target.value)} className="w-20 bg-white/10 border-none rounded-lg px-2 py-1 text-right text-white font-black" />
                                         </div>
                                     )}
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total a Liquidar</p>
-                                    <h2 className={`text-5xl font-black tracking-tighter ${isSuccessfullyClosed ? 'text-emerald-400' : 'text-white'}`}>
-                                        R$ {isSuccessfullyClosed && serverReceipt ? serverReceipt.gross_amount.toFixed(2) : totals.total.toFixed(2)}
-                                    </h2>
+                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Total Líquido Estimado</p>
+                                    <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.totalNet.toFixed(2)}</h2>
+                                    <p className="text-[10px] font-bold text-slate-500 mt-2">BRUTO: R$ {totals.total.toFixed(2)}</p>
                                 </div>
-
-                                {serverReceipt && (
-                                    <div className="mt-8 p-6 bg-white/5 border border-white/10 rounded-[32px] animate-in slide-in-from-top-4">
-                                        <div className="flex items-center gap-2 mb-4 text-[10px] font-black uppercase text-emerald-400 tracking-widest">
-                                            <ShieldCheck size={14} /> Recebimento Líquido
-                                        </div>
-                                        <div className="space-y-3">
-                                            <div className="flex justify-between text-xs font-bold">
-                                                <span className="text-slate-400">Custos de Transação</span>
-                                                <span className="text-rose-400">- R$ {serverReceipt.fee_amount.toFixed(2)}</span>
-                                            </div>
-                                            <div className="flex justify-between items-end pt-3 border-t border-white/5">
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] font-black uppercase text-slate-400">Valor em Caixa</span>
-                                                    <span className="text-[8px] font-bold text-slate-500">SALDO EFETIVO</span>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-2xl font-black text-white">R$ {serverReceipt.net_amount.toFixed(2)}</span>
-                                                    <ArrowUpRight size={18} className="text-emerald-500" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         </div>
 
                         {!isSuccessfullyClosed && (
-                            <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6 text-left">
-                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2">
-                                    <Tag size={14} className="text-orange-500" /> Selecione o Método
-                                </h4>
-                                
-                                { (activeMethod === 'credit' || activeMethod === 'debit') ? (
-                                    <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
+                            <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
+                                {activeCategory ? (
+                                    <div className="space-y-6 animate-in zoom-in-95">
                                         <div className="flex justify-between items-center">
-                                            <span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">
-                                                Configuração {activeMethod === 'credit' ? 'Crédito' : 'Débito'}
-                                            </span>
-                                            <button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-500"><X size={20}/></button>
+                                            <h4 className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Configurar {activeCategory}</h4>
+                                            <button onClick={() => setActiveCategory(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18}/></button>
                                         </div>
-                                        
-                                        <div className="space-y-4">
-                                            <div className="space-y-1.5">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Bandeira do Cartão</label>
-                                                <div className="grid grid-cols-3 gap-2">
-                                                    {BRANDS.map(b => (
+
+                                        {/* 3. MODAL INTERMEDIÁRIO DE SELEÇÃO DE BANDEIRA (DINÂMICO) */}
+                                        {(activeCategory === 'credit' || activeCategory === 'debit') && (
+                                            <div className="space-y-3">
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Selecione a Bandeira / Taxa</label>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {dbMethods.filter(m => m.type === activeCategory).map(m => (
                                                         <button 
-                                                            key={b} 
-                                                            onClick={() => setSelectedBrand(b)}
-                                                            className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-tighter border-2 transition-all ${selectedBrand === b ? 'bg-orange-500 border-orange-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:border-orange-200'}`}
+                                                            key={m.id} 
+                                                            onClick={() => setSelectedMethodObj(m)}
+                                                            className={`p-3 rounded-2xl border-2 transition-all text-left flex items-center justify-between ${selectedMethodObj?.id === m.id ? 'border-orange-500 bg-orange-50' : 'border-slate-50 bg-slate-50 hover:border-slate-200'}`}
                                                         >
-                                                            {b}
+                                                            <div className="min-w-0">
+                                                                <p className="text-[10px] font-black text-slate-700 truncate uppercase">{m.brand || m.name}</p>
+                                                                <p className="text-[9px] font-bold text-slate-400">{m.rate_cash}% taxa</p>
+                                                            </div>
+                                                            {selectedMethodObj?.id === m.id && <Check size={14} className="text-orange-500" />}
                                                         </button>
                                                     ))}
                                                 </div>
+                                                
+                                                {activeCategory === 'credit' && selectedMethodObj?.allow_installments && (
+                                                    <div className="pt-2">
+                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Parcelas: {selectedInstallments}x</label>
+                                                        <input type="range" min="1" max={selectedMethodObj.max_installments} value={selectedInstallments} onChange={e => setSelectedInstallments(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500" />
+                                                    </div>
+                                                )}
                                             </div>
+                                        )}
 
-                                            {activeMethod === 'credit' && (
-                                                <div className="space-y-1.5">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Parcelamento: {selectedInstallments}x</label>
-                                                    <input 
-                                                        type="range" min="1" max="12" 
-                                                        value={selectedInstallments}
-                                                        onChange={e => setSelectedInstallments(parseInt(e.target.value))}
-                                                        className="w-full accent-orange-500" 
-                                                    />
-                                                </div>
-                                            )}
-
+                                        <div className="space-y-2">
+                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Lançamento</label>
                                             <div className="relative">
                                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span>
-                                                <input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-orange-100 transition-all shadow-inner"/>
+                                                <input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" />
                                             </div>
                                         </div>
-                                        
-                                        <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg">Confirmar {activeMethod === 'credit' ? 'Parcela' : 'Bandeira'}</button>
-                                    </div>
-                                ) : activeMethod ? (
-                                    <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95">
-                                        <div className="flex justify-between items-center mb-4"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Valor no {activeMethod.toUpperCase()}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-500"><X size={20}/></button></div>
-                                        <div className="relative mb-4"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input autoFocus type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-orange-100 transition-all shadow-inner"/></div>
-                                        <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg">Adicionar Pagamento</button>
+
+                                        <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Confirmar Lançamento</button>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-2 gap-3">
-                                        {paymentMethods.map(pm => (
-                                            <button key={pm.id} onClick={() => handleInitPayment(pm.id as any)} className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-transparent bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-white transition-all active:scale-95 group">
-                                                <pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500 transition-colors" />
+                                        {paymentCategories.map(pm => (
+                                            <button key={pm.id} onClick={() => handleInitPayment(pm.id as any)} className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-slate-50 bg-slate-50/50 text-slate-400 hover:border-orange-200 hover:bg-white transition-all active:scale-95 group">
+                                                <pm.icon size={28} className="mb-3 group-hover:text-orange-500 transition-colors" />
                                                 <span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span>
                                             </button>
                                         ))}
@@ -452,19 +364,16 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 
                                 <button 
                                     onClick={handleFinishPayment} 
-                                    disabled={isFinishing || totals.remaining > 0.01 || addedPayments.length === 0} 
-                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining < 0.05 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
+                                    disabled={isFinishing || totals.remaining > 0.05 || addedPayments.length === 0} 
+                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all ${totals.remaining < 0.05 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-2xl hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> {totals.remaining > 0.05 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'LIQUIDAR COMANDA'}</>}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR VENDA</>}
                                 </button>
                             </div>
                         )}
                         
                         {isSuccessfullyClosed && (
-                            <button 
-                                onClick={onBack}
-                                className="w-full py-6 rounded-[32px] bg-slate-800 text-white font-black text-lg uppercase tracking-widest shadow-xl hover:bg-slate-900 transition-all active:scale-95 flex items-center justify-center gap-3"
-                            >
+                            <button onClick={onBack} className="w-full py-6 rounded-[32px] bg-slate-800 text-white font-black text-lg uppercase tracking-widest shadow-xl hover:bg-slate-900 transition-all active:scale-95 flex items-center justify-center gap-3">
                                 <ArrowRight size={24} /> Próximo Cliente
                             </button>
                         )}
