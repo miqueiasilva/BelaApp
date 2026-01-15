@@ -1,12 +1,15 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import WeeklyChart from '../charts/WeeklyChart';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, Loader2 } from 'lucide-react';
 import { ViewState } from '../../types';
+import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
+import { startOfDay, endOfDay } from 'date-fns';
 
 interface DashboardViewProps {
   onNavigate: (view: ViewState) => void;
@@ -25,6 +28,39 @@ const StatCard: React.FC<{ title: string, value: string, icon: React.ReactNode, 
 );
 
 const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
+  const { activeStudioId } = useStudio();
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [loadingApps, setLoadingApps] = useState(true);
+
+  useEffect(() => {
+    if (!activeStudioId) return;
+
+    const fetchTodayApps = async () => {
+      setLoadingApps(true);
+      try {
+        const start = startOfDay(new Date()).toISOString();
+        const end = endOfDay(new Date()).toISOString();
+
+        const { data, error } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('studio_id', activeStudioId)
+          .gte('date', start)
+          .lte('date', end)
+          .order('date', { ascending: true });
+
+        if (error) throw error;
+        setAppointments(data || []);
+      } catch (e) {
+        console.error("Dashboard fetch error:", e);
+      } finally {
+        setLoadingApps(false);
+      }
+    };
+
+    fetchTodayApps();
+  }, [activeStudioId]);
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold">Resumo do Estúdio</h2>
@@ -52,7 +88,14 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           </Card>
         </div>
         <div className="lg:col-span-1">
-          <TodayScheduleWidget onNavigate={onNavigate} />
+          {loadingApps ? (
+            <div className="h-64 bg-white rounded-[24px] border border-slate-100 flex flex-col items-center justify-center text-slate-400">
+               <Loader2 className="animate-spin text-orange-500 mb-2" />
+               <span className="text-[10px] font-black uppercase">Carregando Agenda...</span>
+            </div>
+          ) : (
+            <TodayScheduleWidget onNavigate={onNavigate} appointments={appointments} />
+          )}
         </div>
       </div>
     </div>
