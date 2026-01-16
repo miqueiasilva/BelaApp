@@ -117,23 +117,22 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         }
 
         // --- HARD-FIX DE TAXAS (WHITELIST LOGIC) ---
-        // Pix e Dinheiro (Money) sempre possuem taxa 0%
-        const isFeeFree = activeCategory === 'pix' || activeCategory === 'money';
+        // Implementação de regra sênior: Whitelist para PIX e DINHEIRO
+        const isFeeFree = activeCategory === 'pix' || activeCategory === 'money' || (selectedMethodObj?.slug === 'pix' || selectedMethodObj?.slug === 'dinheiro');
         
-        let rate = 0;
+        let finalRate = 0;
+        
         if (!isFeeFree) {
-            // Só buscamos a taxa se FOR crédito ou débito
             if (!selectedMethodObj) {
                 setToast({ message: "Selecione a bandeira do cartão", type: 'error' });
                 return;
             }
-            rate = (selectedInstallments === 1) 
+            finalRate = (selectedInstallments === 1) 
                 ? Number(selectedMethodObj.rate_cash || 0) 
                 : Number(selectedMethodObj.installment_rates?.[selectedInstallments.toString()] || selectedMethodObj.rate_installment_12x || 0);
         }
-        // Se isFeeFree for true, a 'rate' permanece 0.
 
-        const feeAmount = val * (rate / 100);
+        const feeAmount = val * (finalRate / 100);
         const netAmount = val - feeAmount;
 
         const newPayment: PaymentEntry = {
@@ -141,7 +140,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             method: activeCategory,
             amount: val,
             brand: isFeeFree ? 'Direto' : (selectedMethodObj?.brand || 'Default'),
-            rate: rate,
+            rate: finalRate,
             fee: feeAmount,
             net: netAmount,
             installments: selectedInstallments
@@ -181,6 +180,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_studio_id: activeStudioId,
                     p_professional_id: firstProfId,
                     p_amount: entry.amount,
+                    p_net_value: entry.net, // ENVIO DO VALOR LÍQUIDO CALCULADO NA WHITELIST
+                    p_fee_amount: entry.fee, // ENVIO DA TAXA CALCULADA
                     p_method: methodMap[entry.method],
                     p_brand: entry.brand.toLowerCase(),
                     p_installments: entry.installments,

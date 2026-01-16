@@ -135,11 +135,19 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [dbPaymentMethods, selectedMethodId]);
 
     const financialMetrics = useMemo(() => {
-        if (!currentMethod) return { rate: 0, netValue: appointment.price };
-        let rate = (installments === 1) ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates?.[installments.toString()] || 0);
-        const discount = (appointment.price * rate) / 100;
-        return { rate, netValue: appointment.price - discount };
-    }, [currentMethod, installments, appointment.price]);
+        if (!currentMethod) return { rate: 0, feeAmount: 0, netValue: appointment.price };
+        
+        // --- HARD-FIX DE TAXAS (WHITELIST LOGIC) ---
+        const isFeeFree = selectedCategory === 'pix' || selectedCategory === 'money' || currentMethod.brand === 'direto' || currentMethod.type === 'money';
+        
+        let rate = 0;
+        if (!isFeeFree) {
+            rate = (installments === 1) ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates?.[installments.toString()] || 0);
+        }
+
+        const feeAmount = (appointment.price * rate) / 100;
+        return { rate, feeAmount, netValue: appointment.price - feeAmount };
+    }, [currentMethod, selectedCategory, installments, appointment.price]);
 
     const handleConfirmPayment = async () => {
         if (!currentMethod) return;
@@ -147,7 +155,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         setIsLoading(true);
 
         try {
-            // ATUALIZAÇÃO: Uso da RPC register_payment_transaction
             const methodMapping: Record<string, string> = {
                 'pix': 'pix',
                 'money': 'cash',
@@ -156,10 +163,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             };
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                p_studio_id: currentMethod.id ? null : null, // A RPC gerencia via auth ou enviaremos direto se necessário.
-                // Na nossa estrutura, enviamos studio_id se for requerido pela assinatura da função
+                p_studio_id: null, 
                 p_professional_id: isUUID(selectedProfessionalId) ? selectedProfessionalId : null,
                 p_amount: appointment.price,
+                p_net_value: financialMetrics.netValue, // FORÇANDO VALOR LÍQUIDO CORRETO (WHITELIST)
+                p_fee_amount: financialMetrics.feeAmount,
                 p_method: methodMapping[selectedCategory] || 'pix',
                 p_brand: currentMethod?.brand?.toLowerCase() || 'default',
                 p_installments: Math.floor(installments),
@@ -292,8 +300,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     {currentMethod && (
                         <div className="p-5 bg-slate-50 border-2 border-slate-100 rounded-[28px] space-y-3 shadow-inner text-left">
                             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                <span>Taxa Calculada ({installments}x)</span>
-                                <span className="text-rose-600">{financialMetrics.rate}%</span>
+                                <span>Taxa Aplicada ({installments}x)</span>
+                                <span className={financialMetrics.rate > 0 ? "text-rose-600" : "text-emerald-600 font-black"}>
+                                    {financialMetrics.rate > 0 ? `${financialMetrics.rate}%` : 'ISENTA (0%)'}
+                                </span>
                             </div>
                             <div className="flex justify-between items-center pt-2 border-t border-slate-200/50">
                                 <span className="text-xs font-bold text-slate-500">Líquido Estimado</span>
