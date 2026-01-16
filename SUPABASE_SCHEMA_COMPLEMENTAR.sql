@@ -1,11 +1,24 @@
 
--- FUNÇÃO DE CHECKOUT ATÔMICO (VERSÃO ROBUSTA)
--- Resolve erro 404 e 42725 (Signature Ambiguity)
+-- LIMPEZA ATÔMICA DE VERSÕES CONFLITANTES (Resolução Erro 42725)
+-- Este bloco remove todas as assinaturas da função 'register_payment_transaction' 
+-- independentemente dos parâmetros, limpando o cache do Postgres.
 
--- Limpeza de assinaturas conflitantes
-DROP FUNCTION IF EXISTS public.register_payment_transaction(numeric, text, uuid, uuid, text, numeric, int, text, numeric, uuid, uuid);
-DROP FUNCTION IF EXISTS public.register_payment_transaction(numeric, text, uuid, uuid, text, numeric, integer, text, numeric, uuid, uuid);
+DO $$ 
+DECLARE 
+    _func_name text := 'register_payment_transaction';
+    _routine record;
+BEGIN
+    FOR _routine IN 
+        SELECT oid::regprocedure as signature
+        FROM pg_proc 
+        WHERE proname = _func_name 
+        AND pronamespace = 'public'::regnamespace
+    LOOP
+        EXECUTE 'DROP FUNCTION ' || _routine.signature;
+    END LOOP;
+END $$;
 
+-- CRIAÇÃO DA VERSÃO OFICIAL (11 PARÂMETROS)
 CREATE OR REPLACE FUNCTION public.register_payment_transaction(
   p_amount numeric,
   p_brand text,
@@ -76,3 +89,6 @@ $$;
 -- Permissões de execução
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO service_role;
+
+-- Força atualização do cache do PostgREST
+NOTIFY pgrst, 'reload schema';
