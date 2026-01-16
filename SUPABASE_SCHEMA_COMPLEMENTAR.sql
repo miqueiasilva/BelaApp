@@ -1,5 +1,5 @@
 
--- 1. LIMPEZA RADICAL: Remove todas as variações da função para evitar conflitos de tipos de parâmetros
+-- 1. LIMPEZA RADICAL: Remove todas as variações da função (overloads) para evitar conflitos de cache ou assinatura
 DO $$ 
 DECLARE 
     _func_name text := 'register_payment_transaction';
@@ -15,20 +15,20 @@ BEGIN
     END LOOP;
 END $$;
 
--- 2. CRIAÇÃO DA FUNÇÃO COM PARÂMETROS UUID
--- Esta assinatura é incompatível com a anterior (text), por isso o DROP acima é vital.
+-- 2. CRIAÇÃO DA FUNÇÃO COM PARÂMETROS UUID PUROS
+-- Importante: Não use "text" aqui, use "uuid" diretamente para que o Postgres não tente converter para bigint
 CREATE OR REPLACE FUNCTION public.register_payment_transaction(
   p_amount numeric,
   p_brand text,
-  p_client_id uuid,        -- Tipo UUID estrito
-  p_command_id uuid,       -- Tipo UUID estrito
+  p_client_id uuid,        -- Tipagem UUID explícita
+  p_command_id uuid,       -- Tipagem UUID explícita
   p_description text,
   p_fee_amount numeric,
   p_installments integer,
   p_method text,
   p_net_value numeric,
-  p_professional_id uuid,  -- Tipo UUID estrito
-  p_studio_id uuid         -- Tipo UUID estrito
+  p_professional_id uuid,  -- Tipagem UUID explícita
+  p_studio_id uuid         -- Tipagem UUID explícita
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -38,7 +38,8 @@ AS $$
 DECLARE
   v_transaction_id uuid;
 BEGIN
-  -- 3. INSERÇÃO DIRETA (Sem conversões de tipo inconsistentes)
+  -- 3. INSERÇÃO DIRETA
+  -- Como os parâmetros já são UUID, o Postgres não lançará o erro de bigint
   INSERT INTO public.financial_transactions (
     amount,
     net_value,
@@ -70,7 +71,7 @@ BEGIN
   )
   RETURNING id INTO v_transaction_id;
 
-  -- 4. ATUALIZAÇÃO DA COMANDA (Obrigatória para fechar o ciclo de venda)
+  -- 4. ATUALIZAÇÃO DA COMANDA
   IF p_command_id IS NOT NULL THEN
     UPDATE public.commands 
     SET 
@@ -84,9 +85,9 @@ BEGIN
 END;
 $$;
 
--- 5. PERMISSÕES
+-- 5. PERMISSÕES E REFRESH
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO service_role;
 
--- Notifica o PostgREST para recarregar o schema da API
+-- Notifica o PostgREST para recarregar o schema imediatamente
 NOTIFY pgrst, 'reload schema';
