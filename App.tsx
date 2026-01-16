@@ -139,7 +139,7 @@ const AppContent: React.FC = () => {
             case 'configuracoes': return <ConfiguracoesView />;
             case 'remuneracoes': return <RemuneracoesView />;
             case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
-            case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} />;
+            case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} onNavigateToCommand={navigateToCommand} />;
             case 'comanda_detalhe': return <CommandDetailView commandId={activeCommandId!} onBack={() => setCurrentView('comandas')} />;
             case 'caixa': return <CaixaView />;
             case 'produtos': return <ProdutosView />;
