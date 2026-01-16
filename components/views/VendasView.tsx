@@ -39,7 +39,7 @@ const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, o
             <div className="p-6 space-y-4">
                 <div className="text-center space-y-1 border-b border-slate-100 pb-4">
                     <p className="text-xs text-slate-400 uppercase font-bold">Valor Total</p>
-                    <p className="text-3xl font-extrabold text-slate-800">R$ {Number(transaction.amount || transaction.p_amount).toFixed(2)}</p>
+                    <p className="text-3xl font-extrabold text-slate-800">R$ {Number(transaction.amount || transaction.p_amount || 0).toFixed(2)}</p>
                     <p className="text-sm text-slate-500 capitalize">{transaction.payment_method?.replace('_', ' ') || 'Pix'}</p>
                 </div>
 
@@ -159,7 +159,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             const itemsResumo = cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
             const description = selectedClient ? `Venda PDV - ${selectedClient.nome}: ${itemsResumo}` : `Venda PDV: ${itemsResumo}`;
 
-            // ATUALIZAÇÃO: Uso da RPC register_payment_transaction
             const methodMapping: Record<string, string> = {
                 'pix': 'pix',
                 'dinheiro': 'cash',
@@ -167,21 +166,29 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                 'cartao_debito': 'debit'
             };
 
+            // Para o PDV simplificado, assumimos taxa 0 para PIX/Dinheiro
+            const isFeeFree = paymentMethod === 'pix' || paymentMethod === 'dinheiro';
+            const feeRate = isFeeFree ? 0 : 3.5; // Taxa padrão simulada
+            const feeAmount = (total * feeRate) / 100;
+            const netValue = total - feeAmount;
+
             const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                p_studio_id: activeStudioId,
-                p_professional_id: null,
                 p_amount: total,
-                p_method: methodMapping[paymentMethod] || 'pix',
                 p_brand: 'default',
-                p_installments: 1,
-                p_description: description,
+                p_client_id: selectedClient?.id || null,
                 p_command_id: null,
-                p_client_id: selectedClient?.id || null
+                p_description: description,
+                p_fee_amount: feeAmount,
+                p_installments: 1,
+                p_method: methodMapping[paymentMethod] || 'pix',
+                p_net_value: netValue,
+                p_professional_id: null,
+                p_studio_id: activeStudioId
             });
 
             if (rpcError) throw rpcError;
 
-            setLastTransaction({ ...transaction, amount: total });
+            setLastTransaction({ ...transaction, amount: total, payment_method: paymentMethod });
             setToast({ message: "Venda registrada com sucesso!", type: 'success' });
             fetchPOSData(); 
 

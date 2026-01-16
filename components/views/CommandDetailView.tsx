@@ -32,12 +32,6 @@ interface PaymentEntry {
     installments: number;
 }
 
-interface ServerReceipt {
-    gross_amount: number;
-    net_amount: number;
-    fee_amount: number;
-}
-
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
     const { activeStudioId } = useStudio();
     const isMounted = useRef(true);
@@ -55,7 +49,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     
     const [discount, setDiscount] = useState<string>('0');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    const [serverReceipt, setServerReceipt] = useState<ServerReceipt | null>(null);
 
     useEffect(() => {
         isMounted.current = true;
@@ -115,7 +108,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             return;
         }
 
-        const isFeeFree = activeCategory === 'pix' || activeCategory === 'money' || (selectedMethodObj?.slug === 'pix' || selectedMethodObj?.slug === 'dinheiro');
+        const isFeeFree = activeCategory === 'pix' || activeCategory === 'money';
         let finalRate = 0;
         if (!isFeeFree) {
             if (!selectedMethodObj) {
@@ -163,46 +156,32 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const firstProfId = command.command_items?.find(i => i.professional_id)?.professional_id || null;
 
             for (const entry of addedPayments) {
-                const { error: transError } = await supabase.from('financial_transactions').insert([{
-                    studio_id: activeStudioId,
-                    professional_id: firstProfId,
-                    client_id: command.client_id,
-                    command_id: command.id,
-                    amount: entry.amount,
-                    net_value: entry.net,
-                    fee_amount: entry.fee,
-                    payment_method: methodMap[entry.method],
-                    type: 'income',
-                    category: 'Serviço',
-                    description: `Liquidação Comanda #${command.id.split('-')[0].toUpperCase()}`,
-                    status: 'pago',
-                    date: new Date().toISOString()
-                }]);
-                if (transError) throw transError;
+                // ATUALIZAÇÃO PARA USAR A NOVA RPC COM 11 PARÂMETROS
+                const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                    p_amount: entry.amount,
+                    p_brand: entry.brand,
+                    p_client_id: command.client_id,
+                    p_command_id: command.id,
+                    p_description: `Liquidação Comanda #${command.id.split('-')[0].toUpperCase()}`,
+                    p_fee_amount: entry.fee,
+                    p_installments: entry.installments,
+                    p_method: methodMap[entry.method],
+                    p_net_value: entry.net,
+                    p_professional_id: firstProfId,
+                    p_studio_id: activeStudioId
+                });
+                
+                if (rpcError) throw rpcError;
             }
 
-            await supabase.from('commands').update({ 
-                status: 'paid', 
-                closed_at: new Date().toISOString(),
-                total_amount: totals.total 
-            }).eq('id', command.id);
-
             if (isMounted.current) {
-                setServerReceipt({
-                    gross_amount: totals.total,
-                    net_amount: totals.totalNet,
-                    fee_amount: totals.total - totals.totalNet
-                });
                 setIsSuccessfullyClosed(true);
                 setAddedPayments([]);
                 setToast({ message: "Venda liquidada com sucesso!", type: 'success' });
                 fetchSystemData();
             }
         } catch (e: any) {
-            if (e.message?.includes('message channel closed')) {
-                console.warn("[ZELDA-SHIELD] Ruído de extensão detectado e ignorado.");
-                return;
-            }
+            if (e.message?.includes('message channel closed')) return;
             if (isMounted.current) {
                 setToast({ message: `Falha na Liquidação: ${e.message}`, type: 'error' });
                 setIsFinishing(false);
