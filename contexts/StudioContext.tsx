@@ -105,6 +105,8 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     } catch (err: any) {
       const errorMsg = err?.message || err?.details || "Erro desconhecido ao carregar unidades.";
       console.error("[StudioProvider] refreshStudios error:", errorMsg);
+      setStudios([]);
+      setActiveStudioIdState(null);
     } finally {
       setLoading(false);
     }
@@ -116,12 +118,13 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     if (!supabase) return;
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
         refreshStudios();
       } else if (event === 'SIGNED_OUT') {
         setStudios([]);
         setActiveStudioIdState(null);
         localStorage.removeItem(STORAGE_KEY);
+        setLoading(false);
       }
     });
 

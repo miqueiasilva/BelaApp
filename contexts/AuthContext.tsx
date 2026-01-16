@@ -34,11 +34,13 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   // Helper para buscar perfil detalhado
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
-      const { data: profData } = await supabase
+      const { data: profData, error: profErr } = await supabase
         .from('professionals')
         .select('role, photo_url, permissions, name')
         .eq('email', authUser.email)
         .maybeSingle();
+
+      if (profErr) throw profErr;
 
       if (profData) {
         return {
@@ -50,11 +52,13 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         };
       }
 
-      const { data: profileData } = await supabase
+      const { data: profileData, error: profileErr } = await supabase
         .from('profiles')
         .select('full_name, papel, avatar_url')
         .eq('id', authUser.id)
         .maybeSingle();
+      
+      if (profileErr) throw profileErr;
 
       return {
         ...authUser,
@@ -63,10 +67,11 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         avatar_url: profileData?.avatar_url || authUser.user_metadata?.avatar_url
       };
     } catch (e) {
+      console.error("AuthContext: Erro ao buscar dados estendidos, usando fallback básico.");
       return { 
         ...authUser, 
         papel: 'profissional', 
-        nome: authUser.user_metadata?.full_name || 'Usuário' 
+        nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Usuário' 
       };
     }
   };
@@ -79,7 +84,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       const currentId = currentSession?.user?.id || null;
 
       // Estabilidade: Evita processar o mesmo ID múltiplas vezes (Corrige o loop de 4 disparos)
-      if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
+      if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED' && event !== 'PASSWORD_RECOVERY') {
         setLoading(false);
         return;
       }
@@ -95,12 +100,16 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       }
 
       try {
+        setLoading(true);
         const appUser = await fetchProfile(currentSession.user);
         if (isMounted.current) {
           setUser(appUser);
         }
       } catch (err) {
-        console.error("AuthContext: Erro ao carregar perfil:", err);
+        console.error("AuthContext: Erro crítico ao carregar perfil:", err);
+        if (isMounted.current) {
+            setUser(null);
+        }
       } finally {
         if (isMounted.current) {
           setLoading(false);
@@ -133,12 +142,17 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     try {
       lastProcessedId.current = null;
       await supabase.auth.signOut();
+    } catch (e) {
+      console.error("Erro durante signOut:", e);
     } finally {
       localStorage.clear(); 
       sessionStorage.clear();
-      setUser(null);
-      setLoading(false);
-      window.location.href = '/login'; 
+      if (isMounted.current) {
+        setUser(null);
+        setLoading(false);
+      }
+      // Garante redirecionamento limpo
+      window.location.href = window.location.origin + '/login'; 
     }
   };
 
