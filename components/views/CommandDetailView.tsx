@@ -40,7 +40,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [isFinishing, setIsFinishing] = useState(false);
     const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
     
-    // Cache local para o nome do cliente resolvido
+    // Estado para o nome do cliente (Fonte de verdade para a UI)
     const [resolvedClientName, setResolvedClientName] = useState<string>('Consumidor Final');
     
     const [dbMethods, setDbMethods] = useState<any[]>([]);
@@ -62,11 +62,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // CORREÇÃO ERRO 406: Removido join clients(nome) para evitar falha de tipos bigint/uuid
+            // CORREÇÃO: Query otimizada com JOIN explícito e aliasing para evitar Erro 406
             const [cmdRes, methodsRes] = await Promise.all([
                 supabase
                     .from('commands')
-                    .select('*, command_items(*, team_members(name))')
+                    .select(`
+                        *,
+                        client:clients(id, nome),
+                        command_items(*, team_members(id, name))
+                    `)
                     .eq('id', commandId)
                     .single(),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
@@ -80,29 +84,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setDbMethods(methodsRes.data || []);
                 if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
 
-                // RESOLUÇÃO DO NOME DO CLIENTE VIA RPC (Busca isolada do objeto command)
+                // LOGS DE VALIDAÇÃO SOLICITADOS
                 console.log('[Checkout] command.client_id', cmdData.client_id);
-
-                if (cmdData.client_id && Number(cmdData.client_id) > 0) {
-                    const { data: rpcName, error: rpcError } = await supabase.rpc('fn_get_client_name', { 
-                        c_id: Number(cmdData.client_id) 
-                    });
-                    
-                    if (!rpcError && rpcName) {
-                        setResolvedClientName(rpcName);
-                        console.log('[Checkout] resolvedClientName', rpcName);
-                    } else {
-                        setResolvedClientName('Consumidor Final');
-                        console.log('[Checkout] resolvedClientName', 'Consumidor Final (RPC fallback)');
-                    }
-                } else {
-                    setResolvedClientName('Consumidor Final');
-                    console.log('[Checkout] resolvedClientName', 'Consumidor Final (ID null/0)');
-                }
+                
+                // Lógica de exibição do nome do cliente via Join
+                const clientName = cmdData.client?.nome || 'Consumidor Final';
+                setResolvedClientName(clientName);
+                
+                console.log('[Checkout] resolvedClientName', clientName);
             }
         } catch (e: any) {
             if (isMounted.current) {
-                setToast({ message: "Erro ao sincronizar dados da comanda.", type: 'error' });
+                console.error("Erro no Checkout:", e.message);
+                setToast({ message: "Erro ao sincronizar dados do atendimento.", type: 'error' });
                 setTimeout(onBack, 2000);
             }
         } finally {
@@ -199,10 +193,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_installments: entry.installments || 1
                 });
                 
-                if (rpcError) {
-                    console.error("Erro na RPC pay_latest_open_command_v6:", rpcError);
-                    throw rpcError;
-                }
+                if (rpcError) throw rpcError;
             }
 
             if (isMounted.current) {
@@ -213,8 +204,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             }
         } catch (e: any) {
             if (isMounted.current) {
-                const detailedError = `[${e.message}] Detalhes: ${e.details || 'N/A'}. Sugestão: ${e.hint || 'N/A'}`;
-                console.error("Falha Crítica na Liquidação:", detailedError);
+                console.error("Falha na Liquidação:", e.message);
                 setToast({ message: `Erro: ${e.message}`, type: 'error' });
                 setIsFinishing(false);
             }
