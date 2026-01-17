@@ -274,9 +274,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
         if (!activeStudioId || !appointment?.id) return;
 
-        // Higienização de UUIDs: garante que IDs de mock não quebrem o banco
+        // Higienização de identificadores
         const studioUuid = getValidUUID(activeStudioId);
-        const clientUuid = getValidUUID(appointment.client?.id);
+        const client_id_raw = appointment.client?.id;
         const professionalUuid = getValidUUID(appointment.professional.id);
         const serviceUuid = getValidUUID(appointment.service.id);
 
@@ -287,11 +287,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
         setIsLoadingData(true);
         try {
+            // CORREÇÃO CRUCIAL: Mapeando client_id explicitamente no insert da comanda
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: studioUuid,
-                    client_id: clientUuid,
+                    client_id: client_id_raw || null, // Vínculo essencial para o checkout
                     status: 'open',
                     total_amount: appointment.service.price
                 }])
@@ -299,6 +300,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (cmdError) throw cmdError;
 
+            // Inserção dos itens da comanda vinculados ao serviço do agendamento
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
@@ -309,17 +311,22 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     title: appointment.service.name,
                     price: appointment.service.price,
                     quantity: 1,
-                    professional_id: professionalUuid // Garantido como UUID ou null
+                    professional_id: professionalUuid
                 }]);
 
             if (itemError) throw itemError;
 
+            // Atualiza status do agendamento original
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
-            setToast({ message: `Comanda gerada com sucesso! 💳`, type: 'success' });
+            
+            setToast({ message: `Comanda gerada para ${appointment.client?.nome || 'Cliente'}! 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
-            if (onNavigateToCommand) onNavigateToCommand(command.id);
+            
+            if (onNavigateToCommand) {
+                onNavigateToCommand(command.id);
+            }
         } catch (e: any) {
-            setToast({ message: "Erro ao converter: " + (e.message || "Falha DB"), type: 'error' });
+            setToast({ message: "Erro ao converter atendimento: " + (e.message || "Falha DB"), type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -399,9 +406,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     <div className="flex items-center gap-4">
                         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Agenda {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}</h2>
                         <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                            <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><LayoutGrid size={14} /> Equipe</button>
-                            <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><PlayCircle size={14} /> Andamento</button>
-                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><CreditCard size={14} /> Pagamento</button>
+                            <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><LayoutGrid size={14} /> Equipe</button>
+                            <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><PlayCircle size={14} /> Andamento</button>
+                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><CreditCard size={14} /> Pagamento</button>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 w-full lg:w-auto justify-end">

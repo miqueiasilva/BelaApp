@@ -62,18 +62,22 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // CORREÇÃO TÉCNICA OBRIGATÓRIA: Query com alias explícito para garantir retorno do PostgREST
+            // CORREÇÃO TÉCNICA: Join explícito com a tabela de clientes capturando campos de fallback e whatsapp
             const [cmdRes, methodsRes] = await Promise.all([
                 supabase
                     .from('commands')
                     .select(`
                       *,
-                      client:clients (
-                        id,
-                        nome
+                      client:clients!commands_client_id_fkey ( 
+                        id, 
+                        name, 
+                        nome, 
+                        nickname, 
+                        apelido, 
+                        whatsapp 
                       ),
-                      professional:professionals (
-                        uuid_id,
+                      professional:team_members!commands_professional_id_fkey (
+                        id,
                         name
                       ),
                       command_items (
@@ -96,14 +100,22 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setDbMethods(methodsRes.data || []);
                 if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
 
-                // LOGS DE VALIDAÇÃO SOLICITADOS
-                console.log('[Checkout] command.client_id', cmdData.client_id);
+                // DEBUG OBRIGATÓRIO (No console)
+                console.log('[Checkout] commandId:', commandId);
+                console.log('[Checkout] client_id:', cmdData?.client_id);
+                console.log('[Checkout] client data:', cmdData?.client);
                 
-                // LÓGICA DE EXIBIÇÃO OBRIGATÓRIA
-                const resolvedName = cmdData?.client?.nome?.trim() || 'Consumidor Final';
-                setResolvedClientName(resolvedName);
-                
-                console.log('[Checkout] resolvedClientName', resolvedName);
+                // MOTOR DE RESOLUÇÃO DE NOMES (ORDEM DE PRIORIDADE)
+                const clientObj = cmdData?.client;
+                const clientName =
+                  clientObj?.name || 
+                  clientObj?.nome || 
+                  clientObj?.nickname || 
+                  clientObj?.apelido || 
+                  clientObj?.whatsapp || 
+                  'Consumidor Final';
+
+                setResolvedClientName(clientName);
             }
         } catch (e: any) {
             if (isMounted.current) {
@@ -130,9 +142,16 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     }, [command, discount, addedPayments]);
 
     const professionalName = useMemo(() => {
-        if (!command?.command_items) return 'Não informado';
-        const itemWithProf = command.command_items.find((i: any) => i.team_members?.name);
-        return itemWithProf?.team_members?.name || 'Não informado';
+        // Tenta pegar do relacionamento direto da comanda primeiro
+        if (command?.professional?.name) return command.professional.name;
+        
+        // Se não houver, tenta pegar do primeiro item da comanda
+        if (command?.command_items && command.command_items.length > 0) {
+            const itemWithProf = command.command_items.find((i: any) => i.team_members?.name);
+            return itemWithProf?.team_members?.name || 'Não informado';
+        }
+        
+        return 'Não informado';
     }, [command]);
 
     const handleInitPayment = (category: 'credit' | 'debit' | 'pix' | 'money') => {
@@ -198,6 +217,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
+                // RPC de liquidação enviando os dados de transação
                 const { error: rpcError } = await supabase.rpc('pay_latest_open_command_v6', {
                     p_amount: entry.amount,
                     p_method: methodMap[entry.method] || 'pix',
