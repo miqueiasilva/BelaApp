@@ -1,51 +1,95 @@
 
--- 1. VIEW para Histórico de Pagamentos na Comanda (Enriquecida)
-CREATE OR REPLACE VIEW public.v_command_payments_history AS
-SELECT 
-    cp.id,
-    cp.command_id,
-    cp.gross_amount,
-    cp.fee_amount,
-    cp.net_amount,
-    cp.method,
-    cp.brand,
-    cp.installments,
-    cp.created_at,
-    COALESCE(c.nome, c.name, 'Consumidor Final') as client_name,
-    p.name as professional_name
-FROM public.command_payments cp
-LEFT JOIN public.commands cmd ON cp.command_id = cmd.id
-LEFT JOIN public.clients c ON cmd.client_id = c.id
-LEFT JOIN public.professionals p ON cmd.professional_id = p.uuid_id;
+-- 1. DESTRUIÇÃO TOTAL DE VERSÕES ANTERIORES
+-- Remove qualquer assinatura existente para permitir a troca de tipos (ex: de bigint para uuid)
+DROP FUNCTION IF EXISTS public.register_payment_transaction;
 
--- 2. VIEW para Fluxo de Caixa (Detalhamento Contábil)
-CREATE OR REPLACE VIEW public.v_cashflow_detailed AS
-SELECT 
-    ft.id as transaction_id,
-    ft.date,
-    ft.description,
-    ft.amount as gross_value,
-    ft.fee_amount,
-    ft.net_value,
-    ft.type,
-    ft.studio_id,
-    ft.status,
-    COALESCE(cl.nome, cl.name, 'Consumidor Final') as client_display_name,
-    UPPER(
-        CASE 
-            WHEN ft.payment_method = 'cash' THEN 'DINHEIRO'
-            WHEN ft.payment_method = 'pix' THEN 'PIX'
-            WHEN ft.payment_method = 'credit' THEN 'CRÉDITO'
-            WHEN ft.payment_method = 'debit' THEN 'DÉBITO'
-            ELSE COALESCE(ft.payment_method, 'OUTRO')
-        END
-    ) as payment_channel,
-    ft.payment_brand as brand
-FROM public.financial_transactions ft
-LEFT JOIN public.clients cl ON ft.client_id = cl.id;
+-- Limpeza profunda de overloads (garante que não reste lixo no catálogo do Postgres)
+DO $$ 
+DECLARE 
+    _routine record;
+BEGIN
+    FOR _routine IN 
+        SELECT oid::regprocedure as signature
+        FROM pg_proc 
+        WHERE proname = 'register_payment_transaction' 
+        AND pronamespace = 'public'::regnamespace
+    LOOP
+        EXECUTE 'DROP FUNCTION ' || _routine.signature;
+    END LOOP;
+END $$;
 
-GRANT SELECT ON public.v_command_payments_history TO authenticated;
-GRANT SELECT ON public.v_cashflow_detailed TO authenticated;
+-- 2. RECRIAÇÃO COM ASSINATURA SINCRONIZADA (11 Parâmetros)
+-- Os parâmetros seguem a ordem e nomes exatos enviados pelo Frontend
+CREATE OR REPLACE FUNCTION public.register_payment_transaction(
+  p_amount numeric,
+  p_brand text DEFAULT NULL,           -- Solicitado: DEFAULT NULL
+  p_client_id uuid DEFAULT NULL,        -- UUID Estrito
+  p_command_id uuid DEFAULT NULL,       -- UUID Estrito
+  p_description text DEFAULT 'Venda',
+  p_fee_amount numeric DEFAULT 0,
+  p_installments integer DEFAULT 1,     -- Solicitado: DEFAULT 1
+  p_method text DEFAULT 'pix',
+  p_net_value numeric DEFAULT 0,
+  p_professional_id uuid DEFAULT NULL,  -- UUID Estrito
+  p_studio_id uuid DEFAULT NULL         -- UUID Estrito
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_transaction_id uuid;
+BEGIN
+  -- 3. INSERÇÃO DIRETA NAS COLUNAS UUID (Garante que IDs de mock não quebrem o banco)
+  INSERT INTO public.financial_transactions (
+    amount,
+    net_value,
+    fee_amount,
+    payment_method,
+    type,
+    category,
+    description,
+    status,
+    date,
+    client_id,
+    command_id,
+    professional_id,
+    studio_id
+  ) VALUES (
+    p_amount,
+    p_net_value,
+    p_fee_amount,
+    p_method,
+    'income',
+    'Serviço',
+    p_description,
+    'pago',
+    NOW(),
+    p_client_id,
+    p_command_id,
+    p_professional_id,
+    p_studio_id
+  )
+  RETURNING id INTO v_transaction_id;
 
--- Notificar recarga de schema para o PostgREST
+  -- 4. ATUALIZAÇÃO DA COMANDA (Fluxo de liquidação)
+  IF p_command_id IS NOT NULL THEN
+    UPDATE public.commands 
+    SET 
+      status = 'paid', 
+      closed_at = NOW(),
+      total_amount = p_amount
+    WHERE id = p_command_id;
+  END IF;
+
+  RETURN v_transaction_id;
+END;
+$$;
+
+-- PERMISSÕES
+GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO authenticated;
+GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO service_role;
+
+-- 5. COMANDO CRÍTICO: Notifica o Supabase para recarregar o cache da API imediatamente
 NOTIFY pgrst, 'reload schema';
