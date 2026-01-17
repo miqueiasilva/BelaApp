@@ -62,10 +62,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
+            // CORREÇÃO ERRO 406: Removido join clients(nome) para evitar falha de tipos bigint/uuid
             const [cmdRes, methodsRes] = await Promise.all([
                 supabase
                     .from('commands')
-                    .select('*, clients(nome), command_items(*, team_members(name))')
+                    .select('*, command_items(*, team_members(name))')
                     .eq('id', commandId)
                     .single(),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
@@ -79,24 +80,29 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setDbMethods(methodsRes.data || []);
                 if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
 
-                // RESOLUÇÃO DO NOME DO CLIENTE VIA RPC
-                const clientId = cmdData.client_id;
-                console.log('[Checkout] client_id', clientId);
+                // RESOLUÇÃO DO NOME DO CLIENTE VIA RPC (Busca isolada do objeto command)
+                console.log('[Checkout] command.client_id', cmdData.client_id);
 
-                if (clientId && Number(clientId) > 0) {
-                    const { data: rpcName, error: rpcError } = await supabase.rpc('fn_get_client_name', { c_id: clientId });
+                if (cmdData.client_id && Number(cmdData.client_id) > 0) {
+                    const { data: rpcName, error: rpcError } = await supabase.rpc('fn_get_client_name', { 
+                        c_id: Number(cmdData.client_id) 
+                    });
+                    
                     if (!rpcError && rpcName) {
                         setResolvedClientName(rpcName);
+                        console.log('[Checkout] resolvedClientName', rpcName);
                     } else {
-                        setResolvedClientName(cmdData.clients?.nome || 'Consumidor Final');
+                        setResolvedClientName('Consumidor Final');
+                        console.log('[Checkout] resolvedClientName', 'Consumidor Final (RPC fallback)');
                     }
                 } else {
                     setResolvedClientName('Consumidor Final');
+                    console.log('[Checkout] resolvedClientName', 'Consumidor Final (ID null/0)');
                 }
             }
         } catch (e: any) {
             if (isMounted.current) {
-                setToast({ message: "Erro ao sincronizar dados.", type: 'error' });
+                setToast({ message: "Erro ao sincronizar dados da comanda.", type: 'error' });
                 setTimeout(onBack, 2000);
             }
         } finally {
