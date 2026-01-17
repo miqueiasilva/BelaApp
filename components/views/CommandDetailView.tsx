@@ -69,7 +69,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // CORREÇÃO: Joins explícitos e leitura da VIEW de histórico
             const [cmdRes, methodsRes, paymentsRes] = await Promise.all([
                 supabase
                     .from('commands')
@@ -82,6 +81,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     .eq('id', commandId)
                     .single(),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true),
+                // CONSULTA À VIEW DE HISTÓRICO
                 supabase.from('v_command_payments_history').select('*').eq('command_id', commandId)
             ]);
 
@@ -93,24 +93,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setDbMethods(methodsRes.data || []);
                 setHistoryPayments(paymentsRes.data || []);
                 
-                if (cmdData.status === 'paid') {
-                    setIsSuccessfullyClosed(true);
-                }
+                if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
 
                 const clientObj = cmdData?.client;
-                const clientName = 
-                  clientObj?.nome || 
-                  clientObj?.name || 
-                  clientObj?.nickname || 
-                  clientObj?.apelido || 
-                  'Consumidor Final';
-
+                const clientName = clientObj?.nome || clientObj?.name || clientObj?.nickname || clientObj?.apelido || 'Consumidor Final';
                 setResolvedClientName(clientName);
             }
         } catch (e: any) {
-            if (isMounted.current) {
-                setToast({ message: "Erro ao sincronizar dados da comanda.", type: 'error' });
-            }
+            if (isMounted.current) setToast({ message: "Erro ao sincronizar comanda.", type: 'error' });
         } finally {
             if (isMounted.current) setLoading(false);
         }
@@ -124,22 +114,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
-        // CORREÇÃO: Se já estiver pago, somar o que está no histórico do DB
         const isClosed = command.status === 'paid' || isSuccessfullyClosed;
         const paidSource = isClosed ? historyPayments : addedPayments;
         
         const paid = paidSource.reduce((acc, p) => acc + Number(p.amount || p.gross_amount || 0), 0);
         const totalNet = paidSource.reduce((acc, p) => acc + Number(p.net || p.net_amount || 0), 0);
         
-        const remaining = Math.max(0, totalAfterDiscount - (isClosed ? paid : paid));
-        
-        return { 
-            subtotal, 
-            total: isClosed ? paid : totalAfterDiscount, 
-            paid, 
-            remaining: isClosed ? 0 : remaining, 
-            totalNet 
-        };
+        const remaining = Math.max(0, totalAfterDiscount - paid);
+        return { subtotal, total: isClosed ? paid : totalAfterDiscount, paid, remaining: isClosed ? 0 : remaining, totalNet };
     }, [command, discount, addedPayments, historyPayments, isSuccessfullyClosed]);
 
     const professionalName = useMemo(() => {
@@ -193,17 +175,18 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
+                // CORREÇÃO: Enviando explicitamente NULL se o ID for falsy (evita erro de UUID vazio)
                 const { data: txId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: String(entry.brand || 'DIRETO'),
-                    p_client_id: command.client_id ? String(command.client_id) : '',
+                    p_client_id: command.client_id ? String(command.client_id) : null,
                     p_command_id: String(commandId),
                     p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`,
                     p_fee_amount: entry.fee,
                     p_installments: entry.installments,
                     p_method: methodMap[entry.method] || 'pix',
                     p_net_value: entry.net,
-                    p_professional_id: command.professional_id ? String(command.professional_id) : '',
+                    p_professional_id: command.professional_id ? String(command.professional_id) : null,
                     p_studio_id: String(activeStudioId)
                 });
                 
@@ -232,7 +215,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setIsSuccessfullyClosed(true);
                 setAddedPayments([]);
                 setToast({ message: "Liquidação realizada com sucesso!", type: 'success' });
-                // Recarrega para popular historyPayments da View
                 fetchSystemData();
             }
         } catch (e: any) {
@@ -324,11 +306,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                         <div key={p.id || idx} className="p-6 flex items-center justify-between">
                                             <div className="flex items-center gap-4">
                                                 <div className="p-3 bg-slate-50 rounded-2xl text-slate-400">
-                                                    {(p.method || p.payment_method) === 'pix' ? <Smartphone size={20}/> : <Coins size={20}/>}
+                                                    {['PIX', 'pix'].includes(p.payment_channel || p.method) ? <Smartphone size={20}/> : <Coins size={20}/>}
                                                 </div>
                                                 <div>
                                                     <p className="font-black text-slate-700 text-sm uppercase">
-                                                        {p.method?.toUpperCase() || 'PAGAMENTO'} {p.brand && `• ${p.brand}`}
+                                                        {(p.payment_channel || p.method || 'PAGAMENTO').toUpperCase()} {p.brand && `• ${p.brand}`}
+                                                        {p.installments > 1 && ` (${p.installments}x)`}
                                                     </p>
                                                     <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">
                                                         Líquido: R$ {(p.net || p.net_amount || 0).toFixed(2)}
