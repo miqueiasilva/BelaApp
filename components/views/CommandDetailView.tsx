@@ -62,19 +62,23 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // CORREÇÃO TÉCNICA OBRIGATÓRIA: Query com alias explícito para garantir retorno do PostgREST
+            // CORREÇÃO TÉCNICA OBRIGATÓRIA: Query com join explícito e inclusão de campos de fallback
             const [cmdRes, methodsRes] = await Promise.all([
                 supabase
                     .from('commands')
                     .select(`
                       *,
-                      client:clients (
-                        id,
-                        nome
+                      client:clients!commands_client_id_fkey ( 
+                        id, 
+                        nome, 
+                        name, 
+                        apelido, 
+                        nickname 
                       ),
-                      professional:professionals (
+                      professional:professionals!commands_professional_id_fkey (
                         uuid_id,
-                        name
+                        name,
+                        nome
                       ),
                       command_items (
                         *,
@@ -96,14 +100,20 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setDbMethods(methodsRes.data || []);
                 if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
 
-                // LOGS DE VALIDAÇÃO SOLICITADOS
-                console.log('[Checkout] command.client_id', cmdData.client_id);
+                // DEBUG MÍNIMO SOLICITADO
+                console.log('[Checkout] commandId:', commandId);
+                console.log('[Checkout] client_id:', cmdData?.client_id);
+                console.log('[Checkout] client:', cmdData?.client);
                 
-                // LÓGICA DE EXIBIÇÃO OBRIGATÓRIA
-                const resolvedName = cmdData?.client?.nome?.trim() || 'Consumidor Final';
-                setResolvedClientName(resolvedName);
-                
-                console.log('[Checkout] resolvedClientName', resolvedName);
+                // LÓGICA DE EXIBIÇÃO OBRIGATÓRIA COM FALLBACKS AMPLIADOS
+                const clientName =
+                  cmdData?.client?.nome ??
+                  cmdData?.client?.name ??
+                  cmdData?.client?.apelido ??
+                  cmdData?.client?.nickname ??
+                  'Consumidor Final';
+
+                setResolvedClientName(clientName);
             }
         } catch (e: any) {
             if (isMounted.current) {
