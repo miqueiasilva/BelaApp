@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -24,6 +23,7 @@ interface CommandDetailViewProps {
 interface PaymentEntry {
     id: string;
     method: 'credit' | 'debit' | 'pix' | 'money';
+    method_id: string; // Adicionado para persistência correta
     amount: number;
     brand: string;
     rate: number;
@@ -81,7 +81,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     .eq('id', commandId)
                     .single(),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true),
-                // CONSULTA À VIEW DE HISTÓRICO
                 supabase.from('v_command_payments_history').select('*').eq('command_id', commandId)
             ]);
 
@@ -129,6 +128,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         return 'Não informado';
     }, [command]);
 
+    // FIX: Added missing useMemo for filteredMethodsForActiveCat to fix 'Cannot find name' error.
+    const filteredMethodsForActiveCat = useMemo(() => {
+        if (!activeCategory) return [];
+        return dbMethods.filter(m => m.type === activeCategory);
+    }, [dbMethods, activeCategory]);
+
     const handleInitPayment = (category: 'credit' | 'debit' | 'pix' | 'money') => {
         setActiveCategory(category);
         setAmountToPay(totals.remaining.toFixed(2));
@@ -139,11 +144,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const handleConfirmPartialPayment = () => {
         const val = parseFloat(amountToPay);
-        if (!activeCategory || isNaN(val) || val <= 0) return;
+        if (!activeCategory || isNaN(val) || val <= 0 || !selectedMethodObj) return;
         
         const isFeeFree = activeCategory === 'pix' || activeCategory === 'money';
         let finalRate = 0;
-        if (!isFeeFree && selectedMethodObj) {
+        if (!isFeeFree) {
             finalRate = (selectedInstallments === 1) 
                 ? Number(selectedMethodObj.rate_cash || 0) 
                 : Number(selectedMethodObj.installment_rates?.[selectedInstallments.toString()] || selectedMethodObj.rate_installment_12x || 0);
@@ -155,6 +160,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(2, 9),
             method: activeCategory,
+            method_id: selectedMethodObj.id, // ID REAL DO BANCO
             amount: val,
             brand: isFeeFree ? 'DIRETO' : (selectedMethodObj?.brand || 'OUTROS'),
             rate: finalRate,
@@ -175,7 +181,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // CORREÇÃO: Enviando explicitamente NULL se o ID for falsy (evita erro de UUID vazio)
+                // RPC Segura: IDs passados explicitamente como NULL se vazios
                 const { data: txId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: String(entry.brand || 'DIRETO'),
@@ -192,14 +198,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 
                 if (rpcError) throw rpcError;
 
+                // PERSISTÊNCIA CORRETA NA TABELA DE PAGAMENTOS
                 await supabase.from('command_payments').insert([{
                     command_id: commandId,
                     studio_id: activeStudioId,
                     financial_transaction_id: txId,
+                    method_id: entry.method_id, // Usando a FK correta
                     gross_amount: entry.amount,
-                    fee_amount: entry.fee,
+                    fee_value: entry.fee, // Alinhado com schema: fee_value
                     net_amount: entry.net,
-                    method: entry.method,
                     brand: entry.brand,
                     installments: entry.installments
                 }]);
@@ -360,6 +367,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <button onClick={() => setActiveCategory(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18}/></button>
                                         </div>
                                         <div className="space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pagamento</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" /></div></div>
+                                        <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora / Bandeira</label><select value={selectedMethodObj?.id || ''} onChange={e => setSelectedMethodObj(dbMethods.find(m => m.id === e.target.value))} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none">{filteredMethodsForActiveCat.map(m => (<option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>))}</select></div>
                                         <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Registrar Pagamento</button>
                                     </div>
                                 ) : (
