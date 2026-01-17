@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { 
     Search, MoreVertical, Paperclip, Send, Smile, Check, CheckCheck, 
@@ -168,7 +169,8 @@ const ChevronDown = ({ size, strokeWidth, className }: any) => (
 const WhatsAppView: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'chats' | 'automations' | 'connection'>('chats');
     const [conversations, setConversations] = useState<ChatConversation[]>(mockConversations);
-    const [selectedChatId, setSelectedChatId] = useState<number | null>(null);
+    // FIX: Updated selectedChatId state type to number | string | null to match ChatConversation.id
+    const [selectedChatId, setSelectedChatId] = useState<number | string | null>(null);
     const [messageInput, setMessageInput] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);

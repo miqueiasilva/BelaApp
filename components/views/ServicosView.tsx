@@ -137,7 +137,8 @@ const ServicosView: React.FC = () => {
         }
     };
 
-    const handleDelete = async (id: number) => {
+    // FIX: Updated id type to string | number
+    const handleDelete = async (id: string | number) => {
         if (window.confirm("Deseja realmente excluir este serviço?")) {
             const { error } = await supabase.from('services').delete().eq('id', id);
             if (!error) { 

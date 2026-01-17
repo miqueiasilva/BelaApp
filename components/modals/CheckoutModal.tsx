@@ -32,7 +32,8 @@ interface CheckoutModalProps {
     isOpen: boolean;
     onClose: () => void;
     appointment: {
-        id: number;
+        // FIX: Updated id type to string | number to match LegacyAppointment.id
+        id: number | string;
         client_id?: number | string;
         client_name: string;
         service_name: string;
