@@ -143,6 +143,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
+    const getValidUUID = (id: any): string | null => {
+        if (!id || typeof id !== 'string') return null;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(id) ? id : null;
+    };
+
     const fetchAppointments = async () => {
         if (!isMounted.current || authLoading || !user || !activeStudioId) return;
         const requestId = ++lastRequestId.current;
@@ -266,9 +272,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
-        // --- CLÁUSULA DE GUARDA RIGOROSA ---
-        if (!activeStudioId || !appointment?.id || !appointment.professional.id) {
-            setToast({ message: "Dados incompletos (ID Profissional ausente).", type: 'error' });
+        if (!activeStudioId || !appointment?.id) return;
+
+        // Higienização de UUIDs: garante que IDs de mock não quebrem o banco
+        const studioUuid = getValidUUID(activeStudioId);
+        const clientUuid = getValidUUID(appointment.client?.id);
+        const professionalUuid = getValidUUID(appointment.professional.id);
+        const serviceUuid = getValidUUID(appointment.service.id);
+
+        if (!studioUuid) {
+            setToast({ message: "Identificador de unidade inválido.", type: 'error' });
             return;
         }
 
@@ -277,8 +290,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
-                    studio_id: activeStudioId,
-                    client_id: appointment.client?.id,
+                    studio_id: studioUuid,
+                    client_id: clientUuid,
                     status: 'open',
                     total_amount: appointment.service.price
                 }])
@@ -286,19 +299,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (cmdError) throw cmdError;
 
-            // Garantindo que professional_id chegue íntegro ao item para o checkout
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
-                    // FIX: Type narrowed to avoid 'never' inference when checking length on potential number | string ID.
-                    service_id: (typeof appointment.service.id === 'string' && (appointment.service.id as string).length > 20) ? appointment.service.id : null,
-                    studio_id: activeStudioId, 
+                    service_id: serviceUuid,
+                    studio_id: studioUuid, 
                     title: appointment.service.name,
                     price: appointment.service.price,
                     quantity: 1,
-                    professional_id: appointment.professional.id 
+                    professional_id: professionalUuid // Garantido como UUID ou null
                 }]);
 
             if (itemError) throw itemError;
@@ -308,7 +319,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             setActiveAppointmentDetail(null);
             if (onNavigateToCommand) onNavigateToCommand(command.id);
         } catch (e: any) {
-            setToast({ message: "Erro ao converter agendamento: " + (e.message || "Falha DB"), type: 'error' });
+            setToast({ message: "Erro ao converter: " + (e.message || "Falha DB"), type: 'error' });
         } finally {
             setIsLoadingData(false);
         }

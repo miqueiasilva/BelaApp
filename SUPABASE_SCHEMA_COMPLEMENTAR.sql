@@ -1,5 +1,5 @@
 
--- 1. LIMPEZA RADICAL: Remove todas as variações da função (overloads) para evitar conflitos de cache ou assinatura
+-- 1. LIMPEZA RADICAL: Remove TODAS as assinaturas da função para evitar conflitos de tipos
 DO $$ 
 DECLARE 
     _func_name text := 'register_payment_transaction';
@@ -16,19 +16,18 @@ BEGIN
 END $$;
 
 -- 2. CRIAÇÃO DA FUNÇÃO COM PARÂMETROS UUID PUROS
--- Importante: Não use "text" aqui, use "uuid" diretamente para que o Postgres não tente converter para bigint
 CREATE OR REPLACE FUNCTION public.register_payment_transaction(
   p_amount numeric,
   p_brand text,
-  p_client_id uuid,        -- Tipagem UUID explícita
-  p_command_id uuid,       -- Tipagem UUID explícita
+  p_client_id uuid,        -- Tipo UUID explícito
+  p_command_id uuid,       -- Tipo UUID explícito
   p_description text,
   p_fee_amount numeric,
   p_installments integer,
   p_method text,
   p_net_value numeric,
-  p_professional_id uuid,  -- Tipagem UUID explícita
-  p_studio_id uuid         -- Tipagem UUID explícita
+  p_professional_id uuid,  -- Tipo UUID explícito
+  p_studio_id uuid         -- Tipo UUID explícito
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -38,8 +37,8 @@ AS $$
 DECLARE
   v_transaction_id uuid;
 BEGIN
-  -- 3. INSERÇÃO DIRETA
-  -- Como os parâmetros já são UUID, o Postgres não lançará o erro de bigint
+  -- 3. INSERÇÃO DIRETA NA TABELA FINANCEIRA
+  -- Os parâmetros já são UUID ou NULL::uuid, evitando erros de cast bigint
   INSERT INTO public.financial_transactions (
     amount,
     net_value,
@@ -71,7 +70,7 @@ BEGIN
   )
   RETURNING id INTO v_transaction_id;
 
-  -- 4. ATUALIZAÇÃO DA COMANDA
+  -- 4. ATUALIZAÇÃO DA COMANDA (Se houver uma vinculada)
   IF p_command_id IS NOT NULL THEN
     UPDATE public.commands 
     SET 
@@ -85,9 +84,9 @@ BEGIN
 END;
 $$;
 
--- 5. PERMISSÕES E REFRESH
+-- 5. PERMISSÕES
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO service_role;
 
--- Notifica o PostgREST para recarregar o schema imediatamente
+-- Notifica o PostgREST para atualizar o cache de funções
 NOTIFY pgrst, 'reload schema';

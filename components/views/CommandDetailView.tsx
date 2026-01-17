@@ -50,11 +50,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [discount, setDiscount] = useState<string>('0');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Validador de UUID para garantir integridade com o banco
+    // Validador de UUID rigoroso para evitar erros de bigint no banco
     const getValidUUID = (id: any): string | null => {
         if (!id || typeof id !== 'string') return null;
-        const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        return regex.test(id) ? id : null;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(id) ? id : null;
     };
 
     useEffect(() => {
@@ -173,30 +173,32 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         try {
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
             
-            // Tratamento rigoroso de UUIDs para a nova assinatura da função SQL
-            const validStudioId = getValidUUID(activeStudioId);
-            const validCommandId = getValidUUID(command.id);
-            const validClientId = getValidUUID(command.client_id);
-            const rawProfId = command.command_items?.find((i: any) => i.professional_id)?.professional_id;
-            const validProfId = getValidUUID(rawProfId);
+            // Tratamento rigoroso para garantir tipos UUID ou NULL (nunca bigint/number)
+            const studioUuid = getValidUUID(activeStudioId);
+            const commandUuid = getValidUUID(command.id);
+            const clientUuid = getValidUUID(command.client_id);
+            
+            // Busca o profissional do primeiro item da comanda
+            const firstItemProfId = command.command_items?.find((i: any) => i.professional_id)?.professional_id;
+            const professionalUuid = getValidUUID(firstItemProfId);
 
-            if (!validStudioId || !validCommandId) {
-                throw new Error("IDs internos inválidos para operação.");
+            if (!studioUuid || !commandUuid) {
+                throw new Error("Erro de identificação da unidade ou comanda.");
             }
 
             for (const entry of addedPayments) {
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: entry.brand,
-                    p_client_id: validClientId,
-                    p_command_id: validCommandId,
+                    p_client_id: clientUuid,
+                    p_command_id: commandUuid,
                     p_description: `Liquidação Comanda #${command.id.toString().split('-')[0].toUpperCase()}`,
                     p_fee_amount: entry.fee,
                     p_installments: entry.installments,
                     p_method: methodMap[entry.method],
                     p_net_value: entry.net,
-                    p_professional_id: validProfId,
-                    p_studio_id: validStudioId
+                    p_professional_id: professionalUuid,
+                    p_studio_id: studioUuid
                 });
                 
                 if (rpcError) throw rpcError;
