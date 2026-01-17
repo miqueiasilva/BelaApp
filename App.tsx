@@ -59,6 +59,7 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // Se estiver carregando auth ou studio, mostra tela de splash
   if (authLoading || studioLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -71,12 +72,14 @@ const AppContent: React.FC = () => {
     );
   }
 
+  // Rotas Púbicas via Hash ou Path
   if (hash === '#/public-preview') return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
   if (pathname === '/reset-password' || hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
   
-  // Se após o loading não houver usuário, vai para login
+  // Proteção de Autenticação
   if (!user) return <LoginView />;
 
+  // Proteção de Unidade Ativa
   if (!activeStudioId) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
@@ -105,6 +108,7 @@ const AppContent: React.FC = () => {
   };
 
   const renderView = () => {
+    // Fallback de permissões
     if (!hasAccess(user.papel as UserRole, currentView)) {
         return <DashboardView onNavigate={setCurrentView} />;
     }

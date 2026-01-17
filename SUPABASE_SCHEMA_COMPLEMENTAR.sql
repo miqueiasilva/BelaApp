@@ -1,6 +1,5 @@
 
--- 1. DESTRUIÇÃO TOTAL: Garante que nenhuma versão antiga com parâmetros bigint ou text permaneça.
--- O PostgreSQL exige isso para mudar os tipos dos parâmetros de entrada da função.
+-- 1. LIMPEZA TOTAL: Remove qualquer versão anterior da função para evitar conflitos de cache
 DO $$ 
 DECLARE 
     _routine record;
@@ -15,19 +14,20 @@ BEGIN
     END LOOP;
 END $$;
 
--- 2. RECRIAÇÃO LIMPA: Definição dos parâmetros estritamente como UUID.
+-- 2. RECRIAÇÃO COM ASSINATURA COMPATÍVEL (11 Parâmetros)
+-- Adicionamos DEFAULT em parâmetros opcionais para evitar erros de "function not found"
 CREATE OR REPLACE FUNCTION public.register_payment_transaction(
   p_amount numeric,
-  p_brand text,
-  p_client_id uuid,        -- UUID puro, vindo direto do frontend
-  p_command_id uuid,       -- UUID puro
-  p_description text,
-  p_fee_amount numeric,
-  p_installments integer,
-  p_method text,
-  p_net_value numeric,
-  p_professional_id uuid,  -- UUID puro, sem cast para bigint
-  p_studio_id uuid         -- UUID puro
+  p_brand text DEFAULT 'Outros',       -- Campo solicitado: Bandeira do cartão
+  p_client_id uuid DEFAULT NULL,       -- UUID Puro
+  p_command_id uuid DEFAULT NULL,      -- UUID Puro
+  p_description text DEFAULT 'Venda',
+  p_fee_amount numeric DEFAULT 0,
+  p_installments integer DEFAULT 1,    -- Campo solicitado: Parcelamento
+  p_method text DEFAULT 'pix',
+  p_net_value numeric DEFAULT 0,
+  p_professional_id uuid DEFAULT NULL, -- UUID Puro
+  p_studio_id uuid DEFAULT NULL        -- UUID Puro
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -37,7 +37,7 @@ AS $$
 DECLARE
   v_transaction_id uuid;
 BEGIN
-  -- 3. INSERÇÃO DIRETA: Respeita a tipagem UUID das colunas da tabela financial_transactions.
+  -- 3. INSERÇÃO NA TABELA FINANCEIRA
   INSERT INTO public.financial_transactions (
     amount,
     net_value,
@@ -69,7 +69,7 @@ BEGIN
   )
   RETURNING id INTO v_transaction_id;
 
-  -- 4. ATUALIZAÇÃO DO STATUS DA COMANDA (SE EXISTIR)
+  -- 4. ATUALIZAÇÃO DA COMANDA (Fluxo de liquidação)
   IF p_command_id IS NOT NULL THEN
     UPDATE public.commands 
     SET 
@@ -83,9 +83,9 @@ BEGIN
 END;
 $$;
 
--- 5. PERMISSÕES E SINCRONIZAÇÃO
+-- PERMISSÕES
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO service_role;
 
--- Notifica o motor do Supabase (PostgREST) para atualizar seu mapa de tipos.
+-- 5. COMANDO CRÍTICO: Recarrega o cache da API do Supabase instantaneamente
 NOTIFY pgrst, 'reload schema';
