@@ -62,14 +62,26 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // CORREÇÃO: Query otimizada com JOIN explícito e aliasing para evitar Erro 406
+            // CORREÇÃO TÉCNICA OBRIGATÓRIA: Query com alias explícito para garantir retorno do PostgREST
             const [cmdRes, methodsRes] = await Promise.all([
                 supabase
                     .from('commands')
                     .select(`
+                      *,
+                      client:clients (
+                        id,
+                        nome
+                      ),
+                      professional:professionals (
+                        uuid_id,
+                        name
+                      ),
+                      command_items (
                         *,
-                        client:clients(id, nome),
-                        command_items(*, team_members(id, name))
+                        team_members (
+                          name
+                        )
+                      )
                     `)
                     .eq('id', commandId)
                     .single(),
@@ -87,11 +99,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 // LOGS DE VALIDAÇÃO SOLICITADOS
                 console.log('[Checkout] command.client_id', cmdData.client_id);
                 
-                // Lógica de exibição do nome do cliente via Join
-                const clientName = cmdData.client?.nome || 'Consumidor Final';
-                setResolvedClientName(clientName);
+                // LÓGICA DE EXIBIÇÃO OBRIGATÓRIA
+                const resolvedName = cmdData?.client?.nome?.trim() || 'Consumidor Final';
+                setResolvedClientName(resolvedName);
                 
-                console.log('[Checkout] resolvedClientName', clientName);
+                console.log('[Checkout] resolvedClientName', resolvedName);
             }
         } catch (e: any) {
             if (isMounted.current) {
