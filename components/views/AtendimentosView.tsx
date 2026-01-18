@@ -130,8 +130,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    // FIX: Added missing useState call and corrected type syntax to resolve arithmetic/symbol/type errors.
+    
+    // CORREÇÃO: Inicialização correta do useState
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
+    
     const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
     const [viewMode, setViewMode] = useState<'profissional' | 'andamento' | 'pagamento'>('profissional');
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -144,9 +146,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
+    // CORREÇÃO: Regex de UUID ajustada para o padrão 8-4-4-4-12
     const getValidUUID = (id: any): string | null => {
         if (!id || typeof id !== 'string') return null;
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         return uuidRegex.test(id) ? id : null;
     };
 
@@ -434,7 +437,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-full max-w-[200px] overflow-hidden">
                                     {(col as any).photo && <img src={(col as any).photo} alt={col.title} className="w-8 h-8 rounded-full object-cover border border-orange-100 flex-shrink-0" />}
                                     <div className="flex flex-col overflow-hidden">
-                                        <span className="text-[11px] font-black text-slate-800 leading-tight truncate">{col.title}</span>
+                                        <span className="text-[11px] font-black text-slate-800 truncate">{col.title}</span>
                                         {(col as any).subtitle && <span className="text-[9px] text-slate-400 font-bold uppercase">{ (col as any).subtitle}</span>}
                                     </div>
                                 </div>
@@ -462,7 +465,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 {filteredAppointments.filter(app => { if (periodType === 'Semana') return isSameDay(app.start, col.data as Date); if (app.type === 'block' && (!app.professional || app.professional.id === null || String(app.professional.id) === 'null')) return true; return app.professional && String(app.professional.id) === String(col.id); }).map(app => {
                                     const durationMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
                                     const isShort = durationMinutes <= 25;
-                                    const cardColor = app.type === 'block' ? '#f87171' : (app.service.color || '#3b82f6');
+                                    const cardColor = app.type === 'block' ? '#f87171' : (app.service?.color || '#3b82f6');
                                     return (
                                         <div key={app.id} ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); if (app.type === 'appointment') { setActiveAppointmentDetail(app); } }} className="rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50" style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: cardColor, backgroundColor: `${cardColor}15` }}>
                                             <div className="absolute top-1 right-1 flex gap-0.5 z-10">
@@ -472,9 +475,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                             </div>
                                             <div className="flex flex-col h-full justify-between relative z-0 pointer-events-none">
                                                 <div><p className="text-[10px] font-medium text-slate-500 leading-none mb-0.5">{format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}</p><p className="text-xs font-bold text-slate-800 truncate leading-tight">{app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Bloqueado')}</p></div>
-                                                {!isShort && <p className="text-[10px] text-slate-500 truncate leading-none mt-auto opacity-80">{app.service.name}</p>}
+                                                {!isShort && <p className="text-[10px] text-slate-500 truncate leading-none mt-auto opacity-80">{app.service?.name}</p>}
                                             </div>
-                                            {app.type === 'block' && <button onClick={(e) => handleDeleteBlock(e, app.id)} className="absolute bottom-1 right-1 p-1 bg-rose-500 text-white rounded opacity-0 group-hover/card:opacity-100 transition-all shadow-md z-30 pointer-events-auto" title="Remover Bloqueio"><Trash2 size={10} /></button>}
+                                            {app.type === 'block' && <button onClick={(e) => handleDeleteBlock(e, app.id)} className="absolute bottom-1 right-1 p-1 bg-rose-50 text-white rounded opacity-0 group-hover/card:opacity-100 transition-all shadow-md z-30 pointer-events-auto" title="Remover Bloqueio"><Trash2 size={10} /></button>}
                                         </div>
                                     );
                                 })}
