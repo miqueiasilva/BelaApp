@@ -105,7 +105,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     useEffect(() => { fetchSystemData(); }, [commandId, activeStudioId]);
 
     const totals = useMemo(() => {
-        // FIX: Added 'totalAfterDiscount' to the initial fallback return object to maintain type consistency.
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0, totalNet: 0, totalAfterDiscount: 0 };
         const subtotal = Number(command.total_amount || 0);
         const discValue = parseFloat(discount) || 0;
@@ -118,7 +117,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const totalNet = paidSource.reduce((acc, p) => acc + Number(p.net || p.net_amount || 0), 0);
         
         const remaining = Math.max(0, totalAfterDiscount - paid);
-        // FIX: Added 'totalAfterDiscount' to the returned object from useMemo to resolve the property access error on line 319.
         return { subtotal, total: isClosed ? paid : totalAfterDiscount, paid, remaining: isClosed ? 0 : remaining, totalNet, totalAfterDiscount };
     }, [command, discount, addedPayments, historyPayments, isSuccessfullyClosed]);
 
@@ -167,7 +165,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // RPC INTELIGENTE: O Backend calcula taxas e insere em ambas as tabelas
+                // RPC ATUALIZADA: Incluindo p_payment_method_config_id para evitar erro 400
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: String(entry.brand || 'DIRETO'),
@@ -177,7 +175,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_installments: entry.installments,
                     p_method: methodMap[entry.method] || 'pix',
                     p_professional_id: command.professional_id ? String(command.professional_id) : null,
-                    p_studio_id: String(activeStudioId)
+                    p_studio_id: String(activeStudioId),
+                    p_payment_method_config_id: String(entry.method_id) // Parâmetro adicionado
                 });
                 
                 if (rpcError) throw rpcError;
@@ -186,12 +185,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             if (isMounted.current) {
                 setIsSuccessfullyClosed(true);
                 setAddedPayments([]);
-                setToast({ message: "Pagamento processado com auditoria do banco!", type: 'success' });
+                setToast({ message: "Pagamento processado com sucesso!", type: 'success' });
                 fetchSystemData();
             }
         } catch (e: any) {
             if (isMounted.current) {
-                // Exibe a mensagem exata vinda do banco (Trigger) ou do RPC
                 setToast({ message: `Falha: ${e.message}`, type: 'error' });
                 setIsFinishing(false);
             }
@@ -202,7 +200,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
-            {toast && <Toast message={toast.type === 'success' ? toast.message : ''} type={toast.type} onClose={() => setToast(null)} />}
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-20 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-colors"><ChevronLeft size={24} /></button>
