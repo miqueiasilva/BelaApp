@@ -201,7 +201,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     {isFetching ? (<div className="py-4 flex justify-center"><Loader2 className="animate-spin text-orange-500" /></div>) : filteredMethods.length > 0 ? (
                         <div className="space-y-4 text-left">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Operadora Selecionada</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora Selecionada</label>
                                 <select value={selectedMethodId} onChange={(e) => setSelectedMethodId(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700">
                                     {filteredMethods.map(m => (<option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>))}
                                 </select>

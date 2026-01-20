@@ -28,16 +28,6 @@ interface PaymentEntry {
     installments: number;
 }
 
-const normalizeMethods = (methods: any[]) => {
-    return (methods ?? []).map((m: any) => ({
-        id: m.id,
-        label: m.name,
-        type: (m.type || m.method_type || '').toLowerCase(),
-        brand: m.brand || 'OUTRAS',
-        max_installments: Number(m.max_installments || 1)
-    }));
-};
-
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
     const { activeStudioId } = useStudio();
     const isMounted = useRef(true);
@@ -46,12 +36,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [isFinishing, setIsFinishing] = useState(false);
     const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
     
-    // Estados do Contexto unificado via RPC
+    // Estados do Contexto via RPC get_checkout_context
     const [command, setCommand] = useState<any>(null);
     const [client, setClient] = useState<any>(null);
     const [professional, setProfessional] = useState<any>(null);
     const [items, setItems] = useState<any[]>([]);
-    
     const [dbMethods, setDbMethods] = useState<any[]>([]);
     const [historyPayments, setHistoryPayments] = useState<any[]>([]); 
     
@@ -73,38 +62,46 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // ✅ PASSO 5 - Correção da rota/query: Usando RPC get_checkout_context
-            // Isso evita o erro 400 causado por joins em tabelas inexistentes no PostgREST
+            // ✅ PASSO 5 — Corrigir a rota / query: Usando RPC get_checkout_context
+            // Elimina o Erro 400 do PostgREST ao tentar dar select em relações complexas
             const { data, error } = await supabase.rpc('get_checkout_context', {
-                p_command_id: commandId // Garantindo UUID
+                p_command_id: commandId
             });
 
             if (error) throw error;
-            if (!data) throw new Error("Contexto de checkout não retornado.");
+            if (!data || !data.ok) throw new Error(data?.error || "Falha ao obter contexto");
 
             if (isMounted.current) {
-                // data = { command, client, professional, items, methods }
                 setCommand(data.command);
                 setClient(data.client);
                 setProfessional(data.professional);
                 setItems(data.items || []);
-                setDbMethods(normalizeMethods(data.methods));
                 
-                // Busca histórico de pagamentos via view segura
-                const { data: paymentsRes } = await supabase
+                // Normaliza métodos de pagamento para a UI
+                const normalizedMethods = (data.methods || []).map((m: any) => ({
+                    id: m.id,
+                    name: m.name,
+                    type: (m.type || m.method_type || '').toLowerCase(),
+                    brand: m.brand || 'OUTRAS',
+                    max_installments: m.max_installments || 1
+                }));
+                setDbMethods(normalizedMethods);
+                
+                // Busca histórico via View segura de Auditoria
+                const { data: historyRes } = await supabase
                     .from('v_command_payments_history')
                     .select('*')
                     .eq('command_id', commandId);
                 
-                setHistoryPayments(paymentsRes || []);
+                setHistoryPayments(historyRes || []);
                 
                 if (data.command?.status === 'paid') {
                     setIsSuccessfullyClosed(true);
                 }
             }
         } catch (e: any) {
-            console.error("Fetch Context Error:", e);
-            if (isMounted.current) setToast({ message: "Erro ao sincronizar dados do checkout.", type: 'error' });
+            console.error("Fetch Error:", e);
+            if (isMounted.current) setToast({ message: "Erro ao sincronizar checkout.", type: 'error' });
         } finally {
             if (isMounted.current) setLoading(false);
         }
@@ -129,8 +126,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setActiveCategory(category);
         setAmountToPay(totals.remaining.toFixed(2));
         setSelectedInstallments(1);
-        const firstOfCategory = dbMethods.find(m => m.type === category);
-        setSelectedMethodObj(firstOfCategory || null);
+        const defaultMethod = dbMethods.find(m => m.type === category || (category === 'money' && m.type === 'cash'));
+        setSelectedMethodObj(defaultMethod || null);
     };
 
     const handleConfirmPartialPayment = () => {
@@ -158,6 +155,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
+                // ✅ Correção: Usando exclusivamente o RPC para gravar pagamentos.
+                // O RPC resolve o problema de 'column method does not exist' ao gerenciar 
+                // as colunas reais internamente (payment_method, method_id, etc).
                 const payload = {
                     p_studio_id: String(activeStudioId),
                     p_professional_id: command.professional_id ? String(command.professional_id) : null,
@@ -170,12 +170,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`
                 };
 
-                // LOG DE INTERCEPTAÇÃO DE AUDITORIA
-                console.log('--- CHAMADA RPC: register_payment_transaction_v2 ---');
+                // Logs de auditoria para o console (Auditoria Senior)
+                console.log('--- RPC register_payment_transaction_v2 ---');
                 console.log('Payload:', payload);
-                Object.entries(payload).forEach(([key, value]) => {
-                    console.log(`Campo: ${key} | Valor: ${value} | Tipo: ${typeof value}`);
-                });
 
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
                 if (rpcError) throw rpcError;
@@ -184,12 +181,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             if (isMounted.current) {
                 setIsSuccessfullyClosed(true);
                 setAddedPayments([]);
-                setToast({ message: "Liquidação processada com sucesso!", type: 'success' });
+                setToast({ message: "Checkout finalizado com sucesso!", type: 'success' });
                 await fetchSystemData();
             }
         } catch (e: any) {
+            console.error("Checkout Error:", e);
             if (isMounted.current) {
-                setToast({ message: `Falha ao liquidar: ${e.message}`, type: 'error' });
+                setToast({ message: `Falha na liquidação: ${e.message}`, type: 'error' });
                 setIsFinishing(false);
             }
         }
@@ -273,7 +271,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-5 bg-slate-800 text-white flex justify-between items-center">
                                 <h3 className="font-black text-sm uppercase tracking-widest">Canais de Pagamento</h3>
-                                <span className="text-[10px] font-black bg-white/10 px-3 py-1 rounded-full">PAGO: R$ {totals.paid.toFixed(2)}</span>
+                                <span className="text-[10px] font-black bg-white/10 px-3 py-1 rounded-full">RECEBIDO: R$ {totals.paid.toFixed(2)}</span>
                             </header>
                             <div className="divide-y divide-slate-50">
                                 {(isSuccessfullyClosed ? historyPayments : addedPayments).length === 0 ? (
@@ -283,15 +281,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                         <div key={p.id || idx} className="p-6 flex items-center justify-between">
                                             <div className="flex items-center gap-4">
                                                 <div className="p-3 bg-slate-50 rounded-2xl text-slate-400">
-                                                    {['PIX', 'pix'].includes(p.method || p.payment_channel) ? <Smartphone size={20}/> : <Coins size={20}/>}
+                                                    {['PIX', 'pix'].includes(p.method || p.payment_channel || p.payment_method) ? <Smartphone size={20}/> : <Coins size={20}/>}
                                                 </div>
                                                 <div>
                                                     <p className="font-black text-slate-700 text-sm uppercase">
-                                                        {(p.method || p.payment_channel || 'PAGAMENTO').toUpperCase()} {p.brand && `• ${p.brand}`}
+                                                        {(p.payment_channel || p.payment_method || p.method || 'PAGAMENTO').toUpperCase()} {p.brand && `• ${p.brand}`}
                                                         {p.installments > 1 && ` (${p.installments}x)`}
                                                     </p>
                                                     {isSuccessfullyClosed && (
-                                                        <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Auditado</p>
+                                                        <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Auditado pelo Banco</p>
                                                     )}
                                                 </div>
                                             </div>
@@ -323,7 +321,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <div className="pt-6 border-t border-white/10">
                                     <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Total a Liquidar</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.totalAfterDiscount.toFixed(2)}</h2>
-                                    <p className="text-[10px] font-bold text-slate-500 mt-2">RESTANTE: R$ {totals.remaining.toFixed(2)}</p>
+                                    <p className="text-[10px] font-bold text-slate-500 mt-2">VALOR PAGO: R$ {totals.paid.toFixed(2)}</p>
                                 </div>
                             </div>
                         </div>
@@ -337,7 +335,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <button onClick={() => setActiveCategory(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18}/></button>
                                         </div>
                                         <div className="space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pagamento</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" /></div></div>
-                                        <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora / Bandeira</label><select value={selectedMethodObj?.id || ''} onChange={e => setSelectedMethodObj(dbMethods.find(m => m.id === e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none">{dbMethods.filter(m => m.type === activeCategory || (activeCategory === 'money' && m.type === 'cash')).map(m => (<option key={m.id} value={m.id}>{m.label} {m.brand ? `(${m.brand})` : ''}</option>))}</select></div>
+                                        <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora / Bandeira</label><select value={selectedMethodObj?.id || ''} onChange={e => setSelectedMethodObj(dbMethods.find(m => m.id === e.target.value))} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none">{dbMethods.filter(m => m.type === activeCategory || (activeCategory === 'money' && m.type === 'cash')).map(m => (<option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>))}</select></div>
                                         <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Registrar Pagamento</button>
                                     </div>
                                 ) : (
