@@ -168,22 +168,25 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 const payload = {
                     p_studio_id: String(activeStudioId),
                     p_professional_id: command.professional_id ? String(command.professional_id) : null,
-                    p_amount: entry.amount,
+                    p_amount: Number(entry.amount),
                     p_method: methodMap[entry.method] || 'pix',
                     p_brand: String(entry.brand || 'DIRETO'),
-                    p_installments: entry.installments,
+                    p_installments: Number(entry.installments),
                     p_command_id: String(commandId),
                     p_client_id: command.client_id ? Number(command.client_id) : null,
                     p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`
                 };
 
                 // LOG DE INTERCEPTAÇÃO REQUISITADO
-                console.log('RPC Call: register_payment_transaction_v2');
-                console.log('Payload:', payload);
+                console.log('--- INTERCEPTAÇÃO RPC (COMANDAS) ---');
+                console.log('Função: register_payment_transaction_v2');
+                console.log('Payload Completo:', payload);
+                console.log('Tipos dos Campos:');
                 Object.entries(payload).forEach(([key, value]) => {
-                    console.log(`Field: ${key} | Value: ${value} | Type: ${typeof value}`);
+                    console.log(`-> Field: ${key} | Value: ${value} | Type: ${typeof value}`);
                 });
 
+                // Chamada RPC do Supabase
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
                 
                 if (rpcError) throw rpcError;

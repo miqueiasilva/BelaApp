@@ -121,22 +121,25 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const payload = {
                 p_studio_id: String(activeStudioId),
                 p_professional_id: appointment.professional_id ? String(appointment.professional_id) : null,
-                p_amount: appointment.price,
+                p_amount: Number(appointment.price),
                 p_method: methodMapping[selectedCategory] || 'pix',
-                p_brand: currentMethod.brand || 'default',
-                p_installments: installments,
+                p_brand: String(currentMethod.brand || 'default'),
+                p_installments: Number(installments),
                 p_command_id: null,
                 p_client_id: appointment.client_id ? Number(appointment.client_id) : null,
                 p_description: `Atendimento: ${appointment.service_name}`
             };
 
             // LOG DE INTERCEPTAÇÃO REQUISITADO
-            console.log('RPC Call: register_payment_transaction_v2');
-            console.log('Payload:', payload);
+            console.log('--- INTERCEPTAÇÃO RPC ---');
+            console.log('Função: register_payment_transaction_v2');
+            console.log('Payload Completo:', payload);
+            console.log('Tipos dos Campos:');
             Object.entries(payload).forEach(([key, value]) => {
-                console.log(`Field: ${key} | Value: ${value} | Type: ${typeof value}`);
+                console.log(`-> Field: ${key} | Value: ${value} | Type: ${typeof value}`);
             });
 
+            // Chamada RPC do Supabase
             const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
 
             if (rpcError) {

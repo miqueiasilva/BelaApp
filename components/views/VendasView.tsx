@@ -144,7 +144,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             const payload = {
                 p_studio_id: String(activeStudioId),
                 p_professional_id: null,
-                p_amount: total,
+                p_amount: Number(total),
                 p_method: methodMapping[paymentMethod] || 'pix',
                 p_brand: '',
                 p_installments: 1,
@@ -154,12 +154,15 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             };
 
             // LOG DE INTERCEPTAÇÃO REQUISITADO
-            console.log('RPC Call: register_payment_transaction_v2');
-            console.log('Payload:', payload);
+            console.log('--- INTERCEPTAÇÃO RPC (PDV) ---');
+            console.log('Função: register_payment_transaction_v2');
+            console.log('Payload Completo:', payload);
+            console.log('Tipos dos Campos:');
             Object.entries(payload).forEach(([key, value]) => {
-                console.log(`Field: ${key} | Value: ${value} | Type: ${typeof value}`);
+                console.log(`-> Field: ${key} | Value: ${value} | Type: ${typeof value}`);
             });
 
+            // Chamada RPC do Supabase
             const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
 
             if (rpcError) throw rpcError;
@@ -171,7 +174,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         } catch (error: any) {
             setToast({ message: `Erro ao finalizar: ${error.message}`, type: 'error' });
         } finally {
-            // FIX: Corrigido erro de digitação de 'setIsishing' para 'setIsFinishing'
             setIsFinishing(false);
         }
     };
