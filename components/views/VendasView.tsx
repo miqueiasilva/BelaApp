@@ -154,12 +154,10 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             };
 
             // LOG DE INTERCEPTAÇÃO REQUISITADO
-            console.log('--- CHAMADA RPC DETECTADA (PDV) ---');
-            console.log('Função RPC:', 'register_payment_transaction_v2');
-            console.log('Payload Completo:', payload);
-            console.log('Análise de Tipos (typeof):');
+            console.log('--- RPC INVOCATION: register_payment_transaction_v2 ---');
+            console.log('Payload:', payload);
             Object.entries(payload).forEach(([key, value]) => {
-                console.log(`-> Campo: ${key} | Valor: ${value} | Tipo: ${typeof value}`);
+                console.log(`Field: ${key} | Value: ${value} | Type: ${typeof value}`);
             });
 
             // Execução exata da linha RPC
@@ -174,7 +172,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         } catch (error: any) {
             setToast({ message: `Erro ao finalizar: ${error.message}`, type: 'error' });
         } finally {
-            // FIX: Corrigido erro de digitação de 'setIsishing' para 'setIsFinishing'
             setIsFinishing(false);
         }
     };

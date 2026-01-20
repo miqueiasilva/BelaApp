@@ -9,8 +9,6 @@ import {
     AlertCircle, Sparkles, CheckCircle2, ArrowUpRight,
     Trash2, ChevronDown, Check, User, Briefcase
 } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import { Command, PaymentMethod } from '../../types';
@@ -30,12 +28,19 @@ interface PaymentEntry {
     installments: number;
 }
 
-const categories = [
-    { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
-    { id: 'money', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
-    { id: 'credit', label: 'Crédito', icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { id: 'debit', label: 'Débito', icon: CreditCard, color: 'text-cyan-600', bg: 'bg-cyan-50' },
-];
+// Normalizador de métodos de pagamento conforme regra 3.2
+const normalizeMethods = (methods: any[]) => {
+    return (methods ?? []).map((m: any) => ({
+        id: m.id,
+        label: m.name,
+        type: (m.type ?? m.method_type ?? '').toLowerCase(), // pix, cash, debit, credit...
+        brand: m.brand,
+        feePercent: Number(m.fee_percentage ?? 0),
+        feeFixed: Number(m.fee_fixed ?? 0),
+        allowInstallments: !!m.allow_installments,
+        maxInstallments: Number(m.max_installments ?? 1),
+    }));
+};
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
     const { activeStudioId } = useStudio();
@@ -67,37 +72,32 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            const [cmdRes, methodsRes, paymentsRes] = await Promise.all([
-                supabase
-                    .from('commands')
-                    .select(`
-                      *,
-                      client:clients!commands_client_id_fkey (id, nome, name, nickname, apelido, whatsapp),
-                      professional:professionals!commands_professional_id_fkey (uuid_id, name),
-                      command_items (*, team_members (name))
-                    `)
-                    .eq('id', commandId)
-                    .single(),
-                supabase.from('payment_methods_config').select('*').eq('is_active', true),
-                supabase.from('v_command_payments_history').select('*').eq('command_id', commandId)
-            ]);
+            // REGRA 3.1: Front só chama RPC e renderiza. Removidos selects diretos.
+            const { data, error: rpcError } = await supabase.rpc("get_checkout_context", {
+                p_studio_id: activeStudioId,
+                p_command_id: commandId,
+            });
 
-            if (cmdRes.error) throw cmdRes.error;
-            
+            if (rpcError) throw rpcError;
+            if (!data?.ok) throw new Error(data?.error ?? "Erro ao carregar contexto de checkout");
+
             if (isMounted.current) {
-                const cmdData = cmdRes.data;
-                setCommand(cmdData);
-                setDbMethods(methodsRes.data || []);
-                setHistoryPayments(paymentsRes.data || []);
+                setCommand(data.command);
+                setDbMethods(normalizeMethods(data.methods)); // REGRA 3.2: Normalização
                 
-                if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
+                // Histórico de pagamentos (se retornado pelo RPC ou via view de auditoria segura)
+                const { data: paymentsRes } = await supabase.from('v_command_payments_history').select('*').eq('command_id', commandId);
+                setHistoryPayments(paymentsRes || []);
+                
+                if (data.command.status === 'paid') setIsSuccessfullyClosed(true);
 
-                const clientObj = cmdData?.client;
+                const clientObj = data.client;
                 const clientName = clientObj?.nome || clientObj?.name || clientObj?.nickname || clientObj?.apelido || 'Consumidor Final';
                 setResolvedClientName(clientName);
             }
         } catch (e: any) {
-            if (isMounted.current) setToast({ message: "Erro ao sincronizar comanda.", type: 'error' });
+            console.error("Fetch Context Error:", e);
+            if (isMounted.current) setToast({ message: e.message || "Erro ao sincronizar dados.", type: 'error' });
         } finally {
             if (isMounted.current) setLoading(false);
         }
@@ -112,29 +112,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
         const isClosed = command.status === 'paid' || isSuccessfullyClosed;
-        
         const paid = (isClosed ? historyPayments : addedPayments).reduce((acc, p) => acc + Number(p.amount || p.gross_amount || 0), 0);
-        const totalNet = (isClosed ? historyPayments : addedPayments).reduce((acc, p) => acc + Number(p.net || p.net_amount || 0), 0);
-        
         const remaining = Math.max(0, totalAfterDiscount - paid);
-        return { subtotal, total: isClosed ? paid : totalAfterDiscount, paid, remaining: isClosed ? 0 : remaining, totalNet, totalAfterDiscount };
+        
+        return { subtotal, total: isClosed ? paid : totalAfterDiscount, paid, remaining: isClosed ? 0 : remaining, totalAfterDiscount };
     }, [command, discount, addedPayments, historyPayments, isSuccessfullyClosed]);
-
-    const professionalName = useMemo(() => {
-        if (command?.professional?.name) return command.professional.name;
-        return 'Não informado';
-    }, [command]);
-
-    const filteredMethodsForActiveCat = useMemo(() => {
-        if (!activeCategory) return [];
-        return dbMethods.filter(m => m.type === activeCategory);
-    }, [dbMethods, activeCategory]);
 
     const handleInitPayment = (category: 'credit' | 'debit' | 'pix' | 'money') => {
         setActiveCategory(category);
         setAmountToPay(totals.remaining.toFixed(2));
         setSelectedInstallments(1);
-        const defaultMethod = dbMethods.find(m => m.type === category);
+        const defaultMethod = dbMethods.find(m => m.type === category || (category === 'money' && m.type === 'cash'));
         setSelectedMethodObj(defaultMethod || null);
     };
 
@@ -142,14 +130,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const val = parseFloat(amountToPay);
         if (!activeCategory || isNaN(val) || val <= 0 || !selectedMethodObj) return;
         
-        const isFeeFree = activeCategory === 'pix' || activeCategory === 'money';
-
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(2, 9),
             method: activeCategory,
             method_id: selectedMethodObj.id,
             amount: val,
-            brand: isFeeFree ? 'DIRETO' : (selectedMethodObj?.brand || 'OUTROS'),
+            brand: selectedMethodObj?.brand || 'DIRETO',
             installments: selectedInstallments
         };
         setAddedPayments(prev => [...prev, newPayment]);
@@ -172,23 +158,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_method: methodMap[entry.method] || 'pix',
                     p_brand: String(entry.brand || 'DIRETO'),
                     p_installments: Number(entry.installments),
-                    p_command_id: String(commandId),
+                    p_command_id: String(commandId), // UUID garantido pela navegação
                     p_client_id: command.client_id ? Number(command.client_id) : null,
                     p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`
                 };
 
                 // LOG DE INTERCEPTAÇÃO REQUISITADO
-                console.log('--- CHAMADA RPC DETECTADA (COMANDAS) ---');
-                console.log('Função RPC:', 'register_payment_transaction_v2');
-                console.log('Payload Completo:', payload);
-                console.log('Análise de Tipos (typeof):');
+                console.log('--- RPC INVOCATION: register_payment_transaction_v2 ---');
+                console.log('Payload:', payload);
                 Object.entries(payload).forEach(([key, value]) => {
-                    console.log(`-> Campo: ${key} | Valor: ${value} | Tipo: ${typeof value}`);
+                    console.log(`Field: ${key} | Value: ${value} | Type: ${typeof value}`);
                 });
 
-                // Execução exata da linha RPC
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
-                
                 if (rpcError) throw rpcError;
             }
             
@@ -199,6 +181,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 fetchSystemData();
             }
         } catch (e: any) {
+            console.error("Checkout Error:", e);
             if (isMounted.current) {
                 setToast({ message: `Falha: ${e.message}`, type: 'error' });
                 setIsFinishing(false);
@@ -208,8 +191,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={40} /></div>;
 
-    if (!command) return <div className="h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 p-8 text-center"><AlertCircle size={48} className="mb-4" /> <p className="font-bold">Comanda não encontrada.</p> <button onClick={onBack} className="mt-4 text-orange-500 font-bold underline">Voltar para a lista</button></div>;
-
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -217,7 +198,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-colors"><ChevronLeft size={24} /></button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500">#{command.id?.toString().split('-')[0].toUpperCase() || '---'}</span></h1>
+                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500">#{commandId.split('-')[0].toUpperCase()}</span></h1>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Controle de Baixa Financeira</p>
                     </div>
                 </div>
@@ -241,21 +222,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </header>
                             <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-sm border border-orange-100">
-                                        <User size={24} />
-                                    </div>
+                                    <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-sm border border-orange-100"><User size={24} /></div>
                                     <div>
                                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Cliente</p>
                                         <p className="font-black text-slate-700 text-lg leading-tight">{resolvedClientName}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-sm border border-orange-100">
-                                        <Scissors size={24} />
-                                    </div>
+                                    <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-sm border border-orange-100"><Scissors size={24} /></div>
                                     <div>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Profissional</p>
-                                        <p className="font-black text-slate-700 text-lg leading-tight">{professionalName}</p>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Profissional Responsável</p>
+                                        <p className="font-black text-slate-700 text-lg leading-tight">{command.team_members?.name || 'Venda Direta'}</p>
                                     </div>
                                 </div>
                             </div>
@@ -278,40 +255,28 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-5 bg-slate-800 text-white flex justify-between items-center">
-                                <h3 className="font-black text-sm uppercase tracking-widest">Canais de Pagamento Utilizados</h3>
-                                <span className="text-[10px] font-black bg-white/10 px-3 py-1 rounded-full">RECEBIDO: R$ {totals.paid.toFixed(2)}</span>
+                                <h3 className="font-black text-sm uppercase tracking-widest">Canais de Pagamento</h3>
+                                <span className="text-[10px] font-black bg-white/10 px-3 py-1 rounded-full">PAGO: R$ {totals.paid.toFixed(2)}</span>
                             </header>
                             <div className="divide-y divide-slate-50">
-                                {(isSuccessfullyClosed ? historyPayments : addedPayments).length === 0 ? (
-                                    <div className="p-10 text-center text-slate-300 italic text-sm">Aguardando lançamento de pagamento...</div>
-                                ) : (
-                                    (isSuccessfullyClosed ? historyPayments : addedPayments).map((p: any, idx: number) => (
-                                        <div key={p.id || idx} className="p-6 flex items-center justify-between">
-                                            <div className="flex items-center gap-4">
-                                                <div className="p-3 bg-slate-50 rounded-2xl text-slate-400">
-                                                    {['PIX', 'pix'].includes(p.payment_channel || p.method) ? <Smartphone size={20}/> : <Coins size={20}/>}
-                                                </div>
-                                                <div>
-                                                    <p className="font-black text-slate-700 text-sm uppercase">
-                                                        {(p.payment_channel || p.method || 'PAGAMENTO').toUpperCase()} {p.brand && `• ${p.brand}`}
-                                                        {p.installments > 1 && ` (${p.installments}x)`}
-                                                    </p>
-                                                    {isSuccessfullyClosed && (
-                                                        <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">
-                                                            Auditado pelo Banco
-                                                        </p>
-                                                    )}
-                                                </div>
+                                {(isSuccessfullyClosed ? historyPayments : addedPayments).map((p: any, idx: number) => (
+                                    <div key={p.id || idx} className="p-6 flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-3 bg-slate-50 rounded-2xl text-slate-400">
+                                                {['PIX', 'pix'].includes(p.method) ? <Smartphone size={20}/> : <Coins size={20}/>}
                                             </div>
-                                            <div className="text-right">
-                                                <p className="font-black text-slate-800">R$ {(p.amount || p.gross_amount || 0).toFixed(2)}</p>
-                                                {!isSuccessfullyClosed && (
-                                                    <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="text-[10px] text-rose-500 font-bold hover:underline">Remover</button>
-                                                )}
+                                            <div>
+                                                <p className="font-black text-slate-700 text-sm uppercase">{(p.method || 'PAGAMENTO').toUpperCase()} {p.brand && `• ${p.brand}`}</p>
+                                                {isSuccessfullyClosed && <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Auditado</p>}
                                             </div>
                                         </div>
-                                    ))
-                                )}
+                                        <div className="text-right">
+                                            <p className="font-black text-slate-800">R$ {(p.amount || p.gross_amount || 0).toFixed(2)}</p>
+                                            {!isSuccessfullyClosed && <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="text-[10px] text-rose-500 font-bold hover:underline">Remover</button>}
+                                        </div>
+                                    </div>
+                                ))}
+                                {(isSuccessfullyClosed ? historyPayments : addedPayments).length === 0 && <div className="p-10 text-center text-slate-300 italic text-sm">Nenhum pagamento registrado</div>}
                             </div>
                         </div>
                     </div>
@@ -329,9 +294,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     )}
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Liquidação (Auditoria Ativa)</p>
+                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Total a Liquidar</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.totalAfterDiscount.toFixed(2)}</h2>
-                                    <p className="text-[10px] font-bold text-slate-500 mt-2">VALOR PAGO: R$ {totals.paid.toFixed(2)}</p>
+                                    <p className="text-[10px] font-bold text-slate-500 mt-2">RESTANTE: R$ {totals.remaining.toFixed(2)}</p>
                                 </div>
                             </div>
                         </div>
@@ -344,13 +309,29 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <h4 className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Configurar {activeCategory}</h4>
                                             <button onClick={() => setActiveCategory(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18}/></button>
                                         </div>
-                                        <div className="space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pagamento</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" /></div></div>
-                                        <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora / Bandeira</label><select value={selectedMethodObj?.id || ''} onChange={e => setSelectedMethodObj(dbMethods.find(m => m.id === e.target.value))} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none">{filteredMethodsForActiveCat.map(m => (<option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>))}</select></div>
+                                        <div className="space-y-2">
+                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pagamento</label>
+                                            <div className="relative">
+                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span>
+                                                <input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora / Bandeira</label>
+                                            <select value={selectedMethodObj?.id || ''} onChange={e => setSelectedMethodObj(dbMethods.find(m => m.id === e.target.value))} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none">
+                                                {dbMethods.filter(m => m.type === activeCategory || (activeCategory === 'money' && m.type === 'cash')).map(m => (<option key={m.id} value={m.id}>{m.label} {m.brand ? `(${m.brand})` : ''}</option>))}
+                                            </select>
+                                        </div>
                                         <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Registrar Pagamento</button>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-2 gap-3">
-                                        {categories.map(pm => (
+                                        {[
+                                            { id: 'pix', label: 'Pix', icon: Smartphone },
+                                            { id: 'money', label: 'Dinheiro', icon: Banknote },
+                                            { id: 'credit', label: 'Crédito', icon: CreditCard },
+                                            { id: 'debit', label: 'Débito', icon: CreditCard },
+                                        ].map(pm => (
                                             <button key={pm.id} onClick={() => handleInitPayment(pm.id as any)} className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-slate-50 bg-slate-50/50 text-slate-400 hover:border-orange-200 hover:bg-white transition-all active:scale-95 group"><pm.icon size={28} className="mb-3 group-hover:text-orange-500 transition-colors" /><span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span></button>
                                         ))}
                                     </div>
