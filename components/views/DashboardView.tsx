@@ -11,7 +11,7 @@ import {
     ChevronRight, CalendarRange, Filter as FilterIcon, History, CheckCircle
 } from 'lucide-react';
 import { 
-    format, addDays, endOfDay, endOfMonth, isSameDay 
+    format, addDays, endOfDay, endOfMonth, isSameDay, isValid 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
@@ -24,6 +24,13 @@ const formatCurrency = (value: number) => {
         currency: 'BRL',
         maximumFractionDigits: 0
     }).format(value);
+};
+
+// Helper para evitar RangeError: Invalid time value
+const safeFormatTime = (dateValue: any) => {
+    if (!dateValue) return '--:--';
+    const d = new Date(dateValue);
+    return isValid(d) ? format(d, 'HH:mm') : '--:--';
 };
 
 const StatCard = ({ title, value, icon: Icon, colorClass, subtext }: any) => (
@@ -172,7 +179,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         const fetchRecentPayments = async () => {
             setLoadingPayments(true);
             try {
-                const { data, error } = await supabase.rpc("get_recent_payments", { p_limit: 5 });
+                const { data, error } = await supabase.rpc("get_recent_payments", { p_limit: 10 });
                 if (error) throw error;
                 setRecentPayments(data || []);
             } catch (e) {
@@ -290,16 +297,16 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                                                 <CheckCircle size={20} />
                                             </div>
                                             <div className="min-w-0">
-                                                <p className="text-sm font-black text-slate-700 truncate">{p.description || 'Recebimento de Atendimento'}</p>
+                                                <p className="text-sm font-black text-slate-700 truncate">{p.description || 'Recebimento'}</p>
                                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
-                                                    {p.client_name || 'Consumidor Final'} • {p.payment_method?.toUpperCase()}
+                                                    {p.client_name || 'Consumidor Final'} • {p.payment_method?.toUpperCase() || 'PIX'}
                                                 </p>
                                             </div>
                                         </div>
                                         <div className="text-right">
                                             <p className="text-sm font-black text-emerald-600 leading-none">+{formatCurrency(Number(p.amount))}</p>
                                             <p className="text-[9px] text-slate-400 font-black mt-1 uppercase tracking-tighter">
-                                                {format(new Date(p.date), 'HH:mm')}
+                                                {safeFormatTime(p.date)}
                                             </p>
                                         </div>
                                     </div>
