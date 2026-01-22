@@ -74,11 +74,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         if (!activeStudioId) return;
         setIsFetching(true);
         try {
-            // ✅ CORREÇÃO: Utilizando a tabela professionals e a coluna uuid_id
+            // ✅ CARREGANDO LISTA DE PROFISSIONAIS: select uuid_id, name conforme solicitado
             const [profsRes, methodsRes] = await Promise.all([
                 supabase
                     .from('professionals')
-                    .select('id:uuid_id, name')
+                    .select('uuid_id, name')
                     .eq('studio_id', activeStudioId)
                     .order('name'),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
@@ -138,10 +138,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_client_id: appointment.client_id ? Number(appointment.client_id) : null,
                 p_description: `Atendimento: ${appointment.service_name}`
             };
-
-            // LOG DE INTERCEPTAÇÃO REQUISITADO
-            console.log('--- RPC INVOCATION: register_payment_transaction_v2 ---');
-            console.log('Payload:', payload);
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
 
@@ -226,7 +222,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
                 <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
                     <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl">Cancelar</button>
-                    <button onClick={(e) => handleConfirmPayment(e)} disabled={isLoading || !currentMethod} className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50">{isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />} Confirmar Recebimento</button>
+                    <button onClick={(e) => handleConfirmPayment(e)} disabled={isLoading || !currentMethod} className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50">{isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />} Confirmar Recebimento</button>
                 </footer>
             </div>
         </div>

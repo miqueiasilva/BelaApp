@@ -90,7 +90,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             const startOfToday = new Date(today.setHours(0, 0, 0, 0)).toISOString();
             const endOfToday = new Date(today.setHours(23, 59, 59, 999)).toISOString();
 
-            // ✅ Carregar lista de profissionais conforme solicitado
+            // ✅ CARREGANDO LISTA DE PROFISSIONAIS: select uuid_id, name conforme solicitado
             const [servicesRes, productsRes, appointmentsRes, profsRes] = await Promise.all([
                 supabase.from('services').select('*').eq('studio_id', activeStudioId).eq('ativo', true).order('nome'),
                 supabase.from('products').select('*').eq('studio_id', activeStudioId).eq('ativo', true).order('name'),
@@ -158,10 +158,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                 p_client_id: null,
                 p_description: 'Venda Rápida (PDV)'
             };
-
-            // LOG DE INTERCEPTAÇÃO REQUISITADO
-            console.log('--- RPC INVOCATION: register_payment_transaction_v2 ---');
-            console.log('Payload:', payload);
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
 

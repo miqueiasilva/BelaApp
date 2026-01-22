@@ -56,6 +56,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction, onNavigat
 
     const fetchCatalogAndProfs = async () => {
         if (!activeStudioId) return;
+        // ✅ CARREGANDO LISTA DE PROFISSIONAIS: select uuid_id, name conforme solicitado
         const [svcs, prods, profs] = await Promise.all([
             supabase.from('services').select('id, nome, preco').eq('studio_id', activeStudioId).eq('ativo', true),
             supabase.from('products').select('id, name, price').eq('studio_id', activeStudioId).eq('active', true),
