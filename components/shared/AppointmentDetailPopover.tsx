@@ -227,8 +227,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     client_name: appointment.client?.nome || 'Cliente',
                     service_name: appointment.service.name,
                     price: appointment.service.price,
-                    // FIX: Cast professional.id to string to satisfy type requirements of CheckoutModal
-                    professional_id: String(appointment.professional.id),
+                    professional_id: appointment.professional.id,
                     professional_name: appointment.professional.name
                 }}
                 onSuccess={() => {

@@ -10,9 +10,8 @@ import {
     ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, 
     ChevronRight, CalendarRange, Filter as FilterIcon, History, CheckCircle
 } from 'lucide-react';
-// FIX: Removed parseISO and parse as they are not exported by the environment's version of date-fns
 import { 
-    format, addDays, endOfDay, endOfMonth, isSameDay, isValid 
+    format, addDays, endOfDay, endOfMonth, isSameDay, isValid, parseISO, parse 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
@@ -37,16 +36,12 @@ const safeDate = (value: any): Date | null => {
     if (typeof value === "string") {
         // ISO Completo ou Data Pura (2026-01-22)
         if (value.includes("T") || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-            // FIX: Replaced parseISO with native Date constructor which handles ISO strings
-            const d = new Date(value);
+            const d = parseISO(value);
             return isValid(d) ? d : null;
         }
         // Horário puro (14:30) - Converte para data de hoje com esse horário
         if (/^\d{2}:\d{2}(:\d{2})?$/.test(value)) {
-            // FIX: Replaced parse with manual hours/minutes setting on current date
-            const [h, m] = value.slice(0,5).split(':').map(Number);
-            const d = new Date();
-            d.setHours(h, m, 0, 0);
+            const d = parse(value.slice(0,5), "HH:mm", new Date());
             return isValid(d) ? d : null;
         }
         const d = new Date(value);
