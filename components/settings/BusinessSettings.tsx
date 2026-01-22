@@ -82,18 +82,37 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         const fetchSettings = async () => {
             setIsLoading(true);
             try {
-                const { data, error } = await supabase.from('business_settings').select('*').eq('id', activeStudioId).maybeSingle();
+                // ✅ Utilizando RPC para buscar o perfil completo conforme solicitado
+                const { data, error } = await supabase.rpc('get_business_profile');
+                
+                if (error) throw error;
+                
                 if (data) {
-                    setFormData({ 
-                        ...data, 
-                        business_hours: sanitizeBusinessHours(data.business_hours),
-                        primary_color: data.primary_color || '#f97316',
-                        portfolio_urls: data.portfolio_urls || []
+                    setFormData({
+                        id: activeStudioId,
+                        business_name: data.business_name ?? '',
+                        cnpj_cpf: data.cnpj_cpf ?? '',
+                        phone: data.phone ?? '',
+                        email: data.email ?? '',
+                        description: data.description ?? '',
+                        zip_code: data.zip_code ?? '',
+                        street: data.street ?? '',
+                        number: data.number ?? '',
+                        district: data.district ?? '',
+                        city: data.city ?? '',
+                        state: data.state ?? '',
+                        instagram_handle: data.instagram_handle ?? '',
+                        primary_color: data.primary_color ?? '#f97316',
+                        logo_url: data.logo_url ?? '',
+                        cover_url: data.cover_url ?? '',
+                        portfolio_urls: data.portfolio_urls ?? [],
+                        business_hours: sanitizeBusinessHours(data.business_hours)
                     });
                 } else {
                     setFormData(p => ({ ...p, business_hours: sanitizeBusinessHours({}) }));
                 }
             } catch (err) {
+                console.error("Erro ao carregar dados do perfil:", err);
                 setToast({ message: "Erro ao carregar dados.", type: 'error' });
             } finally {
                 setIsLoading(false);
@@ -120,7 +139,6 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         if (!activeStudioId) return;
         setIsSaving(true);
         try {
-            // ✅ Sincronizando exatamente com a assinatura do RPC solicitada
             const { error: rpcError } = await supabase.rpc('save_business_profile', {
                 p_business_name: formData.business_name,
                 p_cnpj_cpf: formData.cnpj_cpf,
