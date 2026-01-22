@@ -127,13 +127,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // QUERY CANÔNICA: Usando alias para mapear IDs e relacionamentos
+            // QUERY ESTABILIZADA: Forçando FK explícita para evitar 409
             const { data: apptRes, error: apptErr } = await supabase
                 .from('appointments')
                 .select(`
                     *,
                     professional:professionals!appointments_professional_same_studio_fk (
-                        uuid_id, name, photo_url
+                        id_uuid, name, photo_url
                     )
                 `)
                 .eq('studio_id', activeStudioId)
@@ -165,7 +165,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 setAppointments([...mappedAppts, ...mappedBlocks]);
             }
         } catch (e: any) { 
-            console.error("AtendimentosView: Erro ao carregar dados.", e);
+            console.error("AtendimentosView: Falha na sincronização.", e);
+            setToast({ message: "Erro ao sincronizar agenda. Tente atualizar a página.", type: 'error' });
         } finally { 
             if (isMounted.current) setIsLoadingData(false); 
         }
@@ -174,19 +175,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const fetchResources = async () => {
         if (authLoading || !user || !activeStudioId) return;
         try {
-            // Usa professionals.uuid_id como ID canônico
+            // MUDANÇA: Usando professionals e id_uuid como ID canônico
             const { data, error } = await supabase
                 .from('professionals')
-                .select('uuid_id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled')
+                .select('id_uuid, name, photo_url, role, active, show_in_calendar, order_index, services_enabled')
                 .eq('active', true)
                 .eq('studio_id', activeStudioId)
-                .order('order_index', { ascending: true })
                 .order('name', { ascending: true });
             
             if (error) throw error;
             if (data && isMounted.current) {
                 const mapped = data.filter((m: any) => m.show_in_calendar !== false).map((p: any) => ({ 
-                    id: p.uuid_id, 
+                    id: p.id_uuid, 
                     name: p.name, 
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`, 
                     role: p.role, 
@@ -195,7 +195,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 }));
                 setResources(mapped);
             }
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error("fetchResources:", e); }
     };
 
     const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
@@ -219,7 +219,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         isMounted.current = true;
         fetchResources();
         
-        // REALTIME: Centralizado with Cleanup Preventivo
+        // CANAL ESTABILIZADO COM CLEANUP
         const channel = supabase.channel(`agenda-${activeStudioId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `studio_id=eq.${activeStudioId}` }, () => { fetchAppointments(); })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'professionals', filter: `studio_id=eq.${activeStudioId}` }, () => { fetchResources(); })
@@ -228,7 +228,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
         return () => { 
             isMounted.current = false; 
-            supabase.removeChannel(channel); 
+            supabase.removeChannel(channel).catch(() => {}); // Prevenção 409 de subscrição
         };
     }, [activeStudioId]);
 
@@ -241,7 +241,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (error) {
             setToast({ message: "Erro ao atualizar status.", type: 'error' });
         } else {
-            setToast({ message: "Status atualizado!", type: 'success' });
+            setToast({ message: "Status sincronizado!", type: 'success' });
             fetchAppointments();
         }
         setActiveAppointmentDetail(null);
@@ -265,15 +265,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 notes: app.notas, 
                 origem: app.origem || 'interno' 
             };
-            if (app.id && appointments.some(a => a.id === app.id)) { 
-                await supabase.from('appointments').update(payload).eq('id', app.id); 
-            } else { 
-                await supabase.from('appointments').insert([payload]); 
-            }
-            setToast({ message: 'Agenda Sincronizada!', type: 'success' });
+            
+            const { error } = app.id && appointments.some(a => a.id === app.id)
+                ? await supabase.from('appointments').update(payload).eq('id', app.id)
+                : await supabase.from('appointments').insert([payload]);
+
+            if (error) throw error;
+            
+            setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
             setModalState(null);
             fetchAppointments();
-        } catch (e) { fetchAppointments(); } finally { setIsLoadingData(false); }
+        } catch (e: any) { 
+            setToast({ message: "Erro ao salvar: " + e.message, type: 'error' });
+        } finally { 
+            setIsLoadingData(false); 
+        }
     };
 
     const handleDateChange = (direction: number) => {

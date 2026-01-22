@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Clock, MessageCircle, ChevronRight, CalendarX, Plus, Scissors, RefreshCw } from 'lucide-react';
-import { format, isValid } from 'date-fns';
+import { format, isValid, parseISO } from 'date-fns';
 import { AppointmentStatus } from '../../types';
 
 const statusMap: Record<string, { label: string; color: string; bg: string }> = {
@@ -25,16 +25,15 @@ const statusMap: Record<string, { label: string; color: string; bg: string }> = 
 const safeFormat = (dateValue: any, fmt: string) => {
     if (!dateValue) return '--:--';
     try {
-        // Se for apenas HH:mm (comum em alguns retornos legados), não tenta criar objeto Date puro
         if (typeof dateValue === 'string' && /^\d{2}:\d{2}$/.test(dateValue)) {
             return dateValue;
         }
 
-        const d = new Date(dateValue);
+        const d = (typeof dateValue === 'string') ? parseISO(dateValue) : new Date(dateValue);
+        
         if (!isValid(d)) {
-            // Tentativa secundária: ISO string?
-            const dIso = new Date(dateValue.toString().replace(' ', 'T'));
-            if (isValid(dIso)) return format(dIso, fmt);
+            const fallback = new Date(dateValue.toString().replace(' ', 'T'));
+            if (isValid(fallback)) return format(fallback, fmt);
             return '--:--';
         }
         return format(d, fmt);
@@ -57,7 +56,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
         .sort((a, b) => {
             const dateA = new Date(a.date).getTime();
             const dateB = new Date(b.date).getTime();
-            return dateB - dateA; // O mais novo no topo
+            return dateB - dateA; 
         })
         .slice(0, 10);
 
@@ -85,7 +84,6 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                             
                             return (
                                 <div key={app.id} className="relative flex items-start gap-4 group animate-in fade-in slide-in-from-left-2 duration-300">
-                                    {/* Dot Indicator */}
                                     <div className="z-10 mt-1.5 w-8 h-8 rounded-full bg-white border-2 border-slate-100 flex items-center justify-center flex-shrink-0 group-hover:border-orange-200 transition-colors shadow-sm">
                                         <div className={`w-2.5 h-2.5 rounded-full ${
                                             app.status === 'em_atendimento' ? 'bg-indigo-500 animate-pulse' : 
