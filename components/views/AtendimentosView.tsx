@@ -190,6 +190,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const fetchResources = async () => {
         if (authLoading || !user || !activeStudioId) return;
         try {
+            // ✅ BLINDAGEM: Sempre buscar profissionais ativos da unidade para validação local
             const { data, error } = await supabase.from('team_members').select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled').eq('active', true).eq('studio_id', activeStudioId).order('order_index', { ascending: true }).order('name', { ascending: true });
             if (error) throw error;
             if (data && isMounted.current) {
@@ -270,7 +271,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
         if (!error) { 
             setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a)); 
-            // CORREÇÃO: Força recarregamento total para sincronizar integridade
+            // ✅ REFRESH: Força recarregamento total para evitar integridade obsoleto no front
             fetchAppointments();
         } else { fetchAppointments(); }
         setActiveAppointmentDetail(null);
@@ -279,12 +280,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
         if (!activeStudioId || !appointment?.id) return;
 
-        // VERIFICAÇÃO DE INTEGRIDADE LOCAL ANTES DO RPC
-        // Assume que resources (profissionais da unidade) é a fonte da verdade
+        // ✅ VALIDAÇÃO DE INTEGRIDADE LOCAL
         const isProfessionalInStudio = resources.some(r => String(r.id) === String(appointment.professional?.id));
         if (!isProfessionalInStudio) {
-            setToast({ message: "ERRO DE INTEGRIDADE: Este profissional não pertence a esta unidade. Por favor, reatribua o atendimento antes de finalizar.", type: 'error' });
-            fetchAppointments(); // Força reload para mostrar dados reais
+            setToast({ message: "ERRO DE INTEGRIDADE: O profissional vinculado a este horário não pertence a esta unidade atual. Por favor, reatribua o atendimento.", type: 'error' });
+            fetchAppointments(); 
             return;
         }
 
@@ -306,7 +306,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     studio_id: studioUuid,
                     client_id: client_id_raw || null, 
                     status: 'open',
-                    total_amount: appointment.service.price
+                    total_amount: appointment.service.price,
+                    // Garante que a comanda já nasça vinculada ao profissional correto
+                    professional_id: professionalUuid
                 }])
                 .select().single();
 
@@ -329,17 +331,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
             
-            // CORREÇÃO: Sincronização imediata pós-sucesso para evitar estados obsoletos
+            // ✅ SINCRONIZAÇÃO OBRIGATÓRIA PÓS-SUCESSO
             await fetchAppointments();
             
-            setToast({ message: `Comanda gerada para ${appointment.client?.nome || 'Cliente'}! 💳`, type: 'success' });
+            setToast({ message: `Comanda gerada com sucesso! 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
             
             if (onNavigateToCommand) {
                 onNavigateToCommand(command.id);
             }
         } catch (e: any) {
-            setToast({ message: "Erro ao converter atendimento: " + (e.message || "Falha DB"), type: 'error' });
+            setToast({ message: "Falha na conversão: " + (e.message || "Erro DB"), type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
