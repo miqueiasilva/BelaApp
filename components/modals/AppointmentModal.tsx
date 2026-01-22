@@ -80,11 +80,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (!activeStudioId) return;
     setLoadingProfessionals(true);
     try {
+      // ✅ CORREÇÃO: Utilizando a tabela professionals e a coluna uuid_id
       const { data, error: sbError } = await supabase
-        .from('team_members')
-        .select('id, name, photo_url, role, active, services_enabled')
+        .from('professionals')
+        .select('id:uuid_id, name, photo_url, role, active, services_enabled')
         .eq('studio_id', activeStudioId)
-        .eq('active', true)
         .order('name');
 
       if (sbError) throw sbError;

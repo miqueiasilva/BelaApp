@@ -71,14 +71,22 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     };
 
     const loadSystemData = async () => {
+        if (!activeStudioId) return;
         setIsFetching(true);
         try {
+            // ✅ CORREÇÃO: Utilizando a tabela professionals e a coluna uuid_id
             const [profsRes, methodsRes] = await Promise.all([
-                supabase.from('team_members').select('id, name').order('name'),
+                supabase
+                    .from('professionals')
+                    .select('id:uuid_id, name')
+                    .eq('studio_id', activeStudioId)
+                    .order('name'),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
             ]);
+
             if (profsRes.error) throw profsRes.error;
             if (methodsRes.error) throw methodsRes.error;
+
             if (isMounted.current) {
                 setDbProfessionals(profsRes.data || []);
                 setDbPaymentMethods(methodsRes.data || []);
@@ -89,7 +97,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 }
             }
         } catch (err: any) {
-            if (isMounted.current) setToast({ message: "Erro ao sincronizar taxas.", type: 'error' });
+            console.error("Erro ao carregar dados do checkout:", err);
+            if (isMounted.current) setToast({ message: "Erro ao sincronizar dados.", type: 'error' });
         } finally {
             if (isMounted.current) setIsFetching(false);
         }
@@ -98,7 +107,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     useEffect(() => {
         if (isOpen) loadSystemData();
         else resetLocalState();
-    }, [isOpen]);
+    }, [isOpen, activeStudioId]);
 
     const filteredMethods = useMemo(() => dbPaymentMethods.filter(m => m.type === selectedCategory), [dbPaymentMethods, selectedCategory]);
 
@@ -133,15 +142,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             // LOG DE INTERCEPTAÇÃO REQUISITADO
             console.log('--- RPC INVOCATION: register_payment_transaction_v2 ---');
             console.log('Payload:', payload);
-            Object.entries(payload).forEach(([key, value]) => {
-                console.log(`Field: ${key} | Value: ${value} | Type: ${typeof value}`);
-            });
 
-            // Execução exata da linha RPC
             const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
 
             if (rpcError) {
-                console.error("Erro na liquidação (register_payment_transaction_v2):", rpcError);
+                console.error("Erro na liquidação:", rpcError);
                 throw rpcError;
             }
 
