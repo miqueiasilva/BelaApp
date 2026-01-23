@@ -5,7 +5,7 @@ import {
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     ShoppingBag, Ban, Maximize2, 
     LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
-    AlertTriangle, CalendarDays, DollarSign, CheckCircle, Trash2, ShieldAlert, CheckCircle2, ArrowRight, ShoppingCart, User
+    AlertTriangle, CalendarDays, DollarSign, CheckCircle, Trash2, ShieldAlert, CheckCircle2, ArrowRight, ShoppingCart, User, Plus
 } from 'lucide-react';
 import { 
     format, addDays, addWeeks, addMonths, eachDayOfInterval, 
@@ -127,7 +127,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // CORREÇÃO: Utilizando join com team_members para evitar problemas de views desatualizadas
             const { data: apptRes, error: apptErr } = await supabase
                 .from('appointments')
                 .select(`
@@ -175,7 +174,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const fetchResources = async () => {
         if (authLoading || !user || !activeStudioId) return;
         try {
-            // CORREÇÃO: Utilizando a tabela base team_members e nomes de colunas padrão id/name
             const { data, error } = await supabase
                 .from('team_members')
                 .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled')
@@ -318,6 +316,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         return labels;
     }, [timeSlot]);
 
+    const handleGridClick = (col: any, timeIdx: number, e: React.MouseEvent) => {
+        const minutesToAdd = timeIdx * timeSlot;
+        const baseDate = periodType === 'Semana' ? new Date(col.data) : new Date(currentDate);
+        baseDate.setHours(START_HOUR, 0, 0, 0);
+        const targetTime = addMinutes(baseDate, minutesToAdd);
+        
+        setSelectionMenu({
+            x: e.clientX,
+            y: e.clientY,
+            time: targetTime,
+            professional: col.type === 'professional' ? col.data : resources[0]
+        });
+    };
+
     return (
         <div className="h-full bg-white relative flex-col font-sans text-left overflow-hidden flex">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -343,7 +355,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 </div>
             </header>
 
-            <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
+            <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar" onClick={() => setSelectionMenu(null)}>
                 <div className="min-w-fit">
                     <div className="grid sticky top-0 z-[50] border-b border-slate-200 bg-white shadow-sm" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center"><Maximize2 size={16} className="text-slate-300" /></div>
@@ -370,7 +382,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         </div>
                         {columns.map((col, idx) => (
                             <div key={col.id} className={`relative border-r border-slate-200 cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }}>
-                                {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
+                                {timeSlotsLabels.map((_, i) => (
+                                    <div 
+                                        key={i} 
+                                        onClick={(e) => handleGridClick(col, i, e)}
+                                        className="h-20 border-b border-slate-100/50 border-dashed hover:bg-orange-500/5 transition-colors"
+                                    ></div>
+                                ))}
                                 {filteredAppointments.filter(app => { 
                                     if (periodType === 'Semana') return isSameDay(app.start, col.data as Date); 
                                     return app.professional && String(app.professional?.id) === String(col.id); 
@@ -394,6 +412,32 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         <TimelineIndicator timeSlot={timeSlot} />
                     </div>
                 </div>
+
+                {/* MENU DE SELEÇÃO CONTEXTUAL (Aesthetics: BelaApp) */}
+                {selectionMenu && (
+                    <div 
+                        className="fixed z-[100] bg-white rounded-3xl shadow-2xl border border-slate-100 p-2 min-w-[200px] animate-in zoom-in-95 duration-200"
+                        style={{ top: selectionMenu.y, left: selectionMenu.x }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="px-4 py-2 border-b border-slate-50 mb-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Escolher Ação</p>
+                            <p className="text-xs font-bold text-slate-700">{format(selectionMenu.time, 'HH:mm')} • {selectionMenu.professional.name.split(' ')[0]}</p>
+                        </div>
+                        <button 
+                            onClick={() => { setModalState({ type: 'appointment', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 rounded-2xl transition-all"
+                        >
+                            <CalendarIcon size={18} /> Novo Agendamento
+                        </button>
+                        <button 
+                            onClick={() => { setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 rounded-2xl transition-all"
+                        >
+                            <Ban size={18} /> Bloquear Horário
+                        </button>
+                    </div>
+                )}
             </div>
 
             {activeAppointmentDetail && (

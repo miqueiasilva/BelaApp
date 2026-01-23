@@ -80,7 +80,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (!activeStudioId) return;
     setLoadingProfessionals(true);
     try {
-      // CORREÇÃO: Utilizando a tabela 'team_members' com a coluna 'id' (UUID)
       const { data, error: sbError } = await supabase
         .from('team_members')
         .select('id, name, photo_url, role, active, services_enabled')
@@ -112,11 +111,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     fetchProfessionals();
   }, [activeStudioId]);
 
-  // FILTRAGEM DE SERVIÇOS POR PROFISSIONAL
+  // OBJETIVO D: FILTRAGEM DE SERVIÇOS POR PROFISSIONAL
   const filteredServicesToSelect = useMemo(() => {
     if (!formData.professional) return [];
     
-    // Encontra o profissional completo na lista do DB para pegar os services_enabled atualizados
+    // Encontra o profissional na lista do DB para pegar os services_enabled atualizados
     const profInDb = dbProfessionals.find(p => String(p.id) === String(formData.professional?.id));
     const enabledIds = profInDb?.services_enabled || [];
 
@@ -271,7 +270,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handleSelectProfessional = (professional: LegacyProfessional) => {
-    // Ao trocar o profissional, invalidamos os serviços atuais se eles não forem compatíveis
+    // Se mudar o profissional, resetamos os serviços selecionados para garantir que sejam os DELE
     if (formData.professional?.id !== professional.id) {
         setSelectedServices([]);
         setManualPrice(0);
