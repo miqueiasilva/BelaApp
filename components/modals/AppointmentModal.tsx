@@ -77,13 +77,13 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   useEffect(() => { fetchData(); }, [activeStudioId]);
 
-  // Filtro Rígido de Serviços por Profissional (Garante que FK de especialidade não quebre na UI)
+  // Filtro Rígido de Serviços por Profissional (services_enabled do team_member)
   const filteredServicesToSelect = useMemo(() => {
     if (!formData.professional?.id) return [];
     const prof = dbProfessionals.find(p => String(p.id) === String(formData.professional?.id));
     const enabledIds = prof?.services_enabled || [];
     
-    // Se o profissional não tiver restrição de serviços, mostra todos do estúdio
+    // Regra: Se o profissional tiver serviços específicos, filtra. Senão, mostra todos (ou vazio conforme regra de negócio)
     if (enabledIds.length === 0) return dbServices; 
     
     return dbServices.filter(s => enabledIds.includes(s.id));
@@ -104,7 +104,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
     const prof = dbProfessionals.find(p => String(p.id) === String(formData.professional?.id));
     if (!prof?.resource_id) {
-        return setError('Este profissional não possui vínculo UUID configurado.');
+        return setError('Este profissional não possui vínculo técnico (resource_id).');
     }
 
     setIsSaving(true);
@@ -132,7 +132,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   const handleSelectProfessional = (prof: LegacyProfessional) => {
     setFormData(prev => ({ ...prev, professional: prof }));
-    setSelectedServices([]); // Reseta serviços ao trocar profissional para revalidar lista habilitada
+    setSelectedServices([]); // Reseta p/ re-selecionar serviços habilitados
     setSelectionModal(null);
   };
 
@@ -175,15 +175,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           </div>
 
           <div className="space-y-2">
-             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviços Habilitados</label>
+             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviços Disponíveis</label>
              {selectedServices.map((s, i) => (
                 <div key={i} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100"><span className="text-sm font-bold text-slate-700">{s.name}</span><button onClick={() => setSelectedServices(prev => prev.filter((_, idx) => idx !== i))} className="text-rose-500"><X size={16}/></button></div>
              ))}
-             <button disabled={!formData.professional?.id} onClick={() => setSelectionModal('service')} className="w-full p-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-orange-200 hover:text-orange-500 transition-all flex items-center justify-center gap-2">
+             <button disabled={!formData.professional?.id} onClick={() => setSelectionModal('service')} className="w-full p-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-orange-200 hover:text-orange-500 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
                 <PlusCircle size={20}/> {formData.professional?.id ? 'Adicionar Serviço' : 'Escolha o profissional primeiro'}
              </button>
              {formData.professional?.id && filteredServicesToSelect.length === 0 && !loadingServices && (
-                <p className="text-[10px] text-rose-500 font-bold uppercase text-center mt-2">Este membro não possui serviços habilitados.</p>
+                <p className="text-[10px] text-rose-500 font-bold uppercase text-center mt-2">Nenhum serviço habilitado para este membro.</p>
              )}
           </div>
         </main>

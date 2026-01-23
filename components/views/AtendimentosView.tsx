@@ -90,20 +90,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!isMounted.current || authLoading || !activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // America/Recife (UTC-3)
             const dayStart = new Date(currentDate);
             dayStart.setHours(0,0,0,0);
             const dayEnd = new Date(dayStart);
             dayEnd.setDate(dayEnd.getDate() + 1);
 
-            // Fetch Equipe (Fonte de Ordem e UUID)
-            const { data: teamData } = await supabase
+            // 1. Carregar Equipe (Fonte da Ordem e UUID de Profissional)
+            const { data: teamData, error: teamErr } = await supabase
                 .from('team_members')
                 .select('id, name, photo_url, order_index, show_in_calendar, services_enabled, resource_id')
                 .eq('studio_id', activeStudioId)
                 .eq('active', true)
                 .eq('show_in_calendar', true)
                 .order('order_index', { ascending: true });
+
+            if (teamErr) throw teamErr;
 
             const mappedProfs = (teamData || []).map(p => ({
                 id: p.id,
@@ -115,7 +116,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }));
             setResources(mappedProfs);
 
-            // Fetch Agendamentos com filtragem por start_at
+            // 2. Carregar Agendamentos (Usando filtragem UTC-3)
             const { data: apptData, error: apptErr } = await supabase
                 .from('appointments')
                 .select('*')
@@ -127,7 +128,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (apptErr) throw apptErr;
 
-            // Merge Front-end: appointments.professional_id (UUID) -> team_members.resource_id
+            // Merge Front: Cruzando resource_id do agendamento with id numérico do team_member p/ colunas
             const mergedApps = (apptData || []).map(app => {
                 const prof = mappedProfs.find(p => p.resource_id === app.professional_id);
                 const start = new Date(app.start_at || app.date);
@@ -137,12 +138,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     start,
                     end: app.end_at ? new Date(app.end_at) : new Date(start.getTime() + (app.duration || 30) * 60000),
                     professional: prof || { name: app.professional_name || 'Desconhecido', id: app.professional_id },
-                    service: { name: app.service_name, price: Number(app.value), duration: app.duration, color: app.service_color || '#3b82f6' },
+                    service: { id: app.service_id, name: app.service_name, price: Number(app.value), duration: app.duration, color: app.service_color || '#3b82f6' },
                     client: { nome: app.client_name, id: app.client_id }
                 };
             });
 
-            // Fetch Bloqueios
+            // 3. Carregar Bloqueios
             const { data: blockData } = await supabase
                 .from('schedule_blocks')
                 .select('*')
@@ -166,7 +167,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             setAppointments([...mergedApps, ...mergedBlocks]);
         } catch (e: any) {
             console.error("Radar Sync Error:", e.message);
-            setToast({ message: "Erro de sincronização.", type: 'error' });
+            setToast({ message: "Erro de sincronização da agenda.", type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -177,23 +178,25 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const handleSaveAppointment = async (app: LegacyAppointment) => {
         if (!activeStudioId) return;
         
+        // Mapeamento crucial: O agendamento precisa do UUID (resource_id) para a FK
         const teamMember = resources.find(r => r.id === app.professional.id);
         if (!teamMember?.resource_id) {
-            setToast({ message: "Profissional sem resource_id vinculado.", type: 'error' });
+            console.error("Radar Save Error: Profissional sem resource_id vinculado.", app.professional);
+            setToast({ message: "Este profissional não possui vínculo UUID. Verifique o cadastro da equipe.", type: 'error' });
             return;
         }
 
         setIsLoadingData(true);
         try {
-            // Limpeza de payload (Remover ID se for insert para evitar NULL violation)
-            const { id, ...payloadBase } = app as any;
-            const isUpdate = !!id && typeof id !== 'number';
+            // ✅ BLINDAGEM DO PAYLOAD: Nunca envia id null
+            const { id, ...restOfApp } = app as any;
+            const isUpdate = !!id && (typeof id === 'string' && id.includes('-')); // Assume UUID como update
 
             const payload = {
                 studio_id: activeStudioId,
                 client_id: app.client?.id || null,
                 client_name: app.client?.nome || 'Consumidor Final',
-                professional_id: teamMember.resource_id, // FK correta para professionals.id_uuid
+                professional_id: teamMember.resource_id, // FK professionals(id_uuid)
                 professional_name: teamMember.name,
                 service_id: app.service.id,
                 service_name: app.service.name,
@@ -207,22 +210,22 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 origem: 'Radar Interno'
             };
 
-            const { data, error } = isUpdate
+            console.log("Radar Save Payload:", payload);
+
+            const { data, error } = isUpdate 
                 ? await supabase.from('appointments').update(payload).eq('id', id).select()
                 : await supabase.from('appointments').insert([payload]).select();
 
             if (error) {
-                console.error("Supabase REST Error:", error);
+                console.error("Supabase REST Error Details:", error.details, error.hint, error.message);
                 throw error;
             }
 
-            if (data && data.length > 0) {
-                setToast({ message: "Agendamento gravado!", type: 'success' });
-                setModalState(null);
-                await fetchAppointments(); 
-            }
+            setToast({ message: "Agendamento gravado!", type: 'success' });
+            setModalState(null);
+            await fetchAppointments(); 
         } catch (e: any) {
-            setToast({ message: "Falha: " + (e.details || e.message), type: 'error' });
+            setToast({ message: "Falha ao gravar: " + e.message, type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -244,7 +247,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             setModalState(null);
             fetchAppointments();
         } catch (e: any) {
-            setToast({ message: e.message, type: 'error' });
+            setToast({ message: "Erro no bloqueio: " + e.message, type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -253,13 +256,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const moveProfessional = async (profId: string | number, direction: 'left' | 'right') => {
         const index = resources.findIndex(r => r.id === profId);
         if (index === -1) return;
+        
         const targetIndex = direction === 'left' ? index - 1 : index + 1;
         if (targetIndex < 0 || targetIndex >= resources.length) return;
 
         const profA = resources[index];
         const profB = resources[targetIndex];
 
-        // Swap Local
+        // Swap local para feedback imediato
         const newResources = [...resources];
         const oldIndex = profA.order_index;
         profA.order_index = profB.order_index;
@@ -269,12 +273,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setResources(newResources);
 
         try {
+            // Persistência persistente no banco
             await Promise.all([
                 supabase.from('team_members').update({ order_index: profA.order_index }).eq('id', profA.id),
                 supabase.from('team_members').update({ order_index: profB.order_index }).eq('id', profB.id)
             ]);
         } catch (e) {
-            fetchAppointments(); 
+            fetchAppointments(); // Reverte em caso de erro na rede
         }
     };
 
@@ -282,10 +287,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         e.stopPropagation();
         const minutesToAdd = timeIdx * timeSlot;
         const targetTime = addMinutes(startOfDay(currentDate), (START_HOUR * 60) + minutesToAdd);
-        setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetTime, professional: col.data });
+        
+        setSelectionMenu({
+            x: e.clientX,
+            y: e.clientY,
+            time: targetTime,
+            professional: col.data
+        });
     };
 
-    const columns = useMemo(() => resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p })), [resources]);
+    const columns = useMemo(() => {
+        return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
+    }, [resources]);
+
     const timeSlotsLabels = useMemo(() => {
         const labels = [];
         for (let i = 0; i < (END_HOUR - START_HOUR) * 60 / timeSlot; i++) {
@@ -303,7 +317,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Radar de Atendimento {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-orange-500" />}</h2>
                     <div className="flex items-center gap-2">
-                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-black py-2.5 px-6 rounded-xl shadow-lg transition-all active:scale-95">AGENDAR</button>
+                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-black py-2.5 px-6 rounded-xl shadow-lg transition-all active:scale-95">NOVO AGENDAMENTO</button>
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -370,13 +384,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 </div>
 
                 {selectionMenu && (
-                    <div className="fixed z-[200] bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 min-w-[200px] animate-in zoom-in-95 duration-200" style={{ top: selectionMenu.y, left: selectionMenu.x }} onClick={(e) => e.stopPropagation()}>
+                    <div className="fixed z-[200] bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 min-w-[220px] animate-in zoom-in-95 duration-200" style={{ top: selectionMenu.y, left: selectionMenu.x }} onClick={(e) => e.stopPropagation()}>
                         <div className="px-4 py-2 border-b border-slate-50 mb-1">
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Escolher Ação</p>
                             <p className="text-xs font-bold text-slate-700">{format(selectionMenu.time, 'HH:mm')} • {selectionMenu.professional.name}</p>
                         </div>
                         <button onClick={() => { setModalState({ type: 'appointment', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 rounded-xl transition-all"><CalendarIcon size={18} /> Novo Agendamento</button>
-                        <button onClick={() => { setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all"><ShoppingBag size={18} /> Nova Venda</button>
+                        <button onClick={() => { setSelectionMenu(null); alert('Ação vinculada ao PDV com horário: ' + selectionMenu.time); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-600 rounded-xl transition-all"><ShoppingBag size={18} /> Registrar Venda</button>
                         <button onClick={() => { setModalState({ type: 'block', data: { professional: selectionMenu.professional, startTime: selectionMenu.time } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"><Ban size={18} /> Bloquear Horário</button>
                     </div>
                 )}
