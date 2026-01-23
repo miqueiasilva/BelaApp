@@ -127,7 +127,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // CORREÇÃO 409: Join explícito pela constraint FK nominal
             const { data: apptRes, error: apptErr } = await supabase
                 .from('appointments')
                 .select(`
@@ -175,7 +174,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const fetchResources = async () => {
         if (authLoading || !user || !activeStudioId) return;
         try {
-            // CORREÇÃO 400: Alterado 'name' para 'nome' e tabela para 'professionals'
             const { data, error } = await supabase
                 .from('professionals')
                 .select('id_uuid, nome, photo_url, role, active, show_in_calendar, order_index, services_enabled')
@@ -271,10 +269,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null);
+            
+            // Garantir que a agenda recarregue após o POST
+            await fetchAppointments();
         } catch (e: any) { 
             setToast({ message: "Erro ao salvar agendamento.", type: 'error' });
         } finally { 
-            await fetchAppointments();
             setIsLoadingData(false); 
         }
     };
