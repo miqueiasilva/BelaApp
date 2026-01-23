@@ -11,7 +11,7 @@ import {
 import { 
     format, addDays, addWeeks, addMonths, eachDayOfInterval, 
     isSameDay, isWithinInterval, isSameMonth, addMinutes, 
-    endOfDay, endOfWeek, endOfMonth 
+    endOfDay, endOfWeek, endOfMonth, startOfDay
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
@@ -130,7 +130,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    // FIX: Added missing useState call and corrected type syntax to resolve arithmetic/symbol/type errors.
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
     const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
     const [viewMode, setViewMode] = useState<'profissional' | 'andamento' | 'pagamento'>('profissional');
@@ -159,26 +158,28 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         try {
             let rangeStart: Date, rangeEnd: Date;
             if (periodType === 'Semana') {
-                rangeStart = new Date(currentDate);
+                rangeStart = startOfDay(currentDate);
                 const day = rangeStart.getDay();
                 const diff = (day < 1 ? -6 : 1) - day;
                 rangeStart.setDate(rangeStart.getDate() + diff);
-                rangeStart.setHours(0, 0, 0, 0);
                 rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
             } else if (periodType === 'Mês') {
                 rangeStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0);
                 rangeEnd = endOfMonth(currentDate);
             } else {
-                rangeStart = new Date(currentDate);
-                rangeStart.setHours(0, 0, 0, 0);
+                rangeStart = startOfDay(currentDate);
                 rangeEnd = endOfDay(currentDate);
             }
+
+            // CORREÇÃO CRÍTICA: Busca usando 'start_at' para garantir integridade com o insert
             const [apptRes, blocksRes] = await Promise.all([
-                supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', rangeStart.toISOString()).lte('date', rangeEnd.toISOString()).neq('status', 'cancelado').abortSignal(abortControllerRef.current.signal),
+                supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('start_at', rangeStart.toISOString()).lte('start_at', rangeEnd.toISOString()).neq('status', 'cancelado').abortSignal(abortControllerRef.current.signal),
                 supabase.from('schedule_blocks').select('*').eq('studio_id', activeStudioId).gte('start_time', rangeStart.toISOString()).lte('start_time', rangeEnd.toISOString()).abortSignal(abortControllerRef.current.signal)
             ]);
+            
             if (apptRes.error) throw apptRes.error;
             if (blocksRes.error) throw blocksRes.error;
+
             if (isMounted.current && requestId === lastRequestId.current) {
                 const mappedAppts = (apptRes.data || []).map(row => ({ ...mapRowToAppointment(row, resources), type: 'appointment' }));
                 const mappedBlocks = (blocksRes.data || []).map(row => ({ id: row.id, start: new Date(row.start_time), end: new Date(row.end_time), professional: { id: row.professional_id }, service: { name: row.reason, color: '#fca5a5' }, status: 'bloqueado', type: 'block' }));
@@ -224,7 +225,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     }, [resources]);
 
     const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
-        const start = new Date(row.date);
+        const start = new Date(row.start_at || row.date);
         const dur = row.duration || 30;
         let prof = professionalsList.find(p => String(p.id) === String(row.professional_id));
         if (!prof && row.professional_name) { prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase()); }
@@ -238,16 +239,29 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (!force) {
                 const startDay = new Date(app.start); startDay.setHours(0, 0, 0, 0);
                 const endDay = new Date(app.start); endDay.setHours(23, 59, 59, 999);
-                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('studio_id', activeStudioId).eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startDay.toISOString()).lte('date', endDay.toISOString());
-                const conflict = existingOnDay?.find(row => { if (app.id && row.id === app.id) return false; return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date)); });
+                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('studio_id', activeStudioId).eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('start_at', startDay.toISOString()).lte('start_at', endDay.toISOString());
+                const conflict = existingOnDay?.find(row => { if (app.id && row.id === app.id) return false; return (app.start < addMinutes(new Date(row.start_at || row.date), row.duration || 30)) && (app.end > new Date(row.start_at || row.date)); });
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
-            const payload = { studio_id: activeStudioId, client_id: app.client?.id, client_name: app.client?.nome, professional_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), status: app.status, notes: app.notas, origem: app.origem || 'interno' };
-            if (app.id && appointments.some(a => a.id === app.id)) { await supabase.from('appointments').update(payload).eq('id', app.id); } else { await supabase.from('appointments').insert([payload]); }
+            const payload = { studio_id: activeStudioId, client_id: app.client?.id, client_name: app.client?.nome, professional_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), start_at: app.start.toISOString(), end_at: app.end.toISOString(), status: app.status, notes: app.notas, origem: app.origem || 'interno' };
+            
+            if (app.id && appointments.some(a => a.id === app.id)) { 
+                await supabase.from('appointments').update(payload).eq('id', app.id); 
+            } else { 
+                await supabase.from('appointments').insert([payload]); 
+            }
+
+            // CORREÇÃO CRÍTICA: Aguardar o fetch antes de fechar o modal
+            await fetchAppointments();
+            
             setToast({ message: 'Agendamento salvo!', type: 'success' });
-            setModalState(null); setPendingConflict(null);
-            fetchAppointments();
-        } catch (e) { fetchAppointments(); } finally { setIsLoadingData(false); }
+            setModalState(null); 
+            setPendingConflict(null);
+        } catch (e) { 
+            console.error("Save Error:", e);
+        } finally { 
+            setIsLoadingData(false); 
+        }
     };
 
     const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
@@ -274,8 +288,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
         if (!activeStudioId || !appointment?.id) return;
-
-        // Higienização de identificadores
         const studioUuid = getValidUUID(activeStudioId);
         const client_id_raw = appointment.client?.id;
         const professionalUuid = getValidUUID(appointment.professional?.id);
@@ -316,6 +328,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (itemError) throw itemError;
 
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
+            await fetchAppointments();
             
             setToast({ message: `Comanda gerada para ${appointment.client?.nome || 'Cliente'}! 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
