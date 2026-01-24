@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -334,25 +333,27 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('studio_id', activeStudioId).eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startDay.toISOString()).lte('date', endDay.toISOString());
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
-                    return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
+                    return (app.start < addMinutes(new Date(row.date), Number(row.duration) || 30)) && (app.end > new Date(row.date));
                 });
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
             
+            // PAYLOAD REFINADO COM CASTING DE TIPOS E CAMPOS EXTRAS
             const payload = { 
                 studio_id: activeStudioId,
-                client_id: app.client?.id,
-                client_name: app.client?.nome, 
-                professional_id: app.professional.id, 
+                client_id: app.client?.id ? Number(app.client.id) : null,
+                client_name: app.client?.nome || null, 
+                professional_id: String(app.professional.id), 
                 professional_name: app.professional.name, 
                 service_name: app.service.name, 
-                value: app.service.price, 
+                value: Number(app.service.price), 
                 duration: String(app.service.duration), 
                 date: app.start.toISOString(), 
                 status: app.status, 
-                notes: app.notas, 
+                notes: app.notas || null, 
                 origem: app.origem || 'interno',
-                service_color: app.service.color || '#3b82f6'
+                service_color: app.service.color || '#3b82f6',
+                origin: app.origem || 'manual'
             };
             
             if (app.id && appointments.some(a => a.id === app.id)) {
@@ -364,8 +365,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null); setPendingConflict(null);
             await fetchAppointments();
-        } catch (e) { 
-            setToast({ message: 'Erro ao salvar.', type: 'error' }); 
+        } catch (e: any) { 
+            console.error('Erro detalhado no salvamento:', e);
+            setToast({ message: `Erro: ${e.message || 'Falha ao salvar'}`, type: 'error' }); 
             await fetchAppointments(); 
         } finally { setIsLoadingData(false); }
     };
