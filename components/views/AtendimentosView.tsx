@@ -185,7 +185,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfMonth(currentDate);
             }
 
-            // FIX: Usar comparação de string de data com offset (ISO formatada) para coincidir com o payload salvo
+            // SOLUÇÃO TIMEZONE: Usar comparação de string de data com offset (ISO formatada localmente)
             const startStr = format(rangeStart, "yyyy-MM-dd'T'HH:mm:ssXXX");
             const endStr = format(rangeEnd, "yyyy-MM-dd'T'HH:mm:ssXXX");
 
@@ -348,7 +348,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setIsLoadingData(true);
         
         try {
-            // Payload super simplificado - APENAS campos essenciais para evitar falhas de FK ou tipos
+            // SOLUÇÃO TIMEZONE: Salvar com offset local correto usando date-fns format
             const payload = { 
                 studio_id: activeStudioId,
                 professional_id: String(app.professional.id), 
@@ -357,7 +357,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 service_name: app.service.name, 
                 value: Number(app.service.price) || 0, 
                 duration: Number(app.service.duration) || 30, 
-                // FIX: Salvar com offset de timezone correto para garantir que apareça na grade local
                 date: format(app.start, "yyyy-MM-dd'T'HH:mm:ssXXX"), 
                 status: app.status || 'agendado', 
                 notes: app.notas || '', 
@@ -370,7 +369,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
                 if (error) throw error;
             } else {
-                const { data, error } = await supabase.from('appointments').insert([payload]).select();
+                const { data, error } = await supabase.from('appointments').insert([payload]).select('*').single();
                 if (error) throw error;
                 console.log('Agendamento inserido com sucesso:', data);
             }
