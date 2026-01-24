@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -335,7 +334,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 service_name: app.service.name, 
                 value: Number(app.service.price) || 0, 
                 duration: Number(app.service.duration) || 30, 
-                date: app.start.toISOString(), 
+                // FIX: Salvar com offset de timezone correto para garantir que apareça na grade local
+                date: format(app.start, "yyyy-MM-dd'T'HH:mm:ssXXX"), 
                 status: app.status || 'agendado', 
                 notes: app.notas || '', 
                 service_color: app.service.color || '#3b82f6'
