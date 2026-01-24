@@ -347,7 +347,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 professional_name: app.professional.name, 
                 service_name: app.service.name, 
                 value: app.service.price, 
-                duration: app.service.duration, 
+                duration: String(app.service.duration), 
                 date: app.start.toISOString(), 
                 status: app.status, 
                 notes: app.notas, 
@@ -363,10 +363,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null); setPendingConflict(null);
-            fetchAppointments();
+            await fetchAppointments();
         } catch (e) { 
             setToast({ message: 'Erro ao salvar.', type: 'error' }); 
-            fetchAppointments(); 
+            await fetchAppointments(); 
         } finally { setIsLoadingData(false); }
     };
 
