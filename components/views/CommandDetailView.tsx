@@ -5,7 +5,7 @@ import {
     Phone, Scissors, ShoppingBag, Receipt,
     Percent, Calendar, ShoppingCart, X, Coins,
     ArrowRight, ShieldCheck, Tag, CreditCard as CardIcon,
-    User, UserCheck, Trash2
+    User, UserCheck, Trash2, Lock
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -38,6 +38,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [command, setCommand] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isFinishing, setIsFinishing] = useState(false);
+    const [isLocked, setIsLocked] = useState(false);
     
     const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
     const [activeMethod, setActiveMethod] = useState<PaymentMethod | null>(null);
@@ -54,7 +55,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // A) Busca Contexto Unificado via View (Fonte de Verdade Otimizada)
+            // A) Busca Contexto via View (Fonte de Verdade)
             const { data: viewData, error: viewError } = await supabase
                 .from('v_checkout_context')
                 .select('*')
@@ -63,7 +64,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (viewError) throw viewError;
 
-            // B) Busca Itens da Comanda (View costuma achatar dados, itens vêm de query dedicada)
+            // B) Itens da Comanda
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select(`
@@ -78,7 +79,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
-            // Busca configurações gerais de taxas para novos pagamentos
+            // Busca configurações gerais para novos pagamentos (se não estiver bloqueado)
             const { data: configs } = await supabase
                 .from('payment_methods_config')
                 .select('*')
@@ -88,10 +89,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setAvailableConfigs(configs || []);
 
             if (viewData && viewData.length > 0) {
-                const ctx = viewData[0]; // Pagamento mais recente + dados cadastrais
+                const ctx = viewData[0]; 
                 
+                // Blindagem: Se o status for 'paid', travamos a UI
+                const alreadyPaid = ctx.command_status === 'paid';
+                setIsLocked(alreadyPaid);
+
                 setCommand({
                     ...cmdData,
+                    status: ctx.command_status,
                     client: { 
                         nome: ctx.client_name, 
                         whatsapp: ctx.client_phone || ctx.client_whatsapp 
@@ -101,7 +107,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     }
                 });
 
-                // Mapeia apenas pagamentos existentes da view (deduplicados)
+                // Mapeia pagamentos da view
                 const validPayments = viewData
                     .filter(p => p.payment_id)
                     .map(p => ({
@@ -118,7 +124,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 
                 setAddedPayments(validPayments);
             } else {
-                // Fallback caso a view não retorne nada (comanda sem nenhum vínculo ou erro de join)
                 setCommand(cmdData);
             }
         } catch (e: any) {
@@ -144,6 +149,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     }, [command, discount, addedPayments]);
 
     const handleInitPayment = (method: PaymentMethod) => {
+        if (isLocked) return;
         setActiveMethod(method);
         setAmountToPay(totals.remaining.toFixed(2));
         setSelectedBrand('Visa');
@@ -151,7 +157,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     const handleConfirmPartialPayment = () => {
-        if (!activeMethod || !activeStudioId) return;
+        if (!activeMethod || !activeStudioId || isLocked) return;
         const amount = parseFloat(amountToPay);
         if (amount <= 0) return;
 
@@ -197,7 +203,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     const handleFinishCheckout = async () => {
-        if (!command || isFinishing || addedPayments.length === 0) return;
+        if (!command || isFinishing || addedPayments.length === 0 || isLocked) return;
         
         setIsFinishing(true);
 
@@ -375,9 +381,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             </div>
                                             <div className="flex items-center gap-6">
                                                 <span className="font-black text-slate-800 text-lg">R$ {p.amount.toFixed(2)}</span>
-                                                <button onClick={() => setAddedPayments(prev => prev.filter(item => item.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors">
-                                                    <X size={20} strokeWidth={3} />
-                                                </button>
+                                                {!isLocked && (
+                                                    <button onClick={() => setAddedPayments(prev => prev.filter(item => item.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors">
+                                                        <X size={20} strokeWidth={3} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -405,8 +413,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                         <input 
                                             type="number" 
                                             value={discount}
+                                            disabled={isLocked}
                                             onChange={e => setDiscount(e.target.value)}
-                                            className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all"
+                                            className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all disabled:opacity-50"
                                         />
                                     </div>
                                 </div>
@@ -424,83 +433,100 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* SELETOR DE MÉTODOS */}
+                        {/* SELETOR DE MÉTODOS - Bloqueado se já pago */}
                         <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Selecionar Pagamento</h4>
+                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2">
+                                {isLocked ? <Lock size={14} className="text-emerald-500" /> : <Tag size={14} className="text-orange-500" />} 
+                                {isLocked ? 'Pagamento Confirmado' : 'Selecionar Pagamento'}
+                            </h4>
                             
-                            {activeMethod ? (
-                                <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">
-                                            {activeMethod.replace('_', ' ')}
-                                        </span>
-                                        <button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-500"><X size={20}/></button>
-                                    </div>
-                                    
-                                    <div className="space-y-4">
-                                        {(activeMethod === 'cartao_credito' || activeMethod === 'cartao_debito') && (
-                                            <div className="space-y-1.5">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Bandeira</label>
-                                                <div className="grid grid-cols-3 gap-2">
-                                                    {BRANDS.map(b => (
-                                                        <button 
-                                                            key={b} 
-                                                            onClick={() => setSelectedBrand(b)}
-                                                            className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-tighter border-2 transition-all ${selectedBrand === b ? 'bg-orange-500 border-orange-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:border-orange-200'}`}
-                                                        >
-                                                            {b}
-                                                        </button>
-                                                    ))}
-                                                </div>
+                            {!isLocked ? (
+                                <>
+                                    {activeMethod ? (
+                                        <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">
+                                                    {activeMethod.replace('_', ' ')}
+                                                </span>
+                                                <button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-500"><X size={20}/></button>
                                             </div>
-                                        )}
+                                            
+                                            <div className="space-y-4">
+                                                {(activeMethod === 'cartao_credito' || activeMethod === 'cartao_debito') && (
+                                                    <div className="space-y-1.5">
+                                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Bandeira</label>
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            {BRANDS.map(b => (
+                                                                <button 
+                                                                    key={b} 
+                                                                    onClick={() => setSelectedBrand(b)}
+                                                                    className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-tighter border-2 transition-all ${selectedBrand === b ? 'bg-orange-500 border-orange-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:border-orange-200'}`}
+                                                                >
+                                                                    {b}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
 
-                                        {activeMethod === 'cartao_credito' && (
-                                            <div className="space-y-1.5">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Parcelas</label>
-                                                <div className="flex items-center gap-4 bg-white border border-slate-200 rounded-2xl px-4 py-3">
+                                                {activeMethod === 'cartao_credito' && (
+                                                    <div className="space-y-1.5">
+                                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Parcelas</label>
+                                                        <div className="flex items-center gap-4 bg-white border border-slate-200 rounded-2xl px-4 py-3">
+                                                            <input 
+                                                                type="range" min="1" max="12" 
+                                                                value={selectedInstallments}
+                                                                onChange={e => setSelectedInstallments(parseInt(e.target.value))}
+                                                                className="flex-1 accent-orange-500" 
+                                                            />
+                                                            <span className="font-black text-orange-600 text-lg w-10 text-right">{selectedInstallments}x</span>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="relative">
+                                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span>
                                                     <input 
-                                                        type="range" min="1" max="12" 
-                                                        value={selectedInstallments}
-                                                        onChange={e => setSelectedInstallments(parseInt(e.target.value))}
-                                                        className="flex-1 accent-orange-500" 
+                                                        autoFocus
+                                                        type="number" 
+                                                        value={amountToPay} 
+                                                        onChange={e => setAmountToPay(e.target.value)} 
+                                                        className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-orange-100"
                                                     />
-                                                    <span className="font-black text-orange-600 text-lg w-10 text-right">{selectedInstallments}x</span>
                                                 </div>
                                             </div>
-                                        )}
-
-                                        <div className="relative">
-                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span>
-                                            <input 
-                                                autoFocus
-                                                type="number" 
-                                                value={amountToPay} 
-                                                onChange={e => setAmountToPay(e.target.value)} 
-                                                className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-orange-100"
-                                            />
+                                            
+                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg">Confirmar Valor</button>
                                         </div>
-                                    </div>
-                                    
-                                    <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg">Confirmar Valor</button>
-                                </div>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {paymentMethods.map(pm => (
+                                                <button key={pm.id} onClick={() => handleInitPayment(pm.id as PaymentMethod)} className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-transparent bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-white transition-all active:scale-95 group">
+                                                    <pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500 transition-colors" />
+                                                    <span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
                             ) : (
-                                <div className="grid grid-cols-2 gap-3">
-                                    {paymentMethods.map(pm => (
-                                        <button key={pm.id} onClick={() => handleInitPayment(pm.id as PaymentMethod)} className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-transparent bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-white transition-all active:scale-95 group">
-                                            <pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500 transition-colors" />
-                                            <span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span>
-                                        </button>
-                                    ))}
+                                <div className="bg-emerald-50 p-8 rounded-[32px] border-2 border-emerald-100 text-center space-y-4">
+                                    <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-100">
+                                        <CheckCircle size={32} />
+                                    </div>
+                                    <div>
+                                        <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Checkout Concluído</p>
+                                        <p className="text-emerald-600 text-[10px] font-bold uppercase tracking-widest">Os valores já foram processados no caixa.</p>
+                                    </div>
                                 </div>
                             )}
                             
                             <button 
                                 onClick={handleFinishCheckout} 
-                                disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
-                                className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
+                                disabled={isLocked || isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
+                                className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${!isLocked && totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
                             >
-                                {isFinishing ? (<Loader2 size={24} className="animate-spin" />) : (<><CheckCircle size={24} /> {totals.remaining > 0 ? `Restam R$ ${totals.remaining.toFixed(2)}` : 'Fechar Checkout'}</>)}
+                                {isFinishing ? (<Loader2 size={24} className="animate-spin" />) : isLocked ? (<><CheckCircle size={24} /> Checkout Finalizado</>) : (<><CheckCircle size={24} /> {totals.remaining > 0 ? `Restam R$ ${totals.remaining.toFixed(2)}` : 'Fechar Checkout'}</>)}
                             </button>
                         </div>
                     </div>
