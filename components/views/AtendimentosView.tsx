@@ -7,11 +7,10 @@ import {
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
     CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle
 } from 'lucide-react';
-// FIX: Grouping date-fns imports and removing problematic members startOfDay, startOfWeek, startOfMonth.
 import { 
     format, addDays, addWeeks, addMonths, eachDayOfInterval, 
     isSameDay, isWithinInterval, isSameMonth, addMinutes, 
-    endOfDay, endOfWeek, endOfMonth 
+    endOfDay, endOfWeek, endOfMonth, startOfDay
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
@@ -156,7 +155,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const fetchAppointments = async () => {
         if (!isMounted.current || authLoading || !user || !activeStudioId) {
-            console.log('❌ fetchAppointments abortado:', { isMounted: isMounted.current, authLoading, user: !!user, activeStudioId });
             return;
         }
         
@@ -169,32 +167,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             let rangeStart: Date, rangeEnd: Date;
             
             if (periodType === 'Dia') {
-                rangeStart = new Date(currentDate);
-                rangeStart.setHours(0, 0, 0, 0);
-                rangeEnd = new Date(currentDate);
-                rangeEnd.setHours(23, 59, 59, 999);
+                rangeStart = startOfDay(currentDate);
+                rangeEnd = endOfDay(currentDate);
             } else if (periodType === 'Semana') {
-                rangeStart = new Date(currentDate);
-                const day = rangeStart.getDay();
+                const day = currentDate.getDay();
                 const diff = (day < 1 ? -6 : 1) - day;
-                rangeStart.setDate(rangeStart.getDate() + diff);
-                rangeStart.setHours(0, 0, 0, 0);
+                rangeStart = startOfDay(addDays(currentDate, diff));
                 rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
             } else {
                 rangeStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0);
                 rangeEnd = endOfMonth(currentDate);
             }
 
-            // SOLUÇÃO TIMEZONE: Usar comparação de string de data com offset (ISO formatada localmente)
+            // Usar comparação de string de data com offset (ISO formatada localmente)
             const startStr = format(rangeStart, "yyyy-MM-dd'T'HH:mm:ssXXX");
             const endStr = format(rangeEnd, "yyyy-MM-dd'T'HH:mm:ssXXX");
-
-            console.log('📅 Buscando agendamentos:', {
-                periodType,
-                rangeStart: startStr,
-                rangeEnd: endStr,
-                currentDate: currentDate.toISOString()
-            });
 
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
@@ -213,13 +200,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     .lte('start_time', endStr)
                     .abortSignal(abortControllerRef.current.signal)
             ]);
-
-            console.log('📦 Resultados:', {
-                appointments: apptRes.data?.length || 0,
-                blocks: blocksRes.data?.length || 0,
-                apptError: apptRes.error,
-                apptData: apptRes.data
-            });
 
             if (apptRes.error) throw apptRes.error;
             if (blocksRes.error) throw blocksRes.error;
@@ -240,7 +220,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     type: 'block'
                 }));
 
-                console.log('✅ Setando appointments:', mappedAppts.length + mappedBlocks.length);
                 setAppointments([...mappedAppts, ...mappedBlocks]);
             }
         } catch (e: any) {
@@ -348,37 +327,42 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setIsLoadingData(true);
         
         try {
-            // SOLUÇÃO TIMEZONE: Salvar com offset local correto usando date-fns format
+            const duration = Number(app.service.duration) || 30;
+            const startStr = format(app.start, "yyyy-MM-dd'T'HH:mm:ssXXX");
+            const endStr = format(addMinutes(app.start, duration), "yyyy-MM-dd'T'HH:mm:ssXXX");
+
             const payload = { 
                 studio_id: activeStudioId,
                 professional_id: String(app.professional.id), 
+                client_id: app.client?.id || null,
                 client_name: app.client?.nome || 'Cliente', 
                 professional_name: app.professional.name, 
                 service_name: app.service.name, 
                 value: Number(app.service.price) || 0, 
-                duration: Number(app.service.duration) || 30, 
-                date: format(app.start, "yyyy-MM-dd'T'HH:mm:ssXXX"), 
+                duration: duration, 
+                date: startStr, 
+                start_at: startStr,
+                end_at: endStr,
                 status: app.status || 'agendado', 
                 notes: app.notas || '', 
                 service_color: app.service.color || '#3b82f6'
             };
             
-            console.log('Tentando salvar agendamento:', payload);
-            
-            if (app.id && appointments.some(a => a.id === app.id)) {
+            if (app.id && typeof app.id === 'number' && app.id > 1000000000) { // New ID logic check
+                const { data, error } = await supabase.from('appointments').insert([payload]).select('*').single();
+                if (error) throw error;
+            } else if (app.id) {
                 const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
                 if (error) throw error;
             } else {
                 const { data, error } = await supabase.from('appointments').insert([payload]).select('*').single();
                 if (error) throw error;
-                console.log('Agendamento inserido com sucesso:', data);
             }
 
             setToast({ message: '✅ Agendamento salvo com sucesso!', type: 'success' });
             setModalState(null); 
             setPendingConflict(null);
             
-            // CRÍTICO: Aguarda a atualização da agenda para garantir sincronia visual
             await fetchAppointments();
             
         } catch (e: any) { 
@@ -387,7 +371,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 message: `❌ Erro: ${e.message || e.hint || 'Falha na comunicação com o banco'}`, 
                 type: 'error' 
             }); 
-            // Tenta atualizar mesmo com erro para recuperar o estado consistente
             await fetchAppointments();
         } finally { 
             setIsLoadingData(false); 
@@ -436,7 +419,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // CRIAR COMANDA
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
@@ -448,15 +430,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 .select()
                 .single();
 
-            if (cmdError) {
-                console.error("Erro ao criar comanda:", cmdError.message, cmdError.details);
-                throw cmdError;
-            }
+            if (cmdError) throw cmdError;
 
-            // Validação simples de UUID para service_id para evitar erro de restrição se vier de mock numérico
             const isUUID = (val: any) => typeof val === 'string' && val.length > 20;
 
-            // CRIAR ITEM DA COMANDA: price e quantity (SCHEMA REAL FIX)
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
@@ -470,10 +447,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     professional_id: appointment.professional.id
                 }]);
 
-            if (itemError) {
-                console.error("Erro ao criar item da comanda:", itemError.message, itemError.details);
-                throw itemError;
-            }
+            if (itemError) throw itemError;
 
             const { error: apptUpdateError } = await supabase
                 .from('appointments')
@@ -489,7 +463,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 onNavigateToCommand(command.id);
             }
         } catch (e: any) {
-            console.error("Falha ao gerar comanda (detalhes):", e);
+            console.error("Falha ao gerar comanda:", e);
             setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
         } finally {
             setIsLoadingData(false);
@@ -560,13 +534,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const columns = useMemo(() => {
         if (periodType === 'Semana') {
-            const start = new Date(currentDate);
+            const start = currentDate;
             const day = start.getDay();
             const diff = (day < 1 ? -6 : 1) - day;
-            start.setDate(start.getDate() + diff);
-            start.setHours(0, 0, 0, 0);
+            const weekStart = startOfDay(addDays(start, diff));
 
-            return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
+            return eachDayOfInterval({ start: weekStart, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
         }
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
     }, [periodType, currentDate, resources]);
@@ -575,13 +548,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         let baseList = appointments.filter(a => {
             if (periodType === 'Dia' || periodType === 'Lista') return isSameDay(a.start, currentDate);
             if (periodType === 'Semana') {
-                const start = new Date(currentDate);
-                const day = start.getDay();
+                const day = currentDate.getDay();
                 const diff = (day < 1 ? -6 : 1) - day;
-                start.setDate(start.getDate() + diff);
-                start.setHours(0, 0, 0, 0);
+                const weekStart = startOfDay(addDays(currentDate, diff));
+                const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
 
-                return isWithinInterval(a.start, { start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) });
+                return isWithinInterval(a.start, { start: weekStart, end: weekEnd });
             }
             return isSameMonth(a.start, currentDate);
         });
