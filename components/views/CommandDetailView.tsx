@@ -54,13 +54,20 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // A) Query Comanda: Join em professionals (via id_uuid) e clients
+            // A) Busca Contexto Unificado via View (Fonte de Verdade Otimizada)
+            const { data: viewData, error: viewError } = await supabase
+                .from('v_checkout_context')
+                .select('*')
+                .eq('command_id', commandId)
+                .order('payment_created_at', { ascending: false });
+
+            if (viewError) throw viewError;
+
+            // B) Busca Itens da Comanda (View costuma achatar dados, itens vêm de query dedicada)
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select(`
                     *,
-                    client:clients!client_id(id, nome, whatsapp),
-                    professional:professionals!professional_id(name),
                     command_items (
                         *,
                         professional:team_members(id, name)
@@ -71,40 +78,48 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
-            // B) Query Pagamentos: Busca o mais recente para carregar taxas reais do DB
-            const { data: paymentsData } = await supabase
-                .from('command_payments')
-                .select(`
-                    *,
-                    config:payment_methods_config(name, brand)
-                `)
-                .eq('command_id', commandId)
-                .order('created_at', { ascending: false });
-
-            // Busca configurações gerais de taxas do studio para novos pagamentos
+            // Busca configurações gerais de taxas para novos pagamentos
             const { data: configs } = await supabase
                 .from('payment_methods_config')
                 .select('*')
                 .eq('studio_id', activeStudioId)
                 .eq('is_active', true);
 
-            setCommand(cmdData);
             setAvailableConfigs(configs || []);
 
-            // Mapeia pagamentos existentes para exibição com taxas
-            if (paymentsData && paymentsData.length > 0) {
-                const mapped = paymentsData.map(p => ({
-                    id: p.id,
-                    method: p.method,
-                    amount: p.amount,
-                    installments: p.installments,
-                    method_id: p.method_id,
-                    fee_rate: p.fee_rate || 0,
-                    fee_value: p.fee_amount || 0,
-                    net_amount: p.net_amount || p.amount,
-                    brand: p.config?.brand
-                }));
-                setAddedPayments(mapped);
+            if (viewData && viewData.length > 0) {
+                const ctx = viewData[0]; // Pagamento mais recente + dados cadastrais
+                
+                setCommand({
+                    ...cmdData,
+                    client: { 
+                        nome: ctx.client_name, 
+                        whatsapp: ctx.client_phone || ctx.client_whatsapp 
+                    },
+                    professional: { 
+                        name: ctx.professional_name 
+                    }
+                });
+
+                // Mapeia apenas pagamentos existentes da view (deduplicados)
+                const validPayments = viewData
+                    .filter(p => p.payment_id)
+                    .map(p => ({
+                        id: p.payment_id,
+                        method: p.method_type as PaymentMethod,
+                        amount: p.payment_amount,
+                        installments: p.installments || 1,
+                        method_id: p.method_id,
+                        fee_rate: p.fee_rate || 0,
+                        fee_value: p.fee_value || 0,
+                        net_amount: p.net_amount || p.payment_amount,
+                        brand: p.method_brand || p.brand
+                    }));
+                
+                setAddedPayments(validPayments);
+            } else {
+                // Fallback caso a view não retorne nada (comanda sem nenhum vínculo ou erro de join)
+                setCommand(cmdData);
             }
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
@@ -294,6 +309,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
                                         <Phone size={14} className="text-orange-500" /> {command.client?.whatsapp || 'Sem contato'}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
+                                        <User size={14} className="text-orange-500" /> Profissional: {command.professional?.name || '---'}
                                     </div>
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
                                         <Calendar size={14} className="text-orange-500" /> {format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt })}
