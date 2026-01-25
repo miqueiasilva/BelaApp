@@ -55,13 +55,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca Contexto via RPC v2 conforme especificação técnica
+            // 1. Busca Contexto via RPC v2 (Mapeamento Cirúrgico)
             const { data: rpcData, error: rpcError } = await supabase
                 .rpc('get_checkout_context_v2', { p_command_id: commandId });
 
             if (rpcError) throw rpcError;
 
-            // 2. Busca Itens da Comanda para o resumo lateral
+            // 2. Busca Itens da Comanda
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select(`
@@ -76,7 +76,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
-            // Busca configurações de taxas PDV para cálculos em tempo real
+            // Busca configurações de taxas PDV
             const { data: configs } = await supabase
                 .from('payment_methods_config')
                 .select('*')
@@ -86,24 +86,24 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setAvailableConfigs(configs || []);
 
             if (rpcData && rpcData.length > 0) {
-                // A RPC retorna um array, pegamos a primeira linha (Contexto Principal)
-                const row = rpcData[0];
+                // A RPC retorna um array, extraímos o primeiro item
+                const context = Array.isArray(rpcData) ? rpcData[0] : rpcData;
                 
-                // Mapeamento Cirúrgico: Prioridade para display_name conforme instrução
-                const clientName = row.client_display_name ?? row.client_name ?? "Cliente sem cadastro";
-                const professionalName = row.professional_display_name ?? row.professional_name ?? "Profissional não atribuído";
-                const professionalPhoto = row.professional_photo_url ?? null;
+                // Mapeamento de nomes conforme regras do prompt
+                const clientName = context?.client_display_name ?? context?.client_name ?? "Cliente sem cadastro";
+                const professionalName = context?.professional_display_name ?? context?.professional_name ?? "Profissional não atribuído";
+                const professionalPhoto = context?.professional_photo_url ?? null;
 
-                const alreadyPaid = row.command_status === 'paid';
+                const alreadyPaid = context.command_status === 'paid';
                 setIsLocked(alreadyPaid);
 
                 setCommand({
                     ...cmdData,
-                    status: row.command_status,
-                    professional_id: row.professional_id || cmdData.professional_id,
+                    status: context.command_status,
+                    professional_id: context.professional_id || cmdData.professional_id,
                     client: { 
                         nome: clientName, 
-                        whatsapp: row.client_phone ?? null 
+                        whatsapp: context.client_phone ?? context.client_whatsapp ?? null 
                     },
                     professional: { 
                         name: professionalName,
@@ -111,7 +111,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     }
                 });
 
-                // Mapeia pagamentos existentes (caso a comanda já tenha histórico ou esteja paga)
+                // Mapeia pagamentos realizados
                 const validPayments = rpcData
                     .filter((p: any) => p.payment_id)
                     .map((p: any) => ({
@@ -132,7 +132,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             }
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
-            setToast({ message: "Falha ao carregar dados do checkout.", type: 'error' });
+            setToast({ message: "Erro ao carregar dados do checkout.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -177,7 +177,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             (c.type === 'pix' || c.type === 'money' || c.brand?.toLowerCase() === selectedBrand.toLowerCase())
         );
 
-        // Cálculo de Taxas com Fallback de segurança 0%
         let feeRate = 0;
         if (config) {
             feeRate = Number(config.rate_cash || 0);
@@ -212,17 +211,18 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         try {
             for (const payment of addedPayments) {
+                // FIX: Garantir que nenhum parâmetro seja undefined para evitar erro de assinatura SQL
                 const { data: transactionId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                    p_amount: payment.amount,
-                    p_net_value: payment.net_amount,
-                    p_tax_rate: payment.fee_rate,
-                    p_description: `Recebimento Comanda #${command.id.split('-')[0].toUpperCase()}`,
-                    p_type: 'income',
+                    p_amount: Number(payment.amount),
                     p_category: 'servico',
+                    p_client_id: command.client_id || null,
+                    p_description: `Recebimento Comanda #${command.id.split('-')[0].toUpperCase()}`,
+                    p_net_value: Number(payment.net_amount),
+                    p_payment_method_id: payment.method_id === 'manual' ? null : payment.method_id,
+                    p_professional_id: command.professional_id || null,
                     p_studio_id: activeStudioId,
-                    p_professional_id: command.professional_id,
-                    p_client_id: command.client_id,
-                    p_payment_method_id: payment.method_id === 'manual' ? null : payment.method_id
+                    p_tax_rate: Number(payment.fee_rate),
+                    p_type: 'income'
                 });
 
                 if (rpcError || !transactionId) throw new Error(rpcError?.message || "Erro ao gerar transação.");
@@ -423,7 +423,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             value={discount}
                                             disabled={isLocked}
                                             onChange={e => setDiscount(e.target.value)}
-                                            className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all disabled:opacity-50"
+                                            className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50 transition-all disabled:opacity-50"
                                         />
                                     </div>
                                 </div>
