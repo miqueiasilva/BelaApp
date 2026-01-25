@@ -55,13 +55,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // A) Busca Contexto via RPC (V3) - Fonte de Verdade para o PDV
+            // 1. Busca Contexto via RPC v2 conforme especificação técnica
             const { data: rpcData, error: rpcError } = await supabase
-                .rpc('get_checkout_context_v3', { p_command_id: commandId });
+                .rpc('get_checkout_context_v2', { p_command_id: commandId });
 
             if (rpcError) throw rpcError;
 
-            // B) Busca Itens da Comanda
+            // 2. Busca Itens da Comanda para o resumo lateral
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select(`
@@ -76,7 +76,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
-            // Busca configurações de taxas PDV
+            // Busca configurações de taxas PDV para cálculos em tempo real
             const { data: configs } = await supabase
                 .from('payment_methods_config')
                 .select('*')
@@ -86,12 +86,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setAvailableConfigs(configs || []);
 
             if (rpcData && rpcData.length > 0) {
-                // A RPC retorna um array, pegamos a primeira linha para o contexto geral
+                // A RPC retorna um array, pegamos a primeira linha (Contexto Principal)
                 const row = rpcData[0];
                 
-                // Mapeamento Cirúrgico conforme especificação
-                const profName = row.professional_display_name || row.professional_name || "Profissional não atribuído";
-                const clientName = row.client_display_name || row.client_name || "Cliente sem cadastro";
+                // Mapeamento Cirúrgico: Prioridade para display_name conforme instrução
+                const clientName = row.client_display_name ?? row.client_name ?? "Cliente sem cadastro";
+                const professionalName = row.professional_display_name ?? row.professional_name ?? "Profissional não atribuído";
+                const professionalPhoto = row.professional_photo_url ?? null;
 
                 const alreadyPaid = row.command_status === 'paid';
                 setIsLocked(alreadyPaid);
@@ -99,16 +100,18 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setCommand({
                     ...cmdData,
                     status: row.command_status,
+                    professional_id: row.professional_id || cmdData.professional_id,
                     client: { 
                         nome: clientName, 
-                        whatsapp: row.client_phone || row.client_whatsapp 
+                        whatsapp: row.client_phone ?? null 
                     },
                     professional: { 
-                        name: profName
+                        name: professionalName,
+                        photo_url: professionalPhoto
                     }
                 });
 
-                // C) Mapeia pagamentos já realizados
+                // Mapeia pagamentos existentes (caso a comanda já tenha histórico ou esteja paga)
                 const validPayments = rpcData
                     .filter((p: any) => p.payment_id)
                     .map((p: any) => ({
@@ -174,23 +177,22 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             (c.type === 'pix' || c.type === 'money' || c.brand?.toLowerCase() === selectedBrand.toLowerCase())
         );
 
-        if (!config) {
-            setToast({ message: "Configuração de taxa não encontrada.", type: 'error' });
-            return;
+        // Cálculo de Taxas com Fallback de segurança 0%
+        let feeRate = 0;
+        if (config) {
+            feeRate = Number(config.rate_cash || 0);
+            if (activeMethod === 'cartao_credito' && selectedInstallments > 1 && config.installment_rates) {
+                feeRate = Number(config.installment_rates[selectedInstallments.toString()] || config.rate_cash || 0);
+            }
         }
 
-        let feeRate = Number(config.rate_cash || 0);
-        if (activeMethod === 'cartao_credito' && selectedInstallments > 1 && config.installment_rates) {
-            feeRate = Number(config.installment_rates[selectedInstallments.toString()] || config.rate_cash || 0);
-        }
-
-        const feeValue = amount * (feeRate / 100);
-        const netAmount = amount - feeValue;
+        const feeValue = Number((amount * (feeRate / 100)).toFixed(2));
+        const netAmount = Number((amount - feeValue).toFixed(2));
 
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(2, 9),
             method: activeMethod,
-            method_id: config.id,
+            method_id: config?.id || 'manual',
             amount: amount,
             installments: selectedInstallments,
             brand: (activeMethod === 'cartao_credito' || activeMethod === 'cartao_debito') ? selectedBrand : undefined,
@@ -220,7 +222,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_studio_id: activeStudioId,
                     p_professional_id: command.professional_id,
                     p_client_id: command.client_id,
-                    p_payment_method_id: payment.method_id
+                    p_payment_method_id: payment.method_id === 'manual' ? null : payment.method_id
                 });
 
                 if (rpcError || !transactionId) throw new Error(rpcError?.message || "Erro ao gerar transação.");
@@ -230,7 +232,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     .insert([{
                         command_id: command.id,
                         financial_transaction_id: transactionId,
-                        method_id: payment.method_id,
+                        method_id: payment.method_id === 'manual' ? null : payment.method_id,
                         amount: payment.amount,
                         method: payment.method,
                         installments: payment.installments,
@@ -309,8 +311,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     <div className="lg:col-span-2 space-y-6">
                         {/* HEADER DE DADOS DO CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
-                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner border-4 border-white">
-                                {command.client?.nome?.charAt(0).toUpperCase() || 'C'}
+                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner border-4 border-white overflow-hidden">
+                                {command.professional?.photo_url ? (
+                                    <img src={command.professional.photo_url} className="w-full h-full object-cover" alt="Prof" />
+                                ) : (
+                                    command.client?.nome?.charAt(0).toUpperCase() || 'C'
+                                )}
                             </div>
                             <div className="flex-1 text-center md:text-left">
                                 <h3 className="text-2xl font-black text-slate-800">{command.client?.nome || 'Consumidor Final'}</h3>
