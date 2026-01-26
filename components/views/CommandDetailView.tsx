@@ -36,7 +36,8 @@ const BRANDS = ['Visa', 'Mastercard', 'Elo', 'Hipercard', 'Amex', 'Outros'];
 
 const isUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) || 
+           /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 };
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
@@ -60,16 +61,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca contexto via RPC v2 com tratamento de array
+            // 1. Busca contexto via RPC v2
             const { data: contextData, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
                 p_command_id: commandId
             });
 
             if (ctxError) throw ctxError;
-
             const context = Array.isArray(contextData) ? contextData[0] : contextData;
 
-            // 2. Busca dados complementares da comanda e configurações do estúdio
+            // 2. Busca dados base da comanda e configurações
             const [cmdRes, configsRes] = await Promise.all([
                 supabase.from('commands').select('*, command_items(*)').eq('id', commandId).single(),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
@@ -81,12 +81,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const alreadyPaid = cmdRes.data.status === 'paid';
             setIsLocked(alreadyPaid);
 
-            // 3. Montagem do objeto de exibição com fallbacks seguros
+            // 3. Montagem com fallbacks de nomes conforme regras de negócio
             setCommand({
                 ...cmdRes.data,
-                display_client_name: context?.client_display_name || "Cliente sem cadastro",
+                // Prioridade: Contexto RPC -> Campo da comanda -> Fallback Texto
+                display_client_name: context?.client_display_name || cmdRes.data.client_name || "Cliente sem cadastro",
                 display_client_phone: context?.client_phone || "Sem contato",
-                display_professional_name: context?.professional_display_name || "Profissional não atribuído",
+                display_professional_name: context?.professional_display_name || cmdRes.data.professional_name || "Profissional não atribuído",
                 display_professional_photo: context?.professional_photo_url || null,
                 professional_id: context?.professional_id || cmdRes.data.professional_id,
                 client_id: context?.client_id || cmdRes.data.client_id
@@ -159,43 +160,42 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         try {
             const studioId = String(activeStudioId);
-            // Higienização: Se o ID for o placeholder string, trata como nulo
-            const profIdRaw = String(command.professional_id);
-            const profId = isUUID(profIdRaw) ? profIdRaw : null;
+            const rawProfId = String(command.professional_id);
+            const profId = isUUID(rawProfId) ? rawProfId : null;
 
-            const methodMap: Record<string, string> = {
-                'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
-            };
+            // PREVENÇÃO DE DUPLICIDADE: Verifica se já existe transação para esta comanda
+            const { data: existingTransaction } = await supabase
+                .from('financial_transactions')
+                .select('id')
+                .eq('command_id', commandId)
+                .maybeSingle();
 
-            // Consolidação para transação única (respeitando restrição do banco)
-            const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
-            const mainPayment = addedPayments[0];
+            if (!existingTransaction) {
+                const methodMap: Record<string, string> = {
+                    'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
+                };
 
-            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                p_studio_id: studioId,
-                p_professional_id: profId,
-                p_command_id: commandId,
-                p_amount: Number(totalAmount),
-                p_method: methodMap[mainPayment.method] || 'pix',
-                p_brand: mainPayment.brand || null,
-                p_installments: Number(mainPayment.installments || 1)
-            });
+                const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
+                const mainPayment = addedPayments[0];
 
-            // CORREÇÃO CRÍTICA: Se o erro for 23505 (violação de chave única), significa que
-            // o pagamento já existe no banco. Nesse caso, ignoramos o erro e tentamos apenas
-            // forçar o encerramento da comanda para 'paid'.
-            if (rpcError) {
-                const isDuplicate = rpcError.code === '23505' || 
-                                  rpcError.message?.toLowerCase().includes('unique constraint') ||
-                                  rpcError.message?.toLowerCase().includes('duplicate key');
-                
-                if (!isDuplicate) {
-                    throw new Error(rpcError.message);
+                const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                    p_studio_id: studioId,
+                    p_professional_id: profId,
+                    p_command_id: commandId,
+                    p_amount: Number(totalAmount),
+                    p_method: methodMap[mainPayment.method] || 'pix',
+                    p_brand: mainPayment.brand || null,
+                    p_installments: Number(mainPayment.installments || 1)
+                });
+
+                if (rpcError) {
+                    // Se mesmo com a verificação der erro de duplicidade, tratamos silenciosamente
+                    const isDuplicate = rpcError.code === '23505' || rpcError.message?.includes('ux_command_payments_one_paid_per_command');
+                    if (!isDuplicate) throw new Error(rpcError.message);
                 }
-                console.warn("Conflito detectado: Pagamento já registrado anteriormente. Forçando encerramento da comanda.");
             }
 
-            // Atualiza status final da comanda
+            // Marca comanda como paga
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
@@ -245,7 +245,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     <div className="lg:col-span-2 space-y-6">
-                        {/* RESUMO CLIENTE/PROFISSIONAL */}
+                        {/* CARD CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl uppercase overflow-hidden">
                                 {command.display_professional_photo ? (
@@ -285,7 +285,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* RECEBIMENTOS LANÇADOS */}
+                        {/* RECEBIMENTOS LANÇADOS (Taxas e Líquido sempre visíveis) */}
                         {addedPayments.length > 0 && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
@@ -301,7 +301,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                         <span className="text-sm font-black text-slate-700 uppercase">{String(p.method).replace('_', ' ')}</span>
                                                         {p.brand && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{String(p.brand)} ({p.installments}x)</span>}
                                                     </div>
-                                                    <div className="flex gap-3">
+                                                    <div className="flex gap-3 mt-0.5">
                                                         <p className="text-[9px] font-black text-rose-500 uppercase">Taxa: {p.fee_rate}% (- R$ {p.fee_value.toFixed(2)})</p>
                                                         <p className="text-[9px] font-black text-emerald-600 uppercase">Líquido: R$ {p.net_amount.toFixed(2)}</p>
                                                     </div>
@@ -319,7 +319,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </div>
 
                     <div className="space-y-6">
-                        {/* RESUMO FINANCEIRO */}
+                        {/* CARD FINANCEIRO */}
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
