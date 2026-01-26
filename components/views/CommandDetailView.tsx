@@ -60,14 +60,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // REGRAS: Busca contexto via RPC v2
+            // 1. Busca contexto via RPC v2 conforme regra
             const { data: context, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
                 p_command_id: commandId
             });
 
             if (ctxError) throw ctxError;
 
-            // Busca os itens da comanda e o estúdio para taxas
+            // 2. Busca dados base da comanda e configurações
             const [cmdRes, configsRes] = await Promise.all([
                 supabase.from('commands').select('*, command_items(*)').eq('id', commandId).single(),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
@@ -79,14 +79,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const alreadyPaid = cmdRes.data.status === 'paid';
             setIsLocked(alreadyPaid);
 
-            // Preenchimento com fallbacks conforme solicitado
+            // Preenchimento com fallbacks obrigatórios
             setCommand({
                 ...cmdRes.data,
                 display_client_name: context.client_display_name || "Cliente sem cadastro",
                 display_client_phone: context.client_phone || "Sem contato",
                 display_professional_name: context.professional_display_name || "Profissional não atribuído",
                 display_professional_photo: context.professional_photo_url || null,
-                professional_id: context.professional_id // Guarda o ID higienizado
+                professional_id: context.professional_id,
+                client_id: context.client_id
             });
 
         } catch (e: any) {
@@ -122,7 +123,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const amount = parseFloat(amountToPay.replace(',', '.'));
         if (isNaN(amount) || amount <= 0) return;
 
-        // Mapeamento interno para localizar na config
         const typeMap: Record<string, string> = {
             'pix': 'pix', 'dinheiro': 'money', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
         };
@@ -132,7 +132,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             (c.type === 'pix' || c.type === 'money' || String(c.brand).toLowerCase() === selectedBrand.toLowerCase())
         );
 
-        // REGRAS: Cálculo de taxa baseado na config do Studio
         const feeRate = Number(config?.rate_cash || 0);
         const feeValue = Number((amount * (feeRate / 100)).toFixed(2));
 
@@ -150,7 +149,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         setAddedPayments(prev => [...prev, newPayment]);
         setActiveMethod(null);
-        setToast({ message: "Recebimento adicionado!", type: 'success' });
     };
 
     const handleFinishCheckout = async () => {
@@ -165,21 +163,23 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
             };
 
-            // REGRAS: Loop chamando estritamente a nova assinatura da RPC
+            // Chamada do novo motor financeiro com os dados atuais da tela
+            // Adicionado p_command_id para satisfazer a lógica interna do banco (conforme erro analisado)
             for (const payment of addedPayments) {
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_studio_id: studioId,
                     p_professional_id: professionalId,
+                    p_command_id: command.id, // Vínculo necessário para evitar NULL no client_id
                     p_amount: Number(payment.amount),
                     p_method: methodMap[payment.method] || 'pix',
                     p_brand: (payment.method === 'cartao_credito' || payment.method === 'cartao_debito') ? payment.brand : null,
                     p_installments: Number(payment.installments || 1)
                 });
 
-                if (rpcError) throw new Error(`Erro financeiro: ${rpcError.message}`);
+                if (rpcError) throw new Error(rpcError.message);
             }
 
-            // Marca comanda como paga
+            // Marca comanda como paga e registra encerramento
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
@@ -196,15 +196,16 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setTimeout(onBack, 1500);
         } catch (e: any) {
             console.error('[FINISH_ERROR]', e);
-            setToast({ message: `Falha no fechamento: ${e.message}`, type: 'error' });
+            setToast({ message: `Erro financeiro: ${e.message}`, type: 'error' });
         } finally {
             setIsFinishing(false);
         }
     };
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
+    if (!command) return <div className="p-8 text-center text-slate-500">Comanda não encontrada.</div>;
 
-    const currentCommandIdDisplay = String(command?.id || '').substring(0, 8).toUpperCase();
+    const currentCommandIdDisplay = String(command.id).substring(0, 8).toUpperCase();
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
@@ -216,49 +217,49 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     <div>
                         <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500 font-mono">#{currentCommandIdDisplay}</span></h1>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                            Profissional: {command?.display_professional_name}
+                            Profissional: {command.display_professional_name}
                         </p>
                     </div>
                 </div>
-                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${command?.status === 'open' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
-                    {command?.status === 'open' ? 'Em aberto' : 'Finalizada'}
+                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${command.status === 'open' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
+                    {command.status === 'open' ? 'Em aberto' : 'Finalizada'}
                 </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     <div className="lg:col-span-2 space-y-6">
-                        {/* RESUMO CLIENTE */}
+                        {/* CARD CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl uppercase overflow-hidden">
-                                {command?.display_professional_photo ? (
+                                {command.display_professional_photo ? (
                                     <img src={command.display_professional_photo} className="w-full h-full object-cover" />
                                 ) : (
-                                    command?.display_client_name.charAt(0)
+                                    command.display_client_name.charAt(0)
                                 )}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{command?.display_client_name}</h3>
+                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{command.display_client_name}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Phone size={14} className="text-orange-500" /> {command.display_client_phone}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><User size={14} className="text-orange-500" /> {command?.display_professional_name}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Calendar size={14} className="text-orange-500" /> {command ? format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt }) : '--'}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><UserCheck size={14} className="text-orange-500" /> {command.display_professional_name}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Calendar size={14} className="text-orange-500" /> {format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt })}</div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* ITENS DETALHADOS */}
+                        {/* ITENS DA COMANDA */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Detalhes da Comanda</h3>
+                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Detalhes do Consumo</h3>
                             </header>
                             <div className="divide-y divide-slate-50">
-                                {command?.command_items?.map((item: any) => (
+                                {command.command_items?.map((item: any) => (
                                     <div key={item.id} className="p-8 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
                                         <div className="flex items-center gap-5">
                                             <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>{item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}</div>
                                             <div>
-                                                <p className="font-black text-slate-800 text-lg leading-tight">{String(item.title)}</p>
+                                                <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
                                                 <p className="text-[10px] text-slate-400 font-black uppercase mt-1">{item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}</p>
                                             </div>
                                         </div>
@@ -272,7 +273,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {addedPayments.length > 0 && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Recebimentos Confirmados</h3>
+                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Recebimentos Lançados</h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
                                     {addedPayments.map(p => (
@@ -307,10 +308,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400"><span>Subtotal</span><span>R$ {totals.subtotal.toFixed(2)}</span></div>
-                                    <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div><input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50 transition-all" /></div>
+                                    <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div><input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all" /></div>
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total a Pagar</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total a Receber</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                 </div>
                                 {totals.paid > 0 && (
@@ -322,11 +323,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* SELEÇÃO DE PAGAMENTO */}
+                        {/* SELETOR DE PAGAMENTO */}
                         <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
                             {!isLocked ? (
                                 <>
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Forma de Pagamento</h4>
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Forma de Recebimento</h4>
                                     {activeMethod ? (
                                         <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
                                             <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">{String(activeMethod).replace('_', ' ')}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300"><X size={20}/></button></div>
@@ -336,7 +337,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 )}
                                                 <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none" /></div>
                                             </div>
-                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg">Lançar Pagamento</button>
+                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg">Confirmar Parcela</button>
                                         </div>
                                     ) : (
                                         <div className="grid grid-cols-2 gap-3">
@@ -366,7 +367,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 disabled={isLocked || isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
                                 className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest shadow-2xl transition-all ${!isLocked && totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
                             >
-                                {isFinishing ? (<Loader2 size={24} className="animate-spin" />) : isLocked ? (<><CheckCircle size={24} /> PAGO</>) : (<><CheckCircle size={24} /> FECHAR CHECKOUT</>)}
+                                {isFinishing ? (<Loader2 size={24} className="animate-spin" />) : isLocked ? (<><CheckCircle size={24} /> FINALIZADO</>) : (<><CheckCircle size={24} /> FECHAR CHECKOUT</>)}
                             </button>
                         </div>
                     </div>
