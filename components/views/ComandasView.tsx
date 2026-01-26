@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     Search, Plus, Clock, User, FileText, 
@@ -27,7 +28,6 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         setLoading(true);
         try {
             if (currentTab === 'paid') {
-                console.log("FETCH_PAID: Buscando via v_commands_paid_list");
                 const { data, error } = await supabase
                     .from('v_commands_paid_list')
                     .select('*')
@@ -35,7 +35,6 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     .order('paid_at', { ascending: false });
                 
                 if (error) {
-                    console.warn("View v_commands_paid_list não acessível, tentando fallback manual.");
                     const { data: cmdData } = await supabase
                         .from('commands')
                         .select('*, clients:client_id(nome), items:command_items(*)')
@@ -53,7 +52,6 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     setTabs(data || []);
                 }
             } else {
-                console.log("FETCH_OPEN: Buscando comandas em aberto");
                 const { data, error } = await supabase
                     .from('commands')
                     .select('*, clients:client_id(nome, photo_url), command_items(*)')
@@ -104,7 +102,6 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 .single();
 
             if (cmdError) throw cmdError;
-            console.log("COMMAND_CREATED", command.id);
             setToast({ message: `Comanda iniciada! 💳`, type: 'success' });
             onNavigateToCommand?.(command.id);
         } catch (e: any) {
@@ -164,8 +161,8 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                             <div key={tab.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 relative pointer-events-auto">
                                 <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50 z-20">
                                     <div className="flex items-center gap-3 min-w-0">
-                                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs flex-shrink-0 uppercase ${tab.photo_url || tab.clients?.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}`}>
-                                            {(tab.photo_url || tab.clients?.photo_url) ? <img src={tab.photo_url || tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" alt="" /> : (tab.client_display || tab.client_name || 'C').charAt(0)}
+                                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs flex-shrink-0 uppercase ${tab.photo_url || tab.clients?.photo_url || tab.client_photo ? 'bg-white' : 'bg-orange-100 text-orange-600'}`}>
+                                            {(tab.photo_url || tab.clients?.photo_url || tab.client_photo) ? <img src={tab.photo_url || tab.clients?.photo_url || tab.client_photo} className="w-full h-full object-cover rounded-2xl" alt="" /> : (tab.client_display || tab.client_name || 'C').charAt(0)}
                                         </div>
                                         <div className="min-w-0">
                                             <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">

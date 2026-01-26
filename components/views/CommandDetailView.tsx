@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -8,7 +9,7 @@ import {
     User, UserCheck, Trash2, Lock, MoreVertical, AlertTriangle,
     Clock, Landmark, Info
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -57,19 +58,18 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const fetchContext = async () => {
         if (!activeStudioId || !commandId || !isSafeUUID(commandId)) {
-            console.error("COMMAND_DETAIL_ABORT: UUID inválido ou faltante", commandId);
+            console.error("UUID inválido:", commandId);
             setLoading(false);
             return;
         }
         
         setLoading(true);
         try {
-            console.log("FETCH_COMMAND_FULL commandId=", commandId);
+            console.log("FETCH_COMMAND_FULL p_command_id=", commandId);
             const { data: fullData, error: rpcError } = await supabase.rpc('get_command_full', { p_command_id: commandId });
 
             if (rpcError) {
-                console.warn("RPC get_command_full falhou ou 404, tentando busca manual composta.");
-                // FALLBACK MANUAL com correção de tipo e joins
+                console.warn("Usando fallback manual para comanda", commandId);
                 const { data: cmdData } = await supabase
                     .from('commands')
                     .select('*, clients:client_id(nome, whatsapp, photo_url)')
@@ -77,12 +77,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     .single();
 
                 const { data: itemsData } = await supabase.from('command_items').select('*').eq('command_id', commandId);
-                
-                const { data: transData } = await supabase
-                    .from('financial_transactions')
-                    .select('*')
-                    .eq('command_id', commandId)
-                    .neq('status', 'cancelado');
+                const { data: transData } = await supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado');
 
                 let profName = cmdData?.professional_name || "Geral";
                 let profPhoto = null;
@@ -99,7 +94,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     ...cmdData,
                     command_items: itemsData || [],
                     display_client_name: cmdData?.clients?.nome || cmdData?.client_name || "Consumidor Final",
-                    display_client_phone: cmdData?.clients?.whatsapp || "S/ CONTATO",
+                    display_client_phone: cmdData?.clients?.whatsapp || cmdData?.client_phone || "S/ CONTATO",
                     display_client_photo: cmdData?.clients?.photo_url || null,
                     display_professional_name: profName,
                     display_professional_photo: profPhoto
@@ -132,7 +127,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setAvailableConfigs(configsRes || []);
 
         } catch (e: any) {
-            console.error('[DETALHE_COMANDA_ERRO]', e);
+            console.error('[DETALHE_ERRO]', e);
             setToast({ message: "Falha ao carregar comanda.", type: 'error' });
         } finally {
             setLoading(false);
@@ -231,6 +226,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     if (!command) return <div className="h-full flex flex-col items-center justify-center bg-slate-50 gap-4"><AlertTriangle className="text-rose-500" size={48} /><p className="font-bold text-slate-700 uppercase tracking-widest text-xs">Comanda não encontrada</p><button onClick={onBack} className="text-orange-500 font-bold uppercase text-[10px]">Voltar</button></div>;
 
+    const formattedDate = () => {
+        const d = new Date(command.created_at);
+        return isValid(d) ? format(d, "HH:mm 'de' dd/MM") : "---";
+    };
+
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden relative">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -240,7 +240,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-all active:scale-90"><ChevronLeft size={24} /></button>
                     <div>
                         <h1 className="text-xl font-black text-slate-800">Comanda <span className="text-orange-500 font-mono">#{commandId.substring(0,8).toUpperCase()}</span></h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-tight">Responsável: {command.display_professional_name}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-tight">Responsável: {command.display_professional_name || 'Geral'}</p>
                     </div>
                 </div>
                 <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isLocked ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
@@ -254,14 +254,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {/* HEADER CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6 animate-in fade-in duration-300">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden shadow-inner">
-                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" alt="" /> : command.display_client_name?.charAt(0)}
+                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" alt="" /> : (command.display_client_name || 'C').charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{command.display_client_name}</h3>
+                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{command.display_client_name || "Consumidor Final"}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><Phone size={14} className="text-orange-500" /> {command.display_client_phone}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><UserCheck size={14} className="text-orange-500" /> {command.display_professional_name}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><Clock size={14} className="text-orange-500" /> {format(new Date(command.created_at), "HH:mm 'de' dd/MM")}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><UserCheck size={14} className="text-orange-500" /> {command.display_professional_name || 'Geral'}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><Clock size={14} className="text-orange-500" /> {formattedDate()}</div>
                                 </div>
                             </div>
                         </div>
@@ -289,7 +289,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* FLOW DE RECEBIMENTO / HISTÓRICO REAL */}
+                        {/* HISTÓRICO DE RECEBIMENTO */}
                         {(historyPayments.length > 0 || addedPayments.length > 0) && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50 flex justify-between items-center">
