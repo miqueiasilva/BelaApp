@@ -34,9 +34,10 @@ interface PaymentEntry {
 
 const BRANDS = ['Visa', 'Master', 'Elo', 'Hiper', 'Amex', 'Outros'];
 
-const isSafeUUID = (str: any): boolean => {
-    if (!str || typeof str !== 'string' || str === '') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+const isUUID = (str: any): boolean => {
+    if (!str || typeof str !== 'string') return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) || 
+           /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 };
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
@@ -57,53 +58,72 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [availableConfigs, setAvailableConfigs] = useState<any[]>([]);
 
     const fetchContext = async () => {
-        if (!activeStudioId || !commandId || !isSafeUUID(commandId)) {
+        if (!activeStudioId || !commandId || !isUUID(commandId)) {
             setLoading(false);
             return;
         }
         
         setLoading(true);
         try {
+            // 1. Busca Comanda Básica
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
-                .select('*, clients:client_id(nome, photo_url, whatsapp)')
+                .select('*')
                 .eq('id', commandId)
                 .single();
 
             if (cmdError) throw cmdError;
 
+            // 2. Busca Itens (Essencial para achar o appointment_id)
             const { data: itemsData } = await supabase
                 .from('command_items')
                 .select('*')
                 .eq('command_id', commandId);
 
-            const [transRes, configsRes] = await Promise.all([
+            // 3. Pega o ID do agendamento original para backup de nomes
+            const firstApptId = itemsData?.find(i => i.appointment_id)?.appointment_id;
+
+            // 4. Busca Pagamentos e Dados de Backup em paralelo
+            const [transRes, configsRes, apptBackupRes] = await Promise.all([
                 supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado'),
-                supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
+                supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true),
+                firstApptId ? supabase.from('appointments').select('client_name, professional_name').eq('id', firstApptId).maybeSingle() : Promise.resolve({ data: null })
             ]);
+
+            // 5. Busca Cadastro oficial do cliente se existir UUID
+            const clientId = cmdData.client_id;
+            const clientOfficialRes = isUUID(clientId) 
+                ? await supabase.from('clients').select('nome, whatsapp, photo_url').eq('id', clientId).maybeSingle()
+                : { data: null };
+
+            // 6. Busca Profissional oficial
+            const profId = cmdData.professional_id || itemsData?.[0]?.professional_id;
+            const profOfficialRes = isUUID(profId)
+                ? await supabase.from('team_members').select('name, photo_url').eq('id', profId).maybeSingle()
+                : { data: null };
 
             setAvailableConfigs(configsRes.data || []);
             setHistoryPayments(transRes.data || []);
             
             const alreadyPaid = cmdData.status === 'paid';
 
-            // Resolução robusta de nomes
-            const clientInfo = Array.isArray(cmdData.clients) ? cmdData.clients[0] : cmdData.clients;
-            const resolvedName = clientInfo?.nome || cmdData.client_name || "Consumidor Final";
-
+            // 7. Montagem com hierarquia de nomes (Oficial > Agenda > Fallback)
             setCommand({
                 ...cmdData,
                 command_items: itemsData || [],
-                display_client_name: resolvedName,
-                display_client_phone: clientInfo?.whatsapp || "S/ CONTATO",
-                display_client_photo: clientInfo?.photo_url || null,
-                display_professional_name: cmdData.professional_name || "Geral"
+                display_client_name: clientOfficialRes.data?.nome || apptBackupRes.data?.client_name || cmdData.client_name || "Consumidor Final",
+                display_client_phone: clientOfficialRes.data?.whatsapp || cmdData.client_phone || "S/ CONTATO",
+                display_client_photo: clientOfficialRes.data?.photo_url || null,
+                display_professional_name: profOfficialRes.data?.name || apptBackupRes.data?.professional_name || cmdData.professional_name || "Geral",
+                display_professional_photo: profOfficialRes.data?.photo_url || null,
+                professional_id: profId,
+                client_id: clientId
             });
 
             setIsLocked(alreadyPaid);
         } catch (e: any) {
             console.error('[FETCH_CONTEXT_ERROR]', e);
-            setToast({ message: "Erro ao carregar detalhes.", type: 'error' });
+            setToast({ message: "Erro ao carregar detalhes da comanda.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -161,11 +181,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 const methodMap: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
                 await supabase.rpc('register_payment_transaction', {
                     p_studio_id: activeStudioId,
-                    p_professional_id: isSafeUUID(command.professional_id) ? command.professional_id : null,
+                    p_professional_id: isUUID(command.professional_id) ? command.professional_id : null,
                     p_command_id: commandId,
                     p_amount: p.amount,
                     p_method: methodMap[p.method] || 'pix',
-                    p_brand: (p.method.includes('cartao')) ? p.brand : null,
+                    p_brand: p.brand || null,
                     p_installments: p.installments
                 });
             }
@@ -175,13 +195,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 .update({ 
                     status: 'paid', 
                     closed_at: new Date().toISOString(),
-                    total_amount: totals.total
+                    total_amount: totals.total,
+                    payment_method: addedPayments[0]?.method || historyPayments[0]?.payment_method || 'misto'
                 })
                 .eq('id', commandId);
 
             if (closeError) throw closeError;
 
-            setToast({ message: "Comanda finalizada com sucesso! ✨", type: 'success' });
+            setToast({ message: "Comanda liquidada com sucesso! 💳", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1500);
         } catch (e: any) {
@@ -194,21 +215,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
 
     return (
-        <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden relative">
+        <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-50 shadow-sm flex-shrink-0">
+            <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-20 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-4">
-                    <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-all active:scale-90"><ChevronLeft size={24} /></button>
+                    <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-all"><ChevronLeft size={24} /></button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
-                            Checkout <span className="text-orange-500 font-mono">#{commandId.substring(0,8).toUpperCase()}</span>
-                        </h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-tight">Responsável: {command.display_professional_name}</p>
+                        <h1 className="text-xl font-black text-slate-800">Comanda <span className="text-orange-500 font-mono">#{commandId.substring(0,8).toUpperCase()}</span></h1>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Responsável: {command.display_professional_name}</p>
                     </div>
                 </div>
                 <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isLocked ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
-                    {isLocked ? 'Finalizada' : 'Em Aberto'}
+                    {isLocked ? 'Paga / Finalizada' : 'Em Aberto'}
                 </div>
             </header>
 
@@ -216,16 +235,16 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
                     <div className="lg:col-span-2 space-y-6">
                         {/* HEADER CLIENTE */}
-                        <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6 animate-in fade-in duration-300">
-                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden shadow-inner">
-                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" alt="" /> : command.display_client_name.charAt(0)}
+                        <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
+                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden">
+                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" /> : command.display_client_name.charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800 leading-tight uppercase">{command.display_client_name}</h3>
+                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{command.display_client_name}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-widest"><Phone size={14} className="text-orange-500" /> {command.display_client_phone}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-widest"><UserCheck size={14} className="text-orange-500" /> {command.display_professional_name}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-widest"><Clock size={14} className="text-orange-500" /> {format(new Date(command.created_at), "HH:mm 'de' dd/MM")}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><Phone size={14} className="text-orange-500" /> {command.display_client_phone}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><UserCheck size={14} className="text-orange-500" /> {command.display_professional_name}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><Clock size={14} className="text-orange-500" /> {format(new Date(command.created_at), "HH:mm 'de' dd/MM")}</div>
                                 </div>
                             </div>
                         </div>
@@ -233,7 +252,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {/* ITENS CONSUMIDOS */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 bg-slate-50/30">
-                                <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Itens Consumidos</h3>
+                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Itens da Comanda</h3>
                             </header>
                             <div className="divide-y divide-slate-50">
                                 {command.command_items?.map((item: any) => (
@@ -243,8 +262,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
                                             </div>
                                             <div>
-                                                <p className="font-black text-slate-800 text-lg leading-tight uppercase">{item.title}</p>
-                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1 tracking-widest">{item.quantity} un x R$ {Number(item.price).toFixed(2)}</p>
+                                                <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
+                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1">{item.quantity} un x R$ {Number(item.price).toFixed(2)}</p>
                                             </div>
                                         </div>
                                         <p className="font-black text-slate-800 text-xl">R$ {(item.quantity * item.price).toFixed(2)}</p>
@@ -253,29 +272,29 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* RECEBIMENTOS */}
+                        {/* FLOW DE RECEBIMENTO */}
                         {(historyPayments.length > 0 || addedPayments.length > 0) && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
-                                <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Pagamentos Registrados</h3>
+                                <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50 flex justify-between items-center">
+                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Fluxo de Recebimento</h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
                                     {historyPayments.map(p => (
-                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-slate-50/30">
+                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-slate-50/30 opacity-80">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-emerald-500 shadow-sm"><Landmark size={20} /></div>
+                                                <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-emerald-500"><Landmark size={20} /></div>
                                                 <div>
                                                     <p className="text-sm font-black text-slate-700 uppercase">{p.payment_method?.replace('_', ' ')}</p>
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase">{format(new Date(p.date), 'dd/MM HH:mm')}</p>
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Processado em {format(new Date(p.date), 'dd/MM HH:mm')}</p>
                                                 </div>
                                             </div>
                                             <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
                                         </div>
                                     ))}
                                     {addedPayments.map(p => (
-                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group border-l-4 border-orange-500">
+                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shadow-inner"><Coins size={20} /></div>
+                                                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center"><Coins size={20} /></div>
                                                 <div>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-sm font-black text-slate-700 uppercase">{p.method.replace('_', ' ')}</span>
@@ -286,7 +305,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             </div>
                                             <div className="flex items-center gap-4">
                                                 <span className="font-black text-slate-800 text-lg">R$ {p.amount.toFixed(2)}</span>
-                                                {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors active:scale-90"><X size={18} /></button>}
+                                                {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors"><X size={18} /></button>}
                                             </div>
                                         </div>
                                     ))}
@@ -296,9 +315,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </div>
 
                     <div className="space-y-6">
-                        {/* RESUMO DE VALORES */}
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-3xl"></div>
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400"><span>Subtotal</span><span>R$ {totals.subtotal.toFixed(2)}</span></div>
@@ -312,29 +329,31 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                 </div>
                                 {totals.paid > 0 && (
-                                    <div className="pt-4 border-t border-white/5 space-y-1">
-                                        <div className="flex justify-between text-[10px] font-black uppercase text-slate-400"><span>Já Pago:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
-                                        <div className="flex justify-between text-xs font-black uppercase text-white"><span>Restante:</span><span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-orange-400'}`}>R$ {totals.remaining.toFixed(2)}</span></div>
+                                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-2">
+                                        <div className="flex justify-between text-xs font-bold text-slate-400"><span>Pago:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
+                                        <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                                            <span className="text-xs font-black uppercase tracking-widest text-orange-400">Restante:</span>
+                                            <span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white'}`}>R$ {totals.remaining.toFixed(2)}</span>
+                                        </div>
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        {/* MÉTODOS DE RECEBIMENTO */}
                         {!isLocked && (
                             <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
                                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Método de Pagamento</h4>
                                 
                                 {activeMethod ? (
-                                    <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6 shadow-inner">
-                                        <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">{activeMethod.replace('_', ' ')}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-600 transition-colors"><X size={20}/></button></div>
+                                    <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
+                                        <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">{activeMethod.replace('_', ' ')}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300"><X size={20}/></button></div>
                                         <div className="space-y-4">
                                             {(activeMethod === 'cartao_credito' || activeMethod === 'cartao_debito') && (
-                                                <div className="grid grid-cols-3 gap-2">{BRANDS.map(b => (<button key={b} onClick={() => setSelectedBrand(b)} className={`py-2 rounded-xl text-[9px] font-black uppercase transition-all ${selectedBrand === b ? 'bg-orange-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>{b}</button>))}</div>
+                                                <div className="grid grid-cols-3 gap-2">{BRANDS.map(b => (<button key={b} onClick={() => setSelectedBrand(b)} className={`py-2 rounded-xl text-[9px] font-black uppercase transition-all ${selectedBrand === b ? 'bg-orange-500 text-white' : 'bg-white border-slate-100 text-slate-400'}`}>{b}</button>))}</div>
                                             )}
-                                            <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300 text-lg">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all shadow-sm" /></div>
+                                            <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" /></div>
                                         </div>
-                                        <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all uppercase text-xs tracking-widest">Confirmar Valor</button>
+                                        <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Confirmar Valor</button>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-2 gap-3">
@@ -344,7 +363,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             { id: 'cartao_credito', label: 'Crédito', icon: CreditCard },
                                             { id: 'cartao_debito', label: 'Débito', icon: CardIcon }
                                         ].map(pm => (
-                                            <button key={pm.id} onClick={() => { setActiveMethod(pm.id); setAmountToPay(totals.remaining.toFixed(2)); }} className="flex flex-col items-center justify-center p-6 rounded-[32px] bg-slate-50 text-slate-400 hover:border-orange-200 hover:bg-white hover:text-orange-600 transition-all group shadow-sm active:scale-95 border-2 border-transparent">
+                                            <button key={pm.id} onClick={() => { setActiveMethod(pm.id); setAmountToPay(totals.remaining.toFixed(2)); }} className="flex flex-col items-center justify-center p-6 rounded-[32px] bg-slate-50 text-slate-400 hover:border-orange-200 hover:bg-white transition-all group">
                                                 <pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500 transition-colors" />
                                                 <span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span>
                                             </button>
@@ -355,19 +374,18 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <button 
                                     onClick={handleFinishCheckout} 
                                     disabled={isFinishing || totals.remaining > 0 || (addedPayments.length === 0 && historyPayments.length === 0)} 
-                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && (addedPayments.length > 0 || historyPayments.length > 0) ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-slate-100 text-slate-300'}`}
+                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> FINALIZAR CHECKOUT</>}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> FECHAR COMANDA</>}
                                 </button>
                             </div>
                         )}
 
                         {isLocked && (
-                            <div className="bg-emerald-50 p-8 rounded-[48px] border-2 border-emerald-100 text-center space-y-4 animate-in zoom-in-95 shadow-xl">
+                            <div className="bg-emerald-50 p-8 rounded-[48px] border-2 border-emerald-100 text-center space-y-4 animate-in zoom-in-95">
                                 <CheckCircle size={48} className="text-emerald-500 mx-auto" />
-                                <h3 className="text-xl font-black text-emerald-800 uppercase tracking-tighter">Baixa Realizada</h3>
-                                <p className="text-xs text-emerald-600 font-medium leading-relaxed">Este registro está arquivado no histórico. O faturamento foi consolidado no fluxo de caixa da unidade.</p>
-                                <button onClick={onBack} className="mt-4 px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-200 active:scale-95 transition-all">Voltar ao Balcão</button>
+                                <h3 className="text-xl font-black text-emerald-800 uppercase tracking-tighter">Comanda Paga</h3>
+                                <p className="text-xs text-emerald-600 font-medium leading-relaxed">Este registro está arquivado e seu faturamento foi consolidado no fluxo de caixa.</p>
                             </div>
                         )}
                     </div>
