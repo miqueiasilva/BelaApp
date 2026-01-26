@@ -32,7 +32,6 @@ interface PaymentEntry {
     created_at?: string;
 }
 
-// Added missing BRANDS constant for card selection
 const BRANDS = ['Visa', 'Master', 'Elo', 'Hiper', 'Amex', 'Outros'];
 
 const isUUID = (str: any): boolean => {
@@ -66,7 +65,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setLoading(true);
         try {
-            // 1. Busca Comanda e Itens
+            // 1. Busca Comanda Básica
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select('*')
@@ -75,42 +74,48 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
+            // 2. Busca Itens (Essencial para achar o appointment_id)
             const { data: itemsData } = await supabase
                 .from('command_items')
                 .select('*')
                 .eq('command_id', commandId);
 
-            // 2. Busca Pagamentos Reais (Histórico de Transações)
-            const { data: transData } = await supabase
-                .from('financial_transactions')
-                .select('*')
-                .eq('command_id', commandId)
-                .neq('status', 'cancelado');
+            // 3. Pega o ID do agendamento original para backup de nomes
+            const firstApptId = itemsData?.find(i => i.appointment_id)?.appointment_id;
 
-            // 3. Resolve Profissional e Cliente (Independente para evitar erro de tipo no Join)
-            const profId = cmdData.professional_id || itemsData?.[0]?.professional_id;
-            const clientId = cmdData.client_id;
-
-            const [profRes, clientRes, configsRes] = await Promise.all([
-                isUUID(profId) ? supabase.from('team_members').select('name, photo_url').eq('id', profId).maybeSingle() : Promise.resolve({ data: null }),
-                isUUID(clientId) ? supabase.from('clients').select('nome, whatsapp, photo_url').eq('id', clientId).maybeSingle() : Promise.resolve({ data: null }),
-                supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
+            // 4. Busca Pagamentos e Dados de Backup em paralelo
+            const [transRes, configsRes, apptBackupRes] = await Promise.all([
+                supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado'),
+                supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true),
+                firstApptId ? supabase.from('appointments').select('client_name, professional_name').eq('id', firstApptId).maybeSingle() : Promise.resolve({ data: null })
             ]);
 
+            // 5. Busca Cadastro oficial do cliente se existir UUID
+            const clientId = cmdData.client_id;
+            const clientOfficialRes = isUUID(clientId) 
+                ? await supabase.from('clients').select('nome, whatsapp, photo_url').eq('id', clientId).maybeSingle()
+                : { data: null };
+
+            // 6. Busca Profissional oficial
+            const profId = cmdData.professional_id || itemsData?.[0]?.professional_id;
+            const profOfficialRes = isUUID(profId)
+                ? await supabase.from('team_members').select('name, photo_url').eq('id', profId).maybeSingle()
+                : { data: null };
+
             setAvailableConfigs(configsRes.data || []);
-            setHistoryPayments(transData || []);
+            setHistoryPayments(transRes.data || []);
             
             const alreadyPaid = cmdData.status === 'paid';
 
-            // 4. Monta Objeto Consolidado
+            // 7. Montagem com hierarquia de nomes (Oficial > Agenda > Fallback)
             setCommand({
                 ...cmdData,
                 command_items: itemsData || [],
-                display_client_name: clientRes.data?.nome || cmdData.client_name || "Consumidor Final",
-                display_client_phone: clientRes.data?.whatsapp || cmdData.client_phone || "S/ CONTATO",
-                display_client_photo: clientRes.data?.photo_url || null,
-                display_professional_name: profRes.data?.name || cmdData.professional_name || "Geral",
-                display_professional_photo: profRes.data?.photo_url || null,
+                display_client_name: clientOfficialRes.data?.nome || apptBackupRes.data?.client_name || cmdData.client_name || "Consumidor Final",
+                display_client_phone: clientOfficialRes.data?.whatsapp || cmdData.client_phone || "S/ CONTATO",
+                display_client_photo: clientOfficialRes.data?.photo_url || null,
+                display_professional_name: profOfficialRes.data?.name || apptBackupRes.data?.professional_name || cmdData.professional_name || "Geral",
+                display_professional_photo: profOfficialRes.data?.photo_url || null,
                 professional_id: profId,
                 client_id: clientId
             });
@@ -132,7 +137,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
-        // Soma pagamentos já salvos + pagamentos na fila do checkout atual
         const savedPaid = historyPayments.reduce((acc, p) => acc + Number(p.amount), 0);
         const currentPaid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
         
@@ -173,7 +177,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setIsFinishing(true);
 
         try {
-            // 1. Registra novos pagamentos no financeiro
             for (const p of addedPayments) {
                 const methodMap: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
                 await supabase.rpc('register_payment_transaction', {
@@ -187,7 +190,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 });
             }
 
-            // 2. Finaliza a comanda
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
@@ -270,15 +272,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* HISTÓRICO DE PAGAMENTOS */}
+                        {/* FLOW DE RECEBIMENTO */}
                         {(historyPayments.length > 0 || addedPayments.length > 0) && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50 flex justify-between items-center">
                                     <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Fluxo de Recebimento</h3>
-                                    {isLocked && <span className="text-[9px] font-black text-emerald-600 bg-white px-2 py-1 rounded-lg border border-emerald-100 uppercase">Liquidada</span>}
                                 </header>
                                 <div className="divide-y divide-slate-50">
-                                    {/* Pagamentos já processados (Histórico) */}
                                     {historyPayments.map(p => (
                                         <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-slate-50/30 opacity-80">
                                             <div className="flex items-center gap-4">
@@ -291,7 +291,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
                                         </div>
                                     ))}
-                                    {/* Pagamentos adicionados agora */}
                                     {addedPayments.map(p => (
                                         <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group">
                                             <div className="flex items-center gap-4">
@@ -316,7 +315,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </div>
 
                     <div className="space-y-6">
-                        {/* CARD FINANCEIRO TOTALIZADOR */}
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
@@ -342,7 +340,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* SELEÇÃO DE PAGAMENTO (Se não estiver paga) */}
                         {!isLocked && (
                             <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
                                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Método de Pagamento</h4>
