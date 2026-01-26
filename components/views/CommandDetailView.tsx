@@ -36,7 +36,7 @@ const BRANDS = ['Visa', 'Mastercard', 'Elo', 'Hipercard', 'Amex', 'Outros'];
 
 const isUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) || str.length > 20;
 };
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
@@ -60,18 +60,18 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca contexto via RPC v2 (Garante nomes reais de cliente e profissional)
+            // 1. Busca contexto via RPC v2
             const { data: contextData, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
                 p_command_id: commandId
             });
 
-            if (ctxError) console.error("Erro RPC Context:", ctxError);
+            if (ctxError) console.warn("Erro RPC Context:", ctxError);
             const context = Array.isArray(contextData) ? contextData[0] : contextData;
 
-            // 2. Busca dados base da comanda com joins para fallback
+            // 2. Busca dados base com relacionamentos manuais para garantir nomes
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
-                .select('*, clients(id, nome, whatsapp, cpf), command_items(*)')
+                .select('*, clients(id, nome, whatsapp), team_members(id, name, photo_url), command_items(*)')
                 .eq('id', commandId)
                 .single();
 
@@ -88,13 +88,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             const alreadyPaid = cmdData.status === 'paid';
 
-            // Mapeamento prioritário do Contexto (Nomes Reais)
+            // Mapeamento Robusto de Nomes
             setCommand({
                 ...cmdData,
                 display_client_name: context?.client_display_name || cmdData.clients?.nome || cmdData.client_name || "Cliente sem cadastro",
                 display_client_phone: context?.client_phone || cmdData.clients?.whatsapp || "SEM CONTATO",
-                display_professional_name: context?.professional_display_name || "Geral / Studio",
-                display_professional_photo: context?.professional_photo_url || null,
+                display_professional_name: context?.professional_display_name || cmdData.team_members?.name || cmdData.professional_name || "Geral / Studio",
+                display_professional_photo: context?.professional_photo_url || cmdData.team_members?.photo_url || null,
                 professional_id: context?.professional_id || cmdData.professional_id,
                 client_id: context?.client_id || cmdData.client_id
             });
@@ -169,7 +169,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         try {
             const studioId = String(activeStudioId);
             
-            // 1. Prevenção de duplicidade: verifica se já existe transação paga para esta comanda
+            // 1. Prevenção de duplicidade
             const { data: existing } = await supabase.from('financial_transactions').select('id').eq('command_id', commandId).maybeSingle();
             
             if (!existing) {
@@ -182,7 +182,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_studio_id: studioId,
-                    p_professional_id: isUUID(command.professional_id) ? command.professional_id : null,
+                    p_professional_id: command.professional_id,
                     p_command_id: commandId,
                     p_amount: Number(totalAmount),
                     p_method: methodMap[primaryPayment.method] || 'pix',
@@ -190,10 +190,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_installments: Number(primaryPayment.installments || 1)
                 });
 
-                if (rpcError) {
-                    const isDuplicate = rpcError.code === '23505' || rpcError.message?.includes('ux_command_payments_one_paid_per_command');
-                    if (!isDuplicate) throw new Error(rpcError.message);
-                }
+                if (rpcError && rpcError.code !== '23505') throw rpcError;
             }
 
             // 2. Marca comanda como paga
@@ -220,9 +217,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
-    
-    // CRITICAL FIX: Guard clause para evitar erro 'reading clients of null'
-    if (!command) return <div className="p-20 text-center text-slate-400 font-black uppercase tracking-widest">Comanda não encontrada</div>;
+    if (!command) return <div className="p-20 text-center text-slate-400 font-black uppercase">Comanda não encontrada</div>;
 
     const currentCommandIdDisplay = String(commandId).substring(0, 8).toUpperCase();
 

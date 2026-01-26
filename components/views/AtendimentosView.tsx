@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -179,7 +180,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfMonth(currentDate);
             }
 
-            // Usar comparação de string de data com offset (ISO formatada localmente)
             const startStr = format(rangeStart, "yyyy-MM-dd'T'HH:mm:ssXXX");
             const endStr = format(rangeEnd, "yyyy-MM-dd'T'HH:mm:ssXXX");
 
@@ -348,7 +348,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 service_color: app.service.color || '#3b82f6'
             };
             
-            if (app.id && typeof app.id === 'number' && app.id > 1000000000) { // New ID logic check
+            if (app.id && typeof app.id === 'number' && app.id > 1000000000) { 
                 const { data, error } = await supabase.from('appointments').insert([payload]).select('*').single();
                 if (error) throw error;
             } else if (app.id) {
@@ -419,11 +419,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
+            // FIX: Adicionado professional_id no insert da comanda para garantir exibição no checkout
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: activeStudioId,
                     client_id: appointment.client?.id,
+                    professional_id: appointment.professional.id,
                     status: 'open',
                     total_amount: appointment.service.price
                 }])
