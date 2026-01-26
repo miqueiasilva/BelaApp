@@ -339,7 +339,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const payload = { 
                 studio_id: activeStudioId,
                 professional_id: isUUID(app.professional.id) ? String(app.professional.id) : null, 
-                client_id: app.client?.id || null,
+                client_id: isUUID(app.client?.id) ? app.client?.id : null,
                 client_name: app.client?.nome || 'Cliente', 
                 professional_name: app.professional.name, 
                 service_name: app.service.name, 
@@ -424,14 +424,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // FIX: Removidas colunas client_name e professional_name do insert da comanda para evitar erro 400
-            // e adicionada verificação isUUID para evitar erro de tipo de dados
+            // FIX: Adicionados backups de texto (client_name, professional_name) no comando 
+            // para garantir exibição resiliente no checkout
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: activeStudioId,
                     client_id: isUUID(appointment.client?.id) ? appointment.client?.id : null,
+                    client_name: appointment.client?.nome || 'Cliente sem cadastro',
                     professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null,
+                    professional_name: appointment.professional.name || 'Geral',
                     status: 'open',
                     total_amount: appointment.service.price
                 }])

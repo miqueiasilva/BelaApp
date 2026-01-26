@@ -57,10 +57,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const fetchContext = async () => {
         if (!activeStudioId || !commandId) return;
+        
+        // CRÍTICO: Validação de segurança para evitar erro 400 se o ID não for UUID
+        if (!isUUID(commandId)) {
+            console.error("ID de comanda inválido detectado:", commandId);
+            setLoading(false);
+            setCommand(null);
+            return;
+        }
+
         setLoading(true);
         
         try {
-            // 1. Busca dados da Comanda (Apenas o essencial para evitar erros de join)
+            // 1. Busca dados da Comanda (Consultas separadas para evitar erro 400 em Joins complexos)
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select('*')
@@ -69,35 +78,34 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
-            // 2. Busca Itens da Comanda (Para pegar o professional_id caso nulo no pai)
+            // 2. Busca Itens da Comanda
             const { data: itemsData } = await supabase
                 .from('command_items')
                 .select('*')
                 .eq('command_id', commandId);
 
-            // 3. Resolve IDs
-            const resolvedProfessionalId = cmdData.professional_id || itemsData?.[0]?.professional_id;
+            // 3. Busca Dados Relacionados (Cliente e Profissional) com Fallbacks Resilientes
+            const resolvedProfId = cmdData.professional_id || itemsData?.[0]?.professional_id;
             const resolvedClientId = cmdData.client_id;
 
-            // 4. Busca Dados Relacionados em paralelo (Consultas resilientes)
             const [clientRes, profRes, configsRes] = await Promise.all([
                 isUUID(resolvedClientId) ? supabase.from('clients').select('nome, whatsapp').eq('id', resolvedClientId).maybeSingle() : Promise.resolve({ data: null }),
-                isUUID(resolvedProfessionalId) ? supabase.from('team_members').select('name, photo_url').eq('id', resolvedProfessionalId).maybeSingle() : Promise.resolve({ data: null }),
+                isUUID(resolvedProfId) ? supabase.from('team_members').select('name, photo_url').eq('id', resolvedProfId).maybeSingle() : Promise.resolve({ data: null }),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
             ]);
 
             setAvailableConfigs(configsRes.data || []);
             const alreadyPaid = cmdData.status === 'paid';
 
-            // 5. Monta objeto de comando com nomes reais resolvidos
+            // 4. Monta objeto de comando resolvendo nomes reais
             setCommand({
                 ...cmdData,
                 command_items: itemsData || [],
-                display_client_name: clientRes.data?.nome || "Cliente sem cadastro",
+                display_client_name: clientRes.data?.nome || cmdData.client_name || "Cliente sem cadastro",
                 display_client_phone: clientRes.data?.whatsapp || "SEM CONTATO",
-                display_professional_name: profRes.data?.name || "Geral / Studio",
+                display_professional_name: profRes.data?.name || cmdData.professional_name || "Geral / Studio",
                 display_professional_photo: profRes.data?.photo_url || null,
-                professional_id: resolvedProfessionalId,
+                professional_id: resolvedProfId,
                 client_id: resolvedClientId
             });
 
@@ -105,7 +113,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
-            setToast({ message: "Comanda não localizada ou erro de rede.", type: 'error' });
+            setToast({ message: "Erro ao carregar checkout. Tente novamente.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -171,7 +179,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         try {
             const studioId = String(activeStudioId);
             
-            // 1. Prevenção de duplicidade
+            // 1. Prevenção de duplicidade de transação financeira
             const { data: existing } = await supabase.from('financial_transactions').select('id').eq('command_id', commandId).maybeSingle();
             
             if (!existing) {
@@ -224,6 +232,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         <div className="h-full flex flex-col items-center justify-center bg-slate-50 p-8 text-center">
             <AlertTriangle size={64} className="text-slate-200 mb-6" />
             <h3 className="text-lg font-black text-slate-400 uppercase tracking-widest">Comanda não encontrada</h3>
+            <p className="text-xs text-slate-400 mt-2">O ID fornecido é inválido ou o registro foi removido.</p>
             <button onClick={onBack} className="mt-6 px-8 py-3 bg-slate-800 text-white font-black rounded-2xl text-xs uppercase tracking-widest active:scale-95 transition-all">Voltar</button>
         </div>
     );
@@ -365,10 +374,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     ) : (
                                         <div className="grid grid-cols-2 gap-3">
                                             {[
-                                                { id: 'pix', label: 'Pix', icon: Smartphone },
-                                                { id: 'dinheiro', label: 'Dinheiro', icon: Banknote },
-                                                { id: 'cartao_credito', label: 'Crédito', icon: CreditCard },
-                                                { id: 'cartao_debito', label: 'Débito', icon: CardIcon }
+                                                { id: 'pix', label: 'Pix', icon: Smartphone, color: 'bg-teal-50' },
+                                                { id: 'dinheiro', label: 'Dinheiro', icon: Banknote, color: 'bg-green-50' },
+                                                { id: 'cartao_credito', label: 'Crédito', icon: CreditCard, color: 'bg-blue-50' },
+                                                { id: 'cartao_debito', label: 'Débito', icon: CardIcon, color: 'bg-cyan-50' }
                                             ].map(pm => (
                                                 <button key={pm.id} onClick={() => handleInitPayment(pm.id)} className="flex flex-col items-center justify-center p-6 rounded-[32px] bg-slate-50 text-slate-400 hover:border-orange-200 hover:bg-white transition-all active:scale-95 group">
                                                     <pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500 transition-colors" />
