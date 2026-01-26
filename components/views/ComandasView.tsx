@@ -4,7 +4,7 @@ import {
     Search, Plus, Clock, User, FileText, 
     DollarSign, Coffee, Scissors, Trash2, ShoppingBag, X,
     CreditCard, Banknote, Smartphone, CheckCircle, Loader2,
-    Receipt, History, LayoutGrid, CheckCircle2, AlertCircle, Edit2,
+    Receipt, History, LayoutGrid, CheckCircle2, Edit2,
     Briefcase, ArrowRight, Eye
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
@@ -28,7 +28,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         setLoading(true);
         try {
             if (currentTab === 'paid') {
-                console.log("FETCH_PAID: Usando view v_commands_paid_list");
+                // Tenta carregar da view que criamos via SQL
                 const { data, error } = await supabase
                     .from('v_commands_paid_list')
                     .select('*')
@@ -36,28 +36,23 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     .order('paid_at', { ascending: false });
                 
                 if (error) {
-                    console.warn("View v_commands_paid_list indisponível, usando fallback de tabela.");
+                    console.error("View não acessível, tentando fallback manual...");
                     const { data: cmdData } = await supabase
                         .from('commands')
-                        .select('*, clients:client_id(nome), items:command_items(*)')
+                        .select('*, clients:client_id(nome)')
                         .eq('studio_id', activeStudioId)
                         .eq('status', 'paid')
                         .is('deleted_at', null)
                         .order('created_at', { ascending: false });
                     
-                    setTabs(cmdData?.map(c => {
-                        const clientName = Array.isArray(c.clients) ? c.clients[0]?.nome : c.clients?.nome;
-                        return {
-                            ...c,
-                            client_display: clientName || c.client_name || 'Consumidor Final',
-                            command_items: c.items || []
-                        };
-                    }) || []);
+                    setTabs(cmdData?.map(c => ({
+                        ...c,
+                        client_display: c.clients?.nome || c.client_name || 'Consumidor Final'
+                    })) || []);
                 } else {
                     setTabs(data || []);
                 }
             } else {
-                console.log("FETCH_OPEN: Buscando comandas ativas");
                 const { data, error } = await supabase
                     .from('commands')
                     .select('*, clients:client_id(nome, photo_url), command_items(*)')
@@ -67,21 +62,12 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     .order('created_at', { ascending: false });
                 
                 if (error) throw error;
-                
-                setTabs(data?.map(c => {
-                    // Supabase pode retornar objeto ou array dependendo da relação
-                    const clientName = Array.isArray(c.clients) ? c.clients[0]?.nome : c.clients?.nome;
-                    const clientPhoto = Array.isArray(c.clients) ? c.clients[0]?.photo_url : c.clients?.photo_url;
-                    
-                    return {
-                        ...c,
-                        client_display: clientName || c.client_name || 'Consumidor Final',
-                        client_photo_display: clientPhoto || c.photo_url || null
-                    };
-                }) || []);
+                setTabs(data?.map(c => ({
+                    ...c,
+                    client_display: c.clients?.nome || c.client_name || 'Consumidor Final'
+                })) || []);
             }
         } catch (e: any) {
-            console.error("ERRO_FETCH_COMANDAS", e);
             setToast({ message: "Erro ao sincronizar comandos.", type: 'error' });
         } finally {
             setLoading(false);
@@ -90,13 +76,11 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
 
     useEffect(() => { fetchCommands(); }, [currentTab, activeStudioId]);
 
-    const handleActionClick = (e: React.MouseEvent, id: string, actionType: string) => {
+    const handleActionClick = (e: React.MouseEvent, id: string) => {
         e.preventDefault();
         e.stopPropagation();
-        console.log(`CLICK_${actionType.toUpperCase()} commandId=${id}`);
-        if (onNavigateToCommand) {
-            onNavigateToCommand(id);
-        }
+        console.log("CLIQUE DETECTADO: Navegando para comanda", id);
+        onNavigateToCommand?.(id);
     };
 
     const handleCreateCommand = async (client: Client) => {
@@ -104,7 +88,6 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         setIsClientSearchOpen(false);
         setLoading(true);
         try {
-            // Salvando snapshot do nome (client_name) para garantir que apareça mesmo que o join falhe
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
@@ -112,17 +95,15 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     client_id: client.id,
                     status: 'open',
                     total_amount: 0,
-                    client_name: client.nome 
+                    client_name: client.nome // Snapshot do nome
                 }])
                 .select()
                 .single();
 
             if (cmdError) throw cmdError;
-            console.log("COMMAND_CREATED", command.id);
-            setToast({ message: `Comanda iniciada para ${client.nome}! 💳`, type: 'success' });
+            setToast({ message: `Comanda aberta para ${client.nome}!`, type: 'success' });
             onNavigateToCommand?.(command.id);
         } catch (e: any) {
-            console.error("ERRO_CRIAR_COMANDA", e);
             setToast({ message: "Erro ao iniciar comanda.", type: 'error' });
         } finally {
             setLoading(false);
@@ -152,9 +133,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
             
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm flex-shrink-0 z-50">
                 <div className="pointer-events-auto">
-                    <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 leading-none uppercase tracking-tighter">
-                        <FileText className="text-orange-500" size={24} /> Balcão / Comandas
-                    </h1>
+                    <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 leading-none uppercase tracking-tighter"><FileText className="text-orange-500" size={24} /> Balcão / Comandas</h1>
                     <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 mt-2">
                         <button onClick={() => setCurrentTab('open')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Em Atendimento</button>
                         <button onClick={() => setCurrentTab('paid')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'paid' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Pagos / Arquivo</button>
@@ -179,13 +158,11 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                             <div key={tab.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 relative pointer-events-auto">
                                 <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50 z-20">
                                     <div className="flex items-center gap-3 min-w-0">
-                                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs flex-shrink-0 uppercase ${tab.client_photo_display || tab.client_photo ? 'bg-white' : 'bg-orange-100 text-orange-600'}`}>
-                                            {(tab.client_photo_display || tab.client_photo) ? <img src={tab.client_photo_display || tab.client_photo} className="w-full h-full object-cover rounded-2xl" alt="" /> : (tab.client_display || 'C').charAt(0)}
+                                        <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
+                                            {(tab.photo_url || tab.clients?.photo_url) ? <img src={tab.photo_url || tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : (tab.client_display || tab.client_name || 'C').charAt(0)}
                                         </div>
                                         <div className="min-w-0">
-                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">
-                                                {tab.client_display}
-                                            </h3>
+                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.client_display || tab.client_name || 'Consumidor Final'}</h3>
                                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{tab.id.split('-')[0].toUpperCase()}</span>
                                         </div>
                                     </div>
@@ -194,7 +171,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                         {tab.status === 'open' ? (
                                             <>
                                                 <button 
-                                                    onClick={(e) => handleActionClick(e, tab.id, 'edit')}
+                                                    onClick={(e) => handleActionClick(e, tab.id)}
                                                     className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[9px] font-black text-orange-600 uppercase hover:bg-orange-50 transition-colors shadow-sm active:scale-95"
                                                 >
                                                     <Edit2 size={10} /> Editar
@@ -203,8 +180,8 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                             </>
                                         ) : (
                                             <button 
-                                                onClick={(e) => handleActionClick(e, tab.id, 'detail')}
-                                                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[9px] font-black text-slate-500 uppercase hover:bg-slate-50 transition-colors shadow-sm active:scale-95"
+                                                onClick={(e) => handleActionClick(e, tab.id)}
+                                                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[9px] font-black text-slate-400 uppercase hover:bg-slate-50 transition-colors shadow-sm active:scale-95"
                                             >
                                                 <Eye size={10} /> Ver Detalhe
                                             </button>
@@ -241,7 +218,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                             <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
                                         </div>
                                         <button 
-                                            onClick={(e) => handleActionClick(e, tab.id, 'arrow')}
+                                            onClick={(e) => handleActionClick(e, tab.id)}
                                             className={`p-3 rounded-2xl shadow-sm border border-slate-100 transition-all active:scale-95 z-30 pointer-events-auto ${tab.status === 'open' ? 'bg-white text-orange-500 hover:bg-orange-500 hover:text-white shadow-orange-100' : 'bg-slate-800 text-white opacity-80 hover:opacity-100 shadow-slate-200'}`}
                                         >
                                             <ArrowRight size={20} strokeWidth={3} />
