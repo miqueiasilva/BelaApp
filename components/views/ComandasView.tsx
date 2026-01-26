@@ -37,10 +37,10 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     .order('paid_at', { ascending: false });
                 
                 if (error) {
-                    // Fallback para a tabela commands
+                    // Fallback robusto: Busca o nome do cliente via join para não mostrar "Consumidor Final"
                     const { data: cmdData } = await supabase
                         .from('commands')
-                        .select('*, clients(nome), command_items(*)')
+                        .select('*, clients:client_id(nome), command_items(*)')
                         .eq('studio_id', activeStudioId)
                         .eq('status', 'paid')
                         .is('deleted_at', null)
@@ -52,7 +52,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
             } else {
                 const { data, error } = await supabase
                     .from('commands')
-                    .select('*, clients(nome, photo_url), command_items(*)')
+                    .select('*, clients:client_id(nome, photo_url), command_items(*)')
                     .eq('studio_id', activeStudioId)
                     .eq('status', 'open')
                     .is('deleted_at', null)
@@ -101,8 +101,12 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         } catch (e) {}
     };
 
+    const handleCardAction = (commandId: string) => {
+        onNavigateToCommand?.(commandId);
+    };
+
     const filteredTabs = tabs.filter(t => {
-        const name = (t.client_display || t.clients?.nome || t.client_name || '').toLowerCase();
+        const name = (t.client_display || t.clients?.nome || t.client_name || 'Consumidor Final').toLowerCase();
         return name.includes(searchTerm.toLowerCase());
     });
 
@@ -134,29 +138,35 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 {loading ? <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
                         {filteredTabs.map(tab => (
-                            <div key={tab.id} onClick={() => onNavigateToCommand?.(tab.id)} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 cursor-pointer relative">
+                            <div key={tab.id} onClick={() => handleCardAction(tab.id)} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 cursor-pointer relative">
                                 <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                                     <div className="flex items-center gap-3 min-w-0">
                                         <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
-                                            {tab.clients?.photo_url ? <img src={tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : (tab.client_display || tab.clients?.nome || tab.client_name || '?').charAt(0)}
+                                            {tab.clients?.photo_url ? <img src={tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : (tab.client_display || tab.clients?.nome || tab.client_name || 'C').charAt(0)}
                                         </div>
                                         <div className="min-w-0">
-                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.client_display || tab.clients?.nome || tab.client_name}</h3>
+                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.client_display || tab.clients?.nome || tab.client_name || 'Consumidor Final'}</h3>
                                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{tab.id.split('-')[0].toUpperCase()}</span>
                                         </div>
                                     </div>
                                     <div className="flex gap-1">
                                         {tab.status === 'open' ? (
-                                            <>
-                                                <div className="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded-lg text-[9px] font-black text-orange-600 uppercase">
+                                            <div className="flex items-center gap-1">
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); handleCardAction(tab.id); }}
+                                                    className="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded-lg text-[9px] font-black text-orange-600 uppercase hover:bg-orange-50 transition-colors"
+                                                >
                                                     <Edit2 size={10} /> Editar
-                                                </div>
+                                                </button>
                                                 <button onClick={(e) => handleDeleteCommand(e, tab.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
-                                            </>
-                                        ) : (
-                                            <div className="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded-lg text-[9px] font-black text-slate-400 uppercase">
-                                                <Eye size={10} /> Ver Detalhe
                                             </div>
+                                        ) : (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleCardAction(tab.id); }}
+                                                className="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded-lg text-[9px] font-black text-slate-400 uppercase hover:bg-slate-50 transition-colors"
+                                            >
+                                                <Eye size={10} /> Ver Detalhe
+                                            </button>
                                         )}
                                     </div>
                                 </div>
@@ -189,9 +199,12 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                             <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Valor Total</p>
                                             <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
                                         </div>
-                                        <div className={`p-3 rounded-2xl shadow-sm border border-slate-100 transition-all active:scale-95 ${tab.status === 'open' ? 'bg-white text-orange-500 group-hover:bg-orange-500 group-hover:text-white' : 'bg-slate-800 text-white opacity-80'}`}>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleCardAction(tab.id); }}
+                                            className={`p-3 rounded-2xl shadow-sm border border-slate-100 transition-all active:scale-95 ${tab.status === 'open' ? 'bg-white text-orange-500 group-hover:bg-orange-500 group-hover:text-white' : 'bg-slate-800 text-white opacity-80'}`}
+                                        >
                                             <ArrowRight size={20} strokeWidth={3} />
-                                        </div>
+                                        </button>
                                     </div>
                                 </div>
                             </div>

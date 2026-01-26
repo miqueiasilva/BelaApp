@@ -65,36 +65,40 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setLoading(true);
         try {
-            // Tenta usar a RPC (Mais rápido)
+            // Tenta usar a RPC (Mais rápido e centralizado)
             const { data: fullData, error: rpcError } = await supabase.rpc('get_command_full', { p_command_id: commandId });
 
             if (rpcError) {
-                // FALLBACK: Se a RPC não existir (404), fazemos a busca manual robusta
-                console.warn("RPC 'get_command_full' não encontrada. Usando busca manual.");
-                
-                const { data: cmdData } = await supabase.from('commands').select('*').eq('id', commandId).single();
+                // FALLBACK MANUAL: Se a RPC falhar, fazemos a busca completa via Joins
+                const { data: cmdData } = await supabase
+                    .from('commands')
+                    .select('*, clients:client_id(nome, whatsapp, photo_url)')
+                    .eq('id', commandId)
+                    .single();
+
                 const { data: itemsData } = await supabase.from('command_items').select('*').eq('command_id', commandId);
                 const { data: transData } = await supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado');
                 const firstApptId = itemsData?.find(i => i.appointment_id)?.appointment_id;
                 
-                const [profRes, clientRes, apptRes] = await Promise.all([
+                const [profRes, apptRes] = await Promise.all([
                     isUUID(cmdData?.professional_id) ? supabase.from('team_members').select('name, photo_url').eq('id', cmdData.professional_id).maybeSingle() : Promise.resolve({ data: null }),
-                    isUUID(cmdData?.client_id) ? supabase.from('clients').select('nome, whatsapp, photo_url').eq('id', cmdData.client_id).maybeSingle() : Promise.resolve({ data: null }),
                     firstApptId ? supabase.from('appointments').select('client_name, professional_name').eq('id', firstApptId).maybeSingle() : Promise.resolve({ data: null })
                 ]);
 
                 setCommand({
                     ...cmdData,
                     command_items: itemsData || [],
-                    display_client_name: clientRes.data?.nome || apptRes.data?.client_name || cmdData.client_name || "Consumidor Final",
-                    display_client_phone: clientRes.data?.whatsapp || cmdData.client_phone || "S/ CONTATO",
+                    // Hierarquia: Nome oficial no Cadastro > Nome na Agenda > Nome Snapshot > Consumidor Final
+                    display_client_name: cmdData?.clients?.nome || apptRes.data?.client_name || cmdData.client_name || "Consumidor Final",
+                    display_client_phone: cmdData?.clients?.whatsapp || cmdData.client_phone || "S/ CONTATO",
+                    display_client_photo: cmdData?.clients?.photo_url || null,
                     display_professional_name: profRes.data?.name || apptRes.data?.professional_name || cmdData.professional_name || "Geral",
                     display_professional_photo: profRes.data?.photo_url || null
                 });
                 setHistoryPayments(transData || []);
                 setIsLocked(cmdData?.status === 'paid');
             } else {
-                // Sucesso com RPC
+                // SUCESSO COM RPC
                 const { header, items, payments } = fullData;
                 setHistoryPayments(payments || []);
                 setIsLocked(header.status === 'paid');
@@ -108,7 +112,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 });
             }
 
-            // Carrega configs de pagamento de qualquer forma
+            // Carrega configs de pagamento
             const { data: configsRes } = await supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true);
             setAvailableConfigs(configsRes || []);
 
@@ -207,7 +211,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
 
-    // Proteção crucial: se command ainda for null após carregar, mostra erro ao invés de crashar
     if (!command) return <div className="h-full flex flex-col items-center justify-center bg-slate-50 gap-4"><AlertTriangle className="text-rose-500" size={48} /><p className="font-bold text-slate-700">Comanda não encontrada.</p><button onClick={onBack} className="text-orange-500 font-bold uppercase text-xs">Voltar</button></div>;
 
     return (
@@ -322,7 +325,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400"><span>Subtotal</span><span>R$ {totals.subtotal.toFixed(2)}</span></div>
                                     <div className="flex justify-between items-center">
                                         <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div>
-                                        <input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500/50" />
+                                        <input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50/50" />
                                     </div>
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
