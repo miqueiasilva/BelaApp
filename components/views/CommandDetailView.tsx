@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -54,13 +55,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca Contexto via RPC v2
-            const { data: rpcData, error: rpcError } = await supabase
-                .rpc('get_checkout_context_v2', { p_command_id: commandId });
-
-            if (rpcError) throw rpcError;
-
-            // 2. Busca Detalhes da Comanda com campos limpos
+            // 1. Busca Detalhes da Comanda com JOINS robustos para garantir nomes
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select(`
@@ -76,6 +71,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
+            // 2. Busca Configurações de Taxas
             const { data: configs } = await supabase
                 .from('payment_methods_config')
                 .select('*')
@@ -84,48 +80,43 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             setAvailableConfigs(configs || []);
 
-            if (rpcData && rpcData.length > 0) {
-                const context = rpcData[0];
-                
-                // UNIFICAÇÃO DE NOMES - Garantia absoluta de strings para evitar Error #31
-                const clientName = String(context.client_display_name || cmdData.clients?.nome || "Consumidor Final");
-                const professionalName = String(context.professional_display_name || cmdData.command_items?.[0]?.professional?.name || "Geral / Studio");
-                const alreadyPaid = context.command_status === 'paid' || cmdData.status === 'paid';
+            // 3. Tenta buscar pagamentos já existentes se a comanda estiver paga
+            const { data: existingPayments } = await supabase
+                .from('command_payments')
+                .select('*')
+                .eq('command_id', commandId);
 
-                setCommand({
-                    ...cmdData,
-                    status: String(context.command_status || cmdData.status),
-                    display_client_name: clientName,
-                    display_professional_name: professionalName,
-                });
+            // Identificação de nomes com Fallbacks seguros
+            const clientName = cmdData.clients?.nome || "Consumidor Final";
+            const professionalName = cmdData.command_items?.[0]?.professional?.name || "Geral / Studio";
+            const alreadyPaid = cmdData.status === 'paid';
 
-                setIsLocked(alreadyPaid);
+            setCommand({
+                ...cmdData,
+                display_client_name: String(clientName),
+                display_professional_name: String(professionalName),
+            });
 
-                const validPayments = rpcData
-                    .filter((p: any) => p.payment_id)
-                    .map((p: any) => ({
-                        id: String(p.payment_id),
-                        method: String(p.method_type || 'pix'),
-                        amount: Number(p.payment_amount),
-                        installments: Number(p.installments || 1),
-                        method_id: String(p.method_id),
-                        fee_rate: Number(p.fee_rate || 0),
-                        fee_value: Number(p.fee_value || 0),
-                        net_amount: Number(p.net_amount || p.payment_amount),
-                        brand: String(p.method_brand || p.brand || '')
-                    }));
-                
-                setAddedPayments(validPayments);
-            } else {
-                setCommand({
-                    ...cmdData,
-                    display_client_name: String(cmdData.clients?.nome || "Consumidor Final"),
-                    display_professional_name: String(cmdData.command_items?.[0]?.professional?.name || "Geral / Studio"),
-                });
+            setIsLocked(alreadyPaid);
+
+            if (existingPayments && existingPayments.length > 0) {
+                const mappedPayments = existingPayments.map((p: any) => ({
+                    id: String(p.id),
+                    method: String(p.method),
+                    amount: Number(p.amount),
+                    installments: Number(p.installments || 1),
+                    method_id: String(p.method_id),
+                    fee_rate: Number(p.fee_rate || 0),
+                    fee_value: Number(p.fee_amount || 0),
+                    net_amount: Number(p.net_amount || p.amount),
+                    brand: String(p.brand || '')
+                }));
+                setAddedPayments(mappedPayments);
             }
+
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
-            setToast({ message: "Erro ao carregar dados.", type: 'error' });
+            setToast({ message: "Erro ao carregar contexto do checkout.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -189,39 +180,48 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setIsFinishing(true);
 
         try {
-            // Conversão estrita para tipos aceitos pelo RPC Postgres (UUIDs devem ser strings)
             const studioId = String(activeStudioId);
             const clientId = command.client_id ? String(command.client_id) : null;
             const professionalId = (command.professional_id || command.command_items?.[0]?.professional_id) ? String(command.professional_id || command.command_items?.[0]?.professional_id) : null;
 
+            // Substituído RPC register_payment_transaction por INSERÇÃO DIRETA (Mais estável)
             for (const payment of addedPayments) {
-                const { data: transactionId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                    p_amount: Number(payment.amount),
-                    p_category: 'servico',
-                    p_client_id: clientId,
-                    p_description: String(`Recebimento Comanda #${command.id.substring(0, 8).toUpperCase()}`),
-                    p_net_value: Number(payment.net_amount),
-                    p_payment_method_id: payment.method_id === 'manual' ? null : payment.method_id,
-                    p_professional_id: professionalId,
-                    p_studio_id: studioId,
-                    p_tax_rate: Number(payment.fee_rate),
-                    p_type: 'income'
-                });
+                const { data: transaction, error: transError } = await supabase
+                    .from('financial_transactions')
+                    .insert([{
+                        studio_id: studioId,
+                        description: `Recebimento Comanda #${command.id.substring(0, 8).toUpperCase()}`,
+                        amount: Number(payment.amount),
+                        net_value: Number(payment.net_amount),
+                        tax_rate: Number(payment.fee_rate),
+                        type: 'income',
+                        category: 'servico',
+                        payment_method: String(payment.method),
+                        payment_method_id: payment.method_id === 'manual' ? null : payment.method_id,
+                        professional_id: professionalId,
+                        client_id: clientId,
+                        appointment_id: command.command_items?.[0]?.appointment_id || null,
+                        date: new Date().toISOString(),
+                        status: 'pago'
+                    }])
+                    .select()
+                    .single();
 
-                if (rpcError) throw rpcError;
+                if (transError) throw transError;
 
                 const { error: paymentError } = await supabase
                     .from('command_payments')
                     .insert([{
                         command_id: command.id,
-                        financial_transaction_id: transactionId,
+                        financial_transaction_id: transaction.id,
                         method_id: payment.method_id === 'manual' ? null : payment.method_id,
                         amount: Number(payment.amount),
                         method: String(payment.method),
                         installments: Number(payment.installments),
                         fee_rate: Number(payment.fee_rate),
                         fee_amount: Number(payment.fee_value),
-                        net_amount: Number(payment.net_amount)
+                        net_amount: Number(payment.net_amount),
+                        brand: payment.brand
                     }]);
 
                 if (paymentError) throw paymentError;
@@ -243,7 +243,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setTimeout(onBack, 1500);
         } catch (e: any) {
             console.error('[FINISH_ERROR]', e);
-            setToast({ message: `Erro: ${e.message || "Tente novamente"}`, type: 'error' });
+            setToast({ message: `Erro no fechamento: ${e.message || "Tente novamente"}`, type: 'error' });
         } finally {
             setIsFinishing(false);
         }
@@ -263,7 +263,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     <div>
                         <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500 font-mono">#{currentCommandIdDisplay}</span></h1>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                            Atendente: {String(command?.display_professional_name || 'Geral')}
+                            Profissional: {String(command?.display_professional_name || 'Geral / Studio')}
                         </p>
                     </div>
                 </div>
@@ -281,9 +281,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 {String(command?.display_client_name || 'C').charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{String(command?.display_client_name || 'Consumidor Final')}</h3>
+                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{String(command?.display_client_name || 'Cliente sem cadastro')}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Calendar size={14} className="text-orange-500" /> Aberta em: {command ? format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt }) : '--'}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Phone size={14} className="text-orange-500" /> {command.clients?.whatsapp || 'Sem contato'}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><User size={14} className="text-orange-500" /> Profissional: {String(command?.display_professional_name).toUpperCase()}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Calendar size={14} className="text-orange-500" /> {command ? format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt }) : '--'}</div>
                                 </div>
                             </div>
                         </div>
@@ -291,7 +293,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {/* ITENS */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Carrinho de Consumo</h3>
+                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Itens da Comanda</h3>
                             </header>
                             <div className="divide-y divide-slate-50">
                                 {command?.command_items?.map((item: any) => (
@@ -313,7 +315,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {addedPayments.length > 0 && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Recebimentos Registrados</h3>
+                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Parcelas de Recebimento</h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
                                     {addedPayments.map(p => (
@@ -324,6 +326,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-sm font-black text-slate-700 uppercase">{String(p.method).replace('_', ' ')}</span>
                                                         {p.brand && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{String(p.brand)} ({p.installments}x)</span>}
+                                                    </div>
+                                                    <div className="flex gap-3">
+                                                        <p className="text-[9px] font-black text-rose-500 uppercase">Taxa: {p.fee_rate}% (- R$ {p.fee_value.toFixed(2)})</p>
+                                                        <p className="text-[9px] font-black text-emerald-600 uppercase">Líquido: R$ {p.net_amount.toFixed(2)}</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -394,7 +400,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             ) : (
                                 <div className="bg-emerald-50 p-8 rounded-[32px] border-2 border-emerald-100 text-center space-y-4">
                                     <CheckCircle size={40} className="text-emerald-500 mx-auto" />
-                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Liquidada</p>
+                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Comanda Liquidada</p>
                                 </div>
                             )}
                             
