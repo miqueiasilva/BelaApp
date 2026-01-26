@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     Search, Plus, Clock, User, FileText, 
@@ -92,11 +93,19 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
 
     const handleDeleteCommand = async (e: React.MouseEvent, commandId: string) => {
         e.stopPropagation();
+        
+        // Regra de Negócio: Impedir exclusão de comanda paga
+        const targetCommand = tabs.find(t => t.id === commandId);
+        if (targetCommand?.status === 'paid') {
+            setToast({ message: "Comanda liquidada não pode ser excluída.", type: 'error' });
+            return;
+        }
+
         if (!window.confirm("Deseja realmente excluir esta comanda? Esta ação é irreversível.")) return;
 
         setIsActionLoading(true);
         try {
-            // Soft Delete conforme especificado
+            // Regra Soft Delete: status = canceled e preenche deleted_at
             const { error } = await supabase
                 .from('commands')
                 .update({ 
@@ -118,7 +127,12 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
 
     const handleStartEdit = (e: React.MouseEvent, command: Command) => {
         e.stopPropagation();
-        setEditingCommand(command);
+        if (command.status === 'paid') {
+            setToast({ message: "Comandas faturadas não podem ser alteradas.", type: 'error' });
+            return;
+        }
+        // Redireciona para o detalhe onde a edição de itens ocorre naturalmente por lógica
+        onNavigateToCommand?.(command.id);
     };
 
     const handleUpdateCommandClient = async (client: Client) => {
@@ -198,24 +212,22 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                         <span className="text-[10px] font-black text-slate-400">#{tab.id.split('-')[0].toUpperCase()}</span>
                                     </div>
                                     
-                                    {tab.status === 'open' && (
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button 
-                                                onClick={(e) => handleStartEdit(e, tab)}
-                                                className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                                                title="Editar comanda"
-                                            >
-                                                <Edit2 size={14} />
-                                            </button>
-                                            <button 
-                                                onClick={(e) => handleDeleteCommand(e, tab.id)}
-                                                className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                                                title="Excluir comanda"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
-                                    )}
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                            onClick={(e) => handleStartEdit(e, tab)}
+                                            className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                                            title="Ver/Editar comanda"
+                                        >
+                                            <Edit2 size={14} />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => handleDeleteCommand(e, tab.id)}
+                                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                                            title="Excluir comanda"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="flex-1 p-5 overflow-y-auto custom-scrollbar">
@@ -255,79 +267,12 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 )}
             </main>
 
-            {/* MODAL DE EDIÇÃO (Simplificado) */}
-            {editingCommand && (
-                <div className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-white/20">
-                        <header className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <div>
-                                <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Editar Comanda</h2>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase">#{editingCommand.id.split('-')[0].toUpperCase()}</p>
-                            </div>
-                            <button onClick={() => setEditingCommand(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={24} /></button>
-                        </header>
-                        
-                        <div className="p-8 space-y-6 text-left">
-                            <div className="space-y-4">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Alterar Cliente</label>
-                                <button 
-                                    onClick={() => setIsClientSearchOpen(true)}
-                                    className="w-full flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl hover:bg-white transition-all group"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <User size={18} className="text-orange-500" />
-                                        <span className="font-bold text-slate-700">{editingCommand.clients?.nome}</span>
-                                    </div>
-                                    <Edit2 size={14} className="text-slate-300 group-hover:text-orange-500" />
-                                </button>
-                            </div>
-
-                            <div className="space-y-4">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Alterar Profissional</label>
-                                <button 
-                                    onClick={() => setIsProfSelectionOpen(true)}
-                                    className="w-full flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl hover:bg-white transition-all group"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <Briefcase size={18} className="text-blue-500" />
-                                        <span className="font-bold text-slate-700">Trocar Atendimento</span>
-                                    </div>
-                                    <Edit2 size={14} className="text-slate-300 group-hover:text-blue-500" />
-                                </button>
-                            </div>
-                        </div>
-
-                        <footer className="p-8 bg-slate-50 border-t border-slate-100">
-                            <button 
-                                onClick={() => setEditingCommand(null)}
-                                className="w-full py-4 text-slate-400 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl transition-all"
-                            >
-                                Fechar
-                            </button>
-                        </footer>
-                    </div>
-                </div>
-            )}
-
             {isClientSearchOpen && (
                 <ClientSearchModal 
                     onClose={() => setIsClientSearchOpen(false)} 
-                    onSelect={editingCommand ? handleUpdateCommandClient : handleCreateCommand} 
+                    onSelect={handleCreateCommand} 
                     onNewClient={() => {}} 
                 />
-            )}
-
-            {isProfSelectionOpen && (
-                <div className="fixed inset-0 z-[150] bg-white flex flex-col">
-                    <SelectionModal 
-                        title="Selecione o Profissional"
-                        items={professionals}
-                        onClose={() => setIsProfSelectionOpen(false)}
-                        onSelect={handleUpdateCommandProfessional}
-                        searchPlaceholder="Buscar profissional..."
-                        renderItemIcon={() => <User size={20} />}
-                    />
-                </div>
             )}
         </div>
     );
