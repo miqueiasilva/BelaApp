@@ -7,7 +7,7 @@ import {
     Percent, Calendar, ShoppingCart, X, Coins,
     ArrowRight, ShieldCheck, Tag, CreditCard as CardIcon,
     User, UserCheck, Trash2, Lock, MoreVertical, AlertTriangle,
-    Clock, Landmark
+    Clock, Landmark, Info
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -65,65 +65,33 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setLoading(true);
         try {
-            // 1. Busca Comanda Básica
-            const { data: cmdData, error: cmdError } = await supabase
-                .from('commands')
-                .select('*')
-                .eq('id', commandId)
-                .single();
+            // Chamar a RPC get_command_full que retorna todo o contexto em JSON
+            const { data: fullData, error: rpcError } = await supabase.rpc('get_command_full', { p_command_id: commandId });
 
-            if (cmdError) throw cmdError;
+            if (rpcError) throw rpcError;
 
-            // 2. Busca Itens (Essencial para achar o appointment_id)
-            const { data: itemsData } = await supabase
-                .from('command_items')
-                .select('*')
-                .eq('command_id', commandId);
+            // Carrega configurações de pagamento JIT
+            const { data: configsRes } = await supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true);
+            setAvailableConfigs(configsRes || []);
 
-            // 3. Pega o ID do agendamento original para backup de nomes
-            const firstApptId = itemsData?.find(i => i.appointment_id)?.appointment_id;
-
-            // 4. Busca Pagamentos e Dados de Backup em paralelo
-            const [transRes, configsRes, apptBackupRes] = await Promise.all([
-                supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado'),
-                supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true),
-                firstApptId ? supabase.from('appointments').select('client_name, professional_name').eq('id', firstApptId).maybeSingle() : Promise.resolve({ data: null })
-            ]);
-
-            // 5. Busca Cadastro oficial do cliente se existir UUID
-            const clientId = cmdData.client_id;
-            const clientOfficialRes = isUUID(clientId) 
-                ? await supabase.from('clients').select('nome, whatsapp, photo_url').eq('id', clientId).maybeSingle()
-                : { data: null };
-
-            // 6. Busca Profissional oficial
-            const profId = cmdData.professional_id || itemsData?.[0]?.professional_id;
-            const profOfficialRes = isUUID(profId)
-                ? await supabase.from('team_members').select('name, photo_url').eq('id', profId).maybeSingle()
-                : { data: null };
-
-            setAvailableConfigs(configsRes.data || []);
-            setHistoryPayments(transRes.data || []);
+            const { header, items, payments } = fullData;
             
-            const alreadyPaid = cmdData.status === 'paid';
+            setHistoryPayments(payments || []);
+            setIsLocked(header.status === 'paid');
 
-            // 7. Montagem com hierarquia de nomes (Oficial > Agenda > Fallback)
             setCommand({
-                ...cmdData,
-                command_items: itemsData || [],
-                display_client_name: clientOfficialRes.data?.nome || apptBackupRes.data?.client_name || cmdData.client_name || "Consumidor Final",
-                display_client_phone: clientOfficialRes.data?.whatsapp || cmdData.client_phone || "S/ CONTATO",
-                display_client_photo: clientOfficialRes.data?.photo_url || null,
-                display_professional_name: profOfficialRes.data?.name || apptBackupRes.data?.professional_name || cmdData.professional_name || "Geral",
-                display_professional_photo: profOfficialRes.data?.photo_url || null,
-                professional_id: profId,
-                client_id: clientId
+                ...header,
+                command_items: items || [],
+                display_client_name: header.client_display || "Consumidor Final",
+                display_client_phone: header.client_phone_display || "S/ CONTATO",
+                display_client_photo: header.professional_photo || null,
+                display_professional_name: header.professional_name || "Geral",
+                display_professional_photo: header.professional_photo || null
             });
 
-            setIsLocked(alreadyPaid);
         } catch (e: any) {
             console.error('[FETCH_CONTEXT_ERROR]', e);
-            setToast({ message: "Erro ao carregar detalhes da comanda.", type: 'error' });
+            setToast({ message: "Erro ao carregar detalhes via RPC.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -177,6 +145,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setIsFinishing(true);
 
         try {
+            // Registra as transações individualmente via RPC para garantir snapshots financeiros
             for (const p of addedPayments) {
                 const methodMap: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
                 await supabase.rpc('register_payment_transaction', {
@@ -190,17 +159,28 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 });
             }
 
-            const { error: closeError } = await supabase
-                .from('commands')
-                .update({ 
-                    status: 'paid', 
-                    closed_at: new Date().toISOString(),
-                    total_amount: totals.total,
-                    payment_method: addedPayments[0]?.method || historyPayments[0]?.payment_method || 'misto'
-                })
-                .eq('id', commandId);
+            // Chamar close_command passando o snapshot do nome do cliente para a tabela commands
+            const { error: closeError } = await supabase.rpc('close_command', {
+                p_command_id: commandId,
+                p_client_name: command.display_client_name,
+                p_total_amount: totals.total,
+                p_payment_method: addedPayments[0]?.method || historyPayments[0]?.payment_method || 'misto'
+            });
 
-            if (closeError) throw closeError;
+            if (closeError) {
+                // Fallback update se a RPC close_command ainda não estiver disponível
+                const { error: fallbackError } = await supabase
+                    .from('commands')
+                    .update({ 
+                        status: 'paid', 
+                        closed_at: new Date().toISOString(),
+                        total_amount: totals.total,
+                        client_name: command.display_client_name,
+                        payment_method: addedPayments[0]?.method || historyPayments[0]?.payment_method || 'misto'
+                    })
+                    .eq('id', commandId);
+                if (fallbackError) throw fallbackError;
+            }
 
             setToast({ message: "Comanda liquidada com sucesso! 💳", type: 'success' });
             setIsLocked(true);
@@ -285,10 +265,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-emerald-500"><Landmark size={20} /></div>
                                                 <div>
                                                     <p className="text-sm font-black text-slate-700 uppercase">{p.payment_method?.replace('_', ' ')}</p>
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Processado em {format(new Date(p.date), 'dd/MM HH:mm')}</p>
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                                        Taxas: R$ {Number(p.fee_value || 0).toFixed(2)} ({p.fee_rate || 0}%)
+                                                    </p>
                                                 </div>
                                             </div>
-                                            <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
+                                            <div className="text-right">
+                                                <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
+                                                <p className="text-[9px] font-black text-emerald-600 uppercase">Líquido: R$ {Number(p.net_amount || p.amount).toFixed(2)}</p>
+                                            </div>
                                         </div>
                                     ))}
                                     {addedPayments.map(p => (
@@ -385,7 +370,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             <div className="bg-emerald-50 p-8 rounded-[48px] border-2 border-emerald-100 text-center space-y-4 animate-in zoom-in-95">
                                 <CheckCircle size={48} className="text-emerald-500 mx-auto" />
                                 <h3 className="text-xl font-black text-emerald-800 uppercase tracking-tighter">Comanda Paga</h3>
-                                <p className="text-xs text-emerald-600 font-medium leading-relaxed">Este registro está arquivado e seu faturamento foi consolidado no fluxo de caixa.</p>
+                                <p className="text-xs text-emerald-600 font-medium leading-relaxed">Este registro está arquivado e seu faturamento foi consolidado no fluxo de caixa com snapshots de taxas aplicadas.</p>
                             </div>
                         )}
                     </div>
