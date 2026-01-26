@@ -4,7 +4,7 @@ import {
     Search, Plus, Clock, User, FileText, 
     DollarSign, Coffee, Scissors, Trash2, ShoppingBag, X,
     CreditCard, Banknote, Smartphone, CheckCircle, Loader2,
-    Receipt, History, LayoutGrid, CheckCircle2, AlertCircle, Edit2,
+    Receipt, History, LayoutGrid, CheckCircle2, Edit2,
     Briefcase, ArrowRight, Eye
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
@@ -28,7 +28,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         setLoading(true);
         try {
             if (currentTab === 'paid') {
-                // Tenta carregar da view oficial
+                // Tenta carregar da view que criamos via SQL
                 const { data, error } = await supabase
                     .from('v_commands_paid_list')
                     .select('*')
@@ -36,10 +36,10 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     .order('paid_at', { ascending: false });
                 
                 if (error) {
-                    console.warn("View v_commands_paid_list não encontrada, usando fallback manual.");
+                    console.error("View não acessível, tentando fallback manual...");
                     const { data: cmdData } = await supabase
                         .from('commands')
-                        .select('*, clients:client_id(nome), items:command_items(*)')
+                        .select('*, clients:client_id(nome)')
                         .eq('studio_id', activeStudioId)
                         .eq('status', 'paid')
                         .is('deleted_at', null)
@@ -47,8 +47,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     
                     setTabs(cmdData?.map(c => ({
                         ...c,
-                        client_display: c.clients?.nome || c.client_name || 'Consumidor Final',
-                        command_items: c.items || []
+                        client_display: c.clients?.nome || c.client_name || 'Consumidor Final'
                     })) || []);
                 } else {
                     setTabs(data || []);
@@ -80,7 +79,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
     const handleActionClick = (e: React.MouseEvent, id: string) => {
         e.preventDefault();
         e.stopPropagation();
-        console.log("Clique detectado em comanda:", id);
+        console.log("CLIQUE DETECTADO: Navegando para comanda", id);
         onNavigateToCommand?.(id);
     };
 
@@ -95,17 +94,16 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     studio_id: activeStudioId,
                     client_id: client.id,
                     status: 'open',
-                    total_amount: 0
+                    total_amount: 0,
+                    client_name: client.nome // Snapshot do nome
                 }])
                 .select()
                 .single();
 
             if (cmdError) throw cmdError;
-
-            setToast({ message: `Comanda iniciada para ${client.nome}! 💳`, type: 'success' });
+            setToast({ message: `Comanda aberta para ${client.nome}!`, type: 'success' });
             onNavigateToCommand?.(command.id);
         } catch (e: any) {
-            console.error("Falha ao iniciar comanda:", e);
             setToast({ message: "Erro ao iniciar comanda.", type: 'error' });
         } finally {
             setLoading(false);
@@ -125,7 +123,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
     };
 
     const filteredTabs = tabs.filter(t => {
-        const name = (t.client_display || '').toLowerCase();
+        const name = (t.client_display || t.client_name || '').toLowerCase();
         return name.includes(searchTerm.toLowerCase());
     });
 
@@ -153,7 +151,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 </div>
             </div>
 
-            <main className="flex-1 overflow-y-auto p-6 custom-scrollbar relative z-10 pointer-events-none">
+            <main className="flex-1 overflow-y-auto p-6 custom-scrollbar relative z-10">
                 {loading ? <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
                         {filteredTabs.map(tab => (
@@ -161,10 +159,10 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                 <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50 z-20">
                                     <div className="flex items-center gap-3 min-w-0">
                                         <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
-                                            {tab.photo_url || tab.clients?.photo_url ? <img src={tab.photo_url || tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : (tab.client_display || 'C').charAt(0)}
+                                            {(tab.photo_url || tab.clients?.photo_url) ? <img src={tab.photo_url || tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : (tab.client_display || tab.client_name || 'C').charAt(0)}
                                         </div>
                                         <div className="min-w-0">
-                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.client_display}</h3>
+                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.client_display || tab.client_name || 'Consumidor Final'}</h3>
                                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{tab.id.split('-')[0].toUpperCase()}</span>
                                         </div>
                                     </div>
