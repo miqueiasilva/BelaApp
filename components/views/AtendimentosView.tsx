@@ -26,6 +26,11 @@ import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { useStudio } from '../../contexts/StudioContext';
 
+const isUUID = (str: any): boolean => {
+    if (!str || typeof str !== 'string') return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+};
+
 const START_HOUR = 8;
 const END_HOUR = 20; 
 const SLOT_PX_HEIGHT = 80; 
@@ -333,7 +338,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             const payload = { 
                 studio_id: activeStudioId,
-                professional_id: String(app.professional.id), 
+                professional_id: isUUID(app.professional.id) ? String(app.professional.id) : null, 
                 client_id: app.client?.id || null,
                 client_name: app.client?.nome || 'Cliente', 
                 professional_name: app.professional.name, 
@@ -419,15 +424,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // FIX: Adicionado professional_id, professional_name e client_name no insert da comanda para garantir exibição robusta no checkout
+            // FIX: Removidas colunas client_name e professional_name do insert da comanda para evitar erro 400
+            // e adicionada verificação isUUID para evitar erro de tipo de dados
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: activeStudioId,
-                    client_id: appointment.client?.id,
-                    client_name: appointment.client?.nome,
-                    professional_id: appointment.professional.id,
-                    professional_name: appointment.professional.name,
+                    client_id: isUUID(appointment.client?.id) ? appointment.client?.id : null,
+                    professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null,
                     status: 'open',
                     total_amount: appointment.service.price
                 }])
@@ -435,8 +439,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 .single();
 
             if (cmdError) throw cmdError;
-
-            const isUUID = (val: any) => typeof val === 'string' && val.length > 20;
 
             const { error: itemError } = await supabase
                 .from('command_items')
@@ -448,7 +450,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     title: appointment.service.name,
                     price: appointment.service.price,
                     quantity: 1,
-                    professional_id: appointment.professional.id
+                    professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null
                 }]);
 
             if (itemError) throw itemError;

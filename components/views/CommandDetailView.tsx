@@ -36,7 +36,7 @@ const BRANDS = ['Visa', 'Mastercard', 'Elo', 'Hipercard', 'Amex', 'Outros'];
 
 const isUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) || str.length > 20;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 };
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
@@ -60,53 +60,52 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca dados da Comanda (Consulta Base - Evita Joins complexos que podem 400)
+            // 1. Busca dados da Comanda (Apenas o essencial para evitar erros de join)
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
-                .select('*, command_items(*)')
+                .select('*')
                 .eq('id', commandId)
                 .single();
 
             if (cmdError) throw cmdError;
 
-            // 2. Busca Contexto via RPC (Opcional - Tenta buscar nomes formatados)
-            let context: any = null;
-            try {
-                const { data: contextData } = await supabase.rpc('get_checkout_context_v2', {
-                    p_command_id: commandId
-                });
-                context = Array.isArray(contextData) ? contextData[0] : contextData;
-            } catch (e) {
-                console.warn("RPC Context Falhou, usando fallbacks.");
-            }
+            // 2. Busca Itens da Comanda (Para pegar o professional_id caso nulo no pai)
+            const { data: itemsData } = await supabase
+                .from('command_items')
+                .select('*')
+                .eq('command_id', commandId);
 
-            // 3. Busca Dados Relacionados (Cliente e Profissional) de forma independente e paralela
+            // 3. Resolve IDs
+            const resolvedProfessionalId = cmdData.professional_id || itemsData?.[0]?.professional_id;
+            const resolvedClientId = cmdData.client_id;
+
+            // 4. Busca Dados Relacionados em paralelo (Consultas resilientes)
             const [clientRes, profRes, configsRes] = await Promise.all([
-                cmdData.client_id ? supabase.from('clients').select('nome, whatsapp').eq('id', cmdData.client_id).single() : Promise.resolve({ data: null }),
-                cmdData.professional_id ? supabase.from('team_members').select('name, photo_url').eq('id', cmdData.professional_id).single() : Promise.resolve({ data: null }),
+                isUUID(resolvedClientId) ? supabase.from('clients').select('nome, whatsapp').eq('id', resolvedClientId).maybeSingle() : Promise.resolve({ data: null }),
+                isUUID(resolvedProfessionalId) ? supabase.from('team_members').select('name, photo_url').eq('id', resolvedProfessionalId).maybeSingle() : Promise.resolve({ data: null }),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
             ]);
 
             setAvailableConfigs(configsRes.data || []);
-
             const alreadyPaid = cmdData.status === 'paid';
 
-            // Mapeamento Robusto com Fallbacks em cascata
+            // 5. Monta objeto de comando com nomes reais resolvidos
             setCommand({
                 ...cmdData,
-                display_client_name: context?.client_display_name || clientRes.data?.nome || cmdData.client_name || "Cliente sem cadastro",
-                display_client_phone: context?.client_phone || clientRes.data?.whatsapp || "SEM CONTATO",
-                display_professional_name: context?.professional_display_name || profRes.data?.name || cmdData.professional_name || "Geral / Studio",
-                display_professional_photo: context?.professional_photo_url || profRes.data?.photo_url || null,
-                professional_id: cmdData.professional_id,
-                client_id: cmdData.client_id
+                command_items: itemsData || [],
+                display_client_name: clientRes.data?.nome || "Cliente sem cadastro",
+                display_client_phone: clientRes.data?.whatsapp || "SEM CONTATO",
+                display_professional_name: profRes.data?.name || "Geral / Studio",
+                display_professional_photo: profRes.data?.photo_url || null,
+                professional_id: resolvedProfessionalId,
+                client_id: resolvedClientId
             });
 
             setIsLocked(alreadyPaid);
 
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
-            setToast({ message: "Erro ao localizar comanda.", type: 'error' });
+            setToast({ message: "Comanda não localizada ou erro de rede.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -185,7 +184,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_studio_id: studioId,
-                    p_professional_id: command.professional_id,
+                    p_professional_id: isUUID(command.professional_id) ? command.professional_id : null,
                     p_command_id: commandId,
                     p_amount: Number(totalAmount),
                     p_method: methodMap[primaryPayment.method] || 'pix',
@@ -220,6 +219,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
+    
     if (!command) return (
         <div className="h-full flex flex-col items-center justify-center bg-slate-50 p-8 text-center">
             <AlertTriangle size={64} className="text-slate-200 mb-6" />
@@ -255,8 +255,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {/* CARD CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl uppercase overflow-hidden">
-                                {command.display_professional_photo ? (
-                                    <img src={command.display_professional_photo} className="w-full h-full object-cover" />
+                                {command.photo_url ? (
+                                    <img src={command.photo_url} className="w-full h-full object-cover" />
                                 ) : (
                                     command.display_client_name.charAt(0)
                                 )}
