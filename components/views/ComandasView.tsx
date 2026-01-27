@@ -4,7 +4,7 @@ import {
     DollarSign, Coffee, Scissors, Trash2, ShoppingBag, X,
     CreditCard, Banknote, Smartphone, CheckCircle, Loader2,
     Receipt, History, LayoutGrid, CheckCircle2, AlertCircle, Edit2,
-    Briefcase, ArrowRight, Eye
+    Briefcase, ArrowRight, Eye, UserCheck
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -34,9 +34,10 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
+            // Join com team_members para obter o nome do profissional responsável
             const { data, error } = await supabase
                 .from('commands')
-                .select('*, clients(nome, photo_url), command_items(*)')
+                .select('*, clients(nome, photo_url), team_members(name), command_items(*)')
                 .eq('studio_id', activeStudioId)
                 .eq('status', currentTab)
                 .is('deleted_at', null)
@@ -142,7 +143,10 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                         </div>
                                         <div className="min-w-0">
                                             <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.clients?.nome || tab.client_name}</h3>
-                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{tab.id.split('-')[0].toUpperCase()}</span>
+                                            <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 uppercase">
+                                                <UserCheck size={10} className="text-orange-400" />
+                                                {(tab as any).team_members?.name || 'Geral / Studio'}
+                                            </p>
                                         </div>
                                     </div>
                                     {tab.status === 'open' ? (

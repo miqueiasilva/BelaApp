@@ -95,10 +95,10 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                 end = endOfDay(new Date(endDate));
             }
 
-            // 1. Buscar Extrato Analítico (Usando tabela base para máxima compatibilidade)
+            // 1. Buscar Lançamentos Reais da Tabela Base (Substituindo a view vw_cashflow_extrato inexistente)
             const { data: trans, error: transError } = await supabase
                 .from('financial_transactions')
-                .select('id, description, amount, net_value, type, category, date, payment_method, status, studio_id')
+                .select('id,description,amount,net_value,type,category,date,payment_method,status,studio_id')
                 .eq('studio_id', activeStudioId)
                 .gte('date', start.toISOString())
                 .lte('date', end.toISOString())
@@ -109,7 +109,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             const currentTrans = trans || [];
             setDbTransactions(currentTrans);
 
-            // 2. Cálculo dos Indicadores dos Cards (Frontend side para evitar erro 404 da RPC get_cashflow_cards)
+            // 2. Cálculo Manual dos Indicadores (Substituindo a RPC get_cashflow_cards inexistente)
             const gross = currentTrans
                 .filter(t => t.type === 'income' || t.type === 'receita')
                 .reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -135,7 +135,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             
             const { data: apps, error: appsError } = await supabase
                 .from('appointments')
-                .select('date, value')
+                .select('date,value')
                 .eq('studio_id', activeStudioId)
                 .in('status', ['agendado', 'confirmado', 'confirmado_whatsapp'])
                 .gte('date', projStart.toISOString())
@@ -165,7 +165,6 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
         const categoriesSet = new Set(dbTransactions.map(t => t.category).filter(Boolean));
         const categories = Array.from(categoriesSet);
 
-        // Mix de Categorias para o PieChart
         const categoryMix = categories.map(cat => {
             const total = dbTransactions
                 .filter(t => t.category === cat)
@@ -173,7 +172,6 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             return { name: cat, value: total };
         }).sort((a, b) => b.value - a.value).slice(0, 5);
 
-        // Dados para o gráfico temporal
         const rangeStart = filterPeriod === 'hoje' ? startOfDay(new Date()) : (filterPeriod === 'custom' ? new Date(startDate) : startOfMonth(new Date()));
         const rangeEnd = filterPeriod === 'hoje' ? endOfDay(new Date()) : (filterPeriod === 'custom' ? new Date(endDate) : endOfMonth(new Date()));
         
@@ -243,7 +241,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             head: [['Data', 'Descrição', 'Categoria', 'Pagamento', 'Valor']],
             body: tableData,
             theme: 'striped',
-            headStyles: { fill: 'orange' }
+            headStyles: { fill: [249, 115, 22] }
         });
 
         doc.save(`Relatorio_Financeiro_${format(new Date(), 'dd_MM_yy')}.pdf`);
@@ -291,7 +289,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm z-20">
                 <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-orange-50 text-orange-600 rounded-2xl">
+                    <div className="p-2.5 bg-orange-50 text-orange-600 rounded-xl">
                         <Landmark size={24} />
                     </div>
                     <div>
@@ -476,7 +474,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                                             <td className="px-8 py-5">
                                                 <div className="flex items-center gap-2">
                                                     {(t.payment_method === 'pix') && <Smartphone size={14} className="text-teal-500" />}
-                                                    {(t.payment_method === 'cash' || t.payment_method === 'dinheiro') && <Banknote size={14} className="text-green-500" />}
+                                                    {(t.payment_method === 'cash' || t.payment_method === 'dinheiro' || t.payment_method === 'money') && <Banknote size={14} className="text-green-500" />}
                                                     {(t.payment_method?.includes('cartao') || t.payment_method?.includes('credit') || t.payment_method?.includes('debit')) && <CreditCard size={14} className="text-blue-500" />}
                                                     <span className="text-[10px] font-black text-slate-500 uppercase">{t.payment_method?.replace('_', ' ') || 'Processamento'}</span>
                                                 </div>
