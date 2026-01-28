@@ -34,16 +34,32 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // Join com team_members para obter o nome do profissional responsável
+            // CORREÇÃO: Removido JOIN inválido 'team_members(name)' que causava erro PGRST200
+            // Usando a coluna denormalizada professional_name disponível na tabela commands
             const { data, error } = await supabase
                 .from('commands')
-                .select('*, clients(nome, photo_url), team_members(name), command_items(*)')
+                .select(`
+                    id, 
+                    client_id, 
+                    studio_id, 
+                    status, 
+                    total_amount, 
+                    created_at, 
+                    closed_at, 
+                    client_name, 
+                    professional_name, 
+                    clients(nome, photo_url), 
+                    command_items(id, title, price, quantity)
+                `)
                 .eq('studio_id', activeStudioId)
                 .eq('status', currentTab)
                 .is('deleted_at', null)
                 .order('created_at', { ascending: false });
             
-            if (error) throw error;
+            if (error) {
+                console.error("Erro Supabase Comandas:", error);
+                throw error;
+            }
             setTabs(data || []);
         } catch (e: any) {
             setToast({ message: "Erro ao carregar comandas.", type: 'error' });
@@ -71,7 +87,12 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         try {
             const { data, error } = await supabase
                 .from('commands')
-                .insert([{ studio_id: activeStudioId, client_id: client.id, client_name: client.nome, status: 'open' }])
+                .insert([{ 
+                    studio_id: activeStudioId, 
+                    client_id: client.id, 
+                    client_name: client.nome, 
+                    status: 'open' 
+                }])
                 .select('*, clients(nome), command_items(*)')
                 .single();
             if (error) throw error;
@@ -145,7 +166,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                             <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.clients?.nome || tab.client_name}</h3>
                                             <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 uppercase">
                                                 <UserCheck size={10} className="text-orange-400" />
-                                                {(tab as any).team_members?.name || 'Geral / Studio'}
+                                                {tab.professional_name || 'Geral / Studio'}
                                             </p>
                                         </div>
                                     </div>
@@ -159,13 +180,13 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                 </div>
 
                                 <div className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-2">
-                                    {tab.command_items.map(item => (
+                                    {tab.command_items?.map(item => (
                                         <div key={item.id} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
                                             <span className="text-xs font-bold text-slate-600 truncate flex-1 pr-2">{item.title}</span>
                                             <span className="text-xs font-black text-slate-800">R$ {Number(item.price).toFixed(2)}</span>
                                         </div>
                                     ))}
-                                    {tab.command_items.length === 0 && (
+                                    {(!tab.command_items || tab.command_items.length === 0) && (
                                         <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60">
                                             <ShoppingBag size={32} />
                                             <p className="text-[10px] font-black uppercase mt-2">Sem Consumo</p>
