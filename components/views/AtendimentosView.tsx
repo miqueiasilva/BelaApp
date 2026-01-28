@@ -423,12 +423,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // CORREÇÃO: Usando lista explícita de colunas no retorno para evitar professional_name
+            // AJUSTE: Passando client_name (snapshot) para garantir a exibição correta
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: activeStudioId,
                     client_id: isUUID(appointment.client?.id) ? appointment.client?.id : null,
+                    client_name: appointment.client?.nome || 'Consumidor Final', //Snapshot do nome
                     professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null,
                     status: 'open',
                     total_amount: appointment.service.price

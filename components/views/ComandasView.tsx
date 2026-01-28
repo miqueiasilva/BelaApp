@@ -34,7 +34,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // AJUSTE: Join explícito com a tabela de clientes para garantir o nome real
+            // AJUSTE: Join explícito com a tabela de clientes para garantir o nome real do cadastro
             const { data, error } = await supabase
                 .from('commands')
                 .select(`
@@ -82,13 +82,13 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setIsClientSearchOpen(false);
         try {
-            // GRAVANDO: client_id e snapshot client_name para histórico
+            // GRAVANDO: client_id e snapshot client_name para histórico (Opção A solicitada)
             const { data, error } = await supabase
                 .from('commands')
                 .insert([{ 
                     studio_id: activeStudioId, 
                     client_id: client.id, 
-                    client_name: client.nome, 
+                    client_name: client.nome, // Snapshot do nome no momento da criação
                     status: 'open' 
                 }])
                 .select('id, studio_id, client_id, client_name, professional_id, status, total_amount, clients:client_id(nome), command_items(*)')
@@ -114,6 +114,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
     };
 
     const filteredTabs = tabs.filter(t => {
+        // HIERARQUIA DE EXIBIÇÃO: Nome real do cadastro > Snapshot da comanda > Fallback
         const clientLabel = t.clients?.nome || t.client_name || "Consumidor Final";
         return clientLabel.toLowerCase().includes(searchTerm.toLowerCase());
     });
@@ -130,6 +131,13 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!profId) return 'Geral / Studio';
         const found = professionals.find(p => String(p.id) === String(profId));
         return found ? found.name : 'Profissional';
+    };
+
+    const getClientInitials = (name: string) => {
+        const parts = name.split(" ").filter(Boolean);
+        const first = parts[0]?.[0] ?? "C";
+        const second = parts[1]?.[0] ?? "";
+        return (first + second).toUpperCase();
     };
 
     return (
@@ -168,7 +176,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                     <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                                         <div className="flex items-center gap-3 min-w-0">
                                             <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
-                                                {tab.clients?.photo_url ? <img src={tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : clientLabel.charAt(0)}
+                                                {tab.clients?.photo_url ? <img src={tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : getClientInitials(clientLabel)}
                                             </div>
                                             <div className="min-w-0">
                                                 <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{clientLabel}</h3>
