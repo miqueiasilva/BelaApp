@@ -26,8 +26,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useStudio } from '../../contexts/StudioContext';
 
 const isUUID = (str: any): boolean => {
-    if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!str) return false;
+    if (typeof str === 'number') return true; // Aceita IDs numéricos para compatibilidade
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
 };
 
 const START_HOUR = 8;
@@ -337,8 +338,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             const payload = { 
                 studio_id: activeStudioId,
-                professional_id: isUUID(app.professional.id) ? String(app.professional.id) : null, 
-                client_id: isUUID(app.client?.id) ? app.client?.id : null,
+                professional_id: app.professional.id ? String(app.professional.id) : null, 
+                client_id: app.client?.id ? app.client.id : null,
                 client_name: app.client?.nome || 'Cliente', 
                 professional_name: app.professional.name, 
                 service_name: app.service.name, 
@@ -423,14 +424,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // AJUSTE: Passando client_name (snapshot) para garantir a exibição correta
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: activeStudioId,
-                    client_id: isUUID(appointment.client?.id) ? appointment.client?.id : null,
-                    client_name: appointment.client?.nome || 'Consumidor Final', //Snapshot do nome
-                    professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null,
+                    client_id: appointment.client?.id ? appointment.client.id : null,
+                    client_name: appointment.client?.nome || 'Consumidor Final',
+                    professional_id: appointment.professional.id ? appointment.professional.id : null,
                     status: 'open',
                     total_amount: appointment.service.price
                 }])
@@ -444,12 +444,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
-                    service_id: isUUID(appointment.service.id) ? String(appointment.service.id) : null,
+                    service_id: appointment.service.id ? String(appointment.service.id) : null,
                     studio_id: activeStudioId, 
                     title: appointment.service.name,
                     price: appointment.service.price,
                     quantity: 1,
-                    professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null
+                    professional_id: appointment.professional.id ? appointment.professional.id : null
                 }]);
 
             if (itemError) throw itemError;

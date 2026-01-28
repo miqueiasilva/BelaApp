@@ -33,9 +33,10 @@ interface PaymentEntry {
 
 const BRANDS = ['Visa', 'Master', 'Elo', 'Hiper', 'Amex', 'Outros'];
 
-const isUUID = (str: any): boolean => {
-    if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+const isSafeUUID = (str: any): boolean => {
+    if (!str) return false;
+    if (typeof str === 'number') return true;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
 };
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
@@ -56,7 +57,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [availableConfigs, setAvailableConfigs] = useState<any[]>([]);
 
     const fetchContext = async () => {
-        if (!activeStudioId || !commandId || !isUUID(commandId)) {
+        if (!activeStudioId || !commandId) {
             setLoading(false);
             return;
         }
@@ -89,7 +90,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             ]);
 
             const profId = cmdData.professional_id || itemsData?.[0]?.professional_id;
-            const profOfficialRes = isUUID(profId)
+            const profOfficialRes = isSafeUUID(profId)
                 ? await supabase.from('team_members').select('name, photo_url').eq('id', profId).maybeSingle()
                 : { data: null };
 
@@ -98,11 +99,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             
             const alreadyPaid = cmdData.status === 'paid';
 
-            // Montagem com hierarquia de nomes: Join > Snapshot > Fallback
+            // DETETIVE: Hierarquia rigorosa para evitar "Consumidor Final"
+            // 1. Join oficial (clients.nome)
+            // 2. Snapshot da comanda (client_name)
+            // 3. Reserva original (apptBackupRes)
+            // 4. Texto padrão
             setCommand({
                 ...cmdData,
                 command_items: itemsData || [],
-                display_client_name: cmdData.clients?.nome || apptBackupRes.data?.client_name || cmdData.client_name || "Consumidor Final",
+                display_client_name: cmdData.clients?.nome || cmdData.client_name || apptBackupRes.data?.client_name || "Consumidor Final",
                 display_client_phone: cmdData.clients?.whatsapp || "S/ CONTATO",
                 display_client_photo: cmdData.clients?.photo_url || null,
                 display_professional_name: profOfficialRes.data?.name || apptBackupRes.data?.professional_name || "Geral",
@@ -172,7 +177,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 const methodMap: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
                 await supabase.rpc('register_payment_transaction', {
                     p_studio_id: activeStudioId,
-                    p_professional_id: isUUID(command.professional_id) ? command.professional_id : null,
+                    p_professional_id: isSafeUUID(command.professional_id) ? command.professional_id : null,
                     p_command_id: commandId,
                     p_amount: p.amount,
                     p_method: methodMap[p.method] || 'pix',
