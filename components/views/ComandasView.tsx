@@ -17,7 +17,7 @@ import PaidCommandDetailView from './PaidCommandDetailView';
 
 const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) => {
     const { activeStudioId } = useStudio();
-    const [tabs, setTabs] = useState<Command[]>([]);
+    const [tabs, setTabs] = useState<any[]>([]);
     const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -34,8 +34,8 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // CORREÇÃO: Removido JOIN inválido 'team_members(name)' que causava erro PGRST200
-            // Usando a coluna denormalizada professional_name disponível na tabela commands
+            // CORREÇÃO: Removida a coluna professional_name que não existe no banco
+            // Adicionada a coluna professional_id para fazer o merge no front-end
             const { data, error } = await supabase
                 .from('commands')
                 .select(`
@@ -47,7 +47,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     created_at, 
                     closed_at, 
                     client_name, 
-                    professional_name, 
+                    professional_id,
                     clients(nome, photo_url), 
                     command_items(id, title, price, quantity)
                 `)
@@ -56,12 +56,10 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 .is('deleted_at', null)
                 .order('created_at', { ascending: false });
             
-            if (error) {
-                console.error("Erro Supabase Comandas:", error);
-                throw error;
-            }
+            if (error) throw error;
             setTabs(data || []);
         } catch (e: any) {
+            console.error("Erro Comandas:", e);
             setToast({ message: "Erro ao carregar comandas.", type: 'error' });
         } finally {
             setLoading(false);
@@ -87,12 +85,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         try {
             const { data, error } = await supabase
                 .from('commands')
-                .insert([{ 
-                    studio_id: activeStudioId, 
-                    client_id: client.id, 
-                    client_name: client.nome, 
-                    status: 'open' 
-                }])
+                .insert([{ studio_id: activeStudioId, client_id: client.id, client_name: client.nome, status: 'open' }])
                 .select('*, clients(nome), command_items(*)')
                 .single();
             if (error) throw error;
@@ -126,6 +119,13 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         } else {
             onNavigateToCommand?.(id);
         }
+    };
+
+    // Helper para buscar nome do profissional no estado local
+    const getProfessionalName = (profId: any) => {
+        if (!profId) return 'Geral / Studio';
+        const found = professionals.find(p => String(p.id) === String(profId));
+        return found ? found.name : 'Profissional';
     };
 
     return (
@@ -166,7 +166,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                             <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.clients?.nome || tab.client_name}</h3>
                                             <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 uppercase">
                                                 <UserCheck size={10} className="text-orange-400" />
-                                                {tab.professional_name || 'Geral / Studio'}
+                                                {getProfessionalName(tab.professional_id)}
                                             </p>
                                         </div>
                                     </div>
@@ -180,7 +180,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                 </div>
 
                                 <div className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-2">
-                                    {tab.command_items?.map(item => (
+                                    {tab.command_items?.map((item: any) => (
                                         <div key={item.id} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
                                             <span className="text-xs font-bold text-slate-600 truncate flex-1 pr-2">{item.title}</span>
                                             <span className="text-xs font-black text-slate-800">R$ {Number(item.price).toFixed(2)}</span>
