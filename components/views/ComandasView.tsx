@@ -34,7 +34,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // AJUSTE: Join explícito com clients via client_id para pegar o nome real
+            // AJUSTE: Join explícito com a tabela de clientes para garantir o nome real
             const { data, error } = await supabase
                 .from('commands')
                 .select(`
@@ -82,7 +82,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setIsClientSearchOpen(false);
         try {
-            // GARANTINDO: Salvamento de client_id e snapshot do nome
+            // GRAVANDO: client_id e snapshot client_name para histórico
             const { data, error } = await supabase
                 .from('commands')
                 .insert([{ 
@@ -114,8 +114,8 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
     };
 
     const filteredTabs = tabs.filter(t => {
-        const name = (t.clients?.nome || t.client_name || '').toLowerCase();
-        return name.includes(searchTerm.toLowerCase());
+        const clientLabel = t.clients?.nome || t.client_name || "Consumidor Final";
+        return clientLabel.toLowerCase().includes(searchTerm.toLowerCase());
     });
 
     const handleCommandClick = (id: string) => {
@@ -160,7 +160,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 {loading ? <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
                         {filteredTabs.map(tab => {
-                            // LÓGICA DE NOME: Join > Snapshot > Fallback
+                            // HIERARQUIA DE EXIBIÇÃO: Nome real do cadastro > Snapshot da comanda > Fallback
                             const clientLabel = tab.clients?.nome || tab.client_name || "Consumidor Final";
 
                             return (

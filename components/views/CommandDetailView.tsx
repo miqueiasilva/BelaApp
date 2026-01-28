@@ -35,8 +35,7 @@ const BRANDS = ['Visa', 'Master', 'Elo', 'Hiper', 'Amex', 'Outros'];
 
 const isUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) || 
-           /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 };
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
@@ -64,7 +63,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setLoading(true);
         try {
-            // AJUSTE: Select trazendo dados do cliente via join para nome real
+            // AJUSTE: Select incluindo dados do cliente via join para nome real
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select(`
@@ -76,23 +75,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
-            // 2. Busca Itens
             const { data: itemsData } = await supabase
                 .from('command_items')
                 .select('*')
                 .eq('command_id', commandId);
 
-            // 3. Pega o ID do agendamento original para backup de nomes
             const firstApptId = itemsData?.find(i => i.appointment_id)?.appointment_id;
 
-            // 4. Busca Pagamentos e Dados de Backup em paralelo
             const [transRes, configsRes, apptBackupRes] = await Promise.all([
                 supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado'),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true),
                 firstApptId ? supabase.from('appointments').select('client_name, professional_name').eq('id', firstApptId).maybeSingle() : Promise.resolve({ data: null })
             ]);
 
-            // 6. Busca Profissional oficial
             const profId = cmdData.professional_id || itemsData?.[0]?.professional_id;
             const profOfficialRes = isUUID(profId)
                 ? await supabase.from('team_members').select('name, photo_url').eq('id', profId).maybeSingle()
@@ -103,7 +98,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             
             const alreadyPaid = cmdData.status === 'paid';
 
-            // 7. Montagem com hierarquia de nomes: Join > Snapshot > Fallback
+            // Montagem com hierarquia de nomes: Join > Snapshot > Fallback
             setCommand({
                 ...cmdData,
                 command_items: itemsData || [],
@@ -208,8 +203,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         }
     };
 
-    const formatBRL = (val: number) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
 
     return (
@@ -232,7 +225,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
                     <div className="lg:col-span-2 space-y-6">
-                        {/* HEADER CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden">
                                 {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" /> : command.display_client_name.charAt(0)}
@@ -247,7 +239,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* ITENS CONSUMIDOS */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 bg-slate-50/30">
                                 <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Itens da Comanda</h3>
@@ -270,7 +261,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* FLOW DE RECEBIMENTO */}
                         {(historyPayments.length > 0 || addedPayments.length > 0) && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50 flex justify-between items-center">
@@ -326,15 +316,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total a Receber</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                 </div>
-                                {totals.paid > 0 && (
-                                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-2">
-                                        <div className="flex justify-between text-xs font-bold text-slate-400"><span>Pago:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                                            <span className="text-xs font-black uppercase tracking-widest text-orange-400">Restante:</span>
-                                            <span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white'}`}>R$ {totals.remaining.toFixed(2)}</span>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         </div>
 
@@ -376,14 +357,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 >
                                     {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> FECHAR COMANDA</>}
                                 </button>
-                            </div>
-                        )}
-
-                        {isLocked && (
-                            <div className="bg-emerald-50 p-8 rounded-[48px] border-2 border-emerald-100 text-center space-y-4 animate-in zoom-in-95">
-                                <CheckCircle size={48} className="text-emerald-500 mx-auto" />
-                                <h3 className="text-xl font-black text-emerald-800 uppercase tracking-tighter">Comanda Paga</h3>
-                                <p className="text-xs text-emerald-600 font-medium leading-relaxed">Este registro está arquivado e seu faturamento foi consolidado no fluxo de caixa.</p>
                             </div>
                         )}
                     </div>
