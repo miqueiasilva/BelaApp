@@ -95,7 +95,8 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                 end = endOfDay(new Date(endDate));
             }
 
-            // 1. Buscar Lançamentos Reais da Tabela Base (Substituindo a view vw_cashflow_extrato inexistente)
+            // 1. Buscar Lançamentos Reais da Tabela Base
+            // IMPORTANTE: .select('col,col') sem aspas ou espaços desnecessários
             const { data: trans, error: transError } = await supabase
                 .from('financial_transactions')
                 .select('id,description,amount,net_value,type,category,date,payment_method,status,studio_id')
@@ -109,7 +110,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             const currentTrans = trans || [];
             setDbTransactions(currentTrans);
 
-            // 2. Cálculo Manual dos Indicadores (Substituindo a RPC get_cashflow_cards inexistente)
+            // 2. Cálculo Manual dos Indicadores
             const gross = currentTrans
                 .filter(t => t.type === 'income' || t.type === 'receita')
                 .reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -262,18 +263,18 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
     const handleSaveNewTransaction = async (t: any) => {
         try {
             const payload = {
-                ...t,
-                studio_id: activeStudioId,
-                date: new Date(t.date).toISOString()
+                description: t.description,
+                amount: t.amount,
+                type: t.type,
+                category: t.category,
+                date: t.date,
+                payment_method: t.payment_method,
+                status: t.status,
+                studio_id: activeStudioId
             };
-            delete payload.id;
 
             const { error } = await supabase.from('financial_transactions').insert([payload]);
             if (error) throw error;
-
-            if (onAddTransaction) {
-                onAddTransaction(t as FinancialTransaction);
-            }
 
             setToast({ message: "Lançamento registrado!", type: 'success' });
             fetchData();

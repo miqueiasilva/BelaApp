@@ -1,4 +1,3 @@
-
 export type ViewState = 
   | 'dashboard' 
   | 'agenda' 
@@ -130,7 +129,7 @@ export interface FinancialTransaction {
   type: TransactionType;
   category: TransactionCategory;
   date: Date | string;
-  paymentMethod: PaymentMethod;
+  payment_method: PaymentMethod;
   status: 'pago' | 'pendente';
   professionalId?: number;
   appointment_id?: number;

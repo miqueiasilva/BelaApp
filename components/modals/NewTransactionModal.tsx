@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { X, DollarSign, Calendar, Tag, Plus } from 'lucide-react';
 import { FinancialTransaction, TransactionType, TransactionCategory, PaymentMethod } from '../../types';
@@ -12,10 +11,10 @@ interface NewTransactionModalProps {
 const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSave, type }) => {
   const [formData, setFormData] = useState<Partial<FinancialTransaction>>({
     type: type,
-    date: new Date(),
+    date: new Date().toISOString().split('T')[0],
     status: 'pago',
-    paymentMethod: 'pix',
-    category: '' as any
+    payment_method: 'pix',
+    category: ''
   });
 
   const [isCustomCategory, setIsCustomCategory] = useState(false);
@@ -36,7 +35,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
 
   const toggleCategoryMode = () => {
     setIsCustomCategory(!isCustomCategory);
-    setFormData(prev => ({ ...prev, category: '' as any }));
+    setFormData(prev => ({ ...prev, category: '' }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -46,15 +45,14 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
           return;
       }
       
-      // PAYLOAD LIMPO: Sem referências a user_id para evitar erro de coluna no banco
       const newTransaction: FinancialTransaction = {
           id: Date.now(),
           description: formData.description!,
           amount: Number(formData.amount),
           type: formData.type!,
-          category: formData.category as any,
-          date: new Date(formData.date || new Date()),
-          paymentMethod: formData.paymentMethod as PaymentMethod,
+          category: formData.category!,
+          date: new Date(formData.date || new Date().toISOString().split('T')[0]),
+          payment_method: formData.payment_method as PaymentMethod,
           status: 'pago'
       };
       
@@ -109,9 +107,9 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
                             <input 
                                 name="date" 
                                 type="date" 
-                                defaultValue={new Date().toISOString().split('T')[0]}
+                                defaultValue={formData.date}
                                 className="w-full focus:outline-none bg-transparent text-sm font-bold text-slate-600"
-                                onChange={e => setFormData({...formData, date: new Date(e.target.value)})}
+                                onChange={handleChange}
                             />
                         </div>
                     </div>
@@ -162,10 +160,10 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
                 <div className="space-y-1">
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
                     <select 
-                        name="paymentMethod" 
+                        name="payment_method" 
                         className="w-full border-b border-slate-200 py-2.5 focus:outline-none focus:border-slate-400 bg-transparent text-sm font-bold text-slate-600 cursor-pointer transition-colors"
                         onChange={handleChange}
-                        value={formData.paymentMethod}
+                        value={formData.payment_method}
                     >
                         <option value="pix">Pix</option>
                         <option value="cartao_credito">Cartão de Crédito</option>
@@ -187,9 +185,6 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
                     >
                         Confirmar Lançamento
                     </button>
-                    <p className="text-[10px] text-slate-400 text-center mt-4 font-medium italic">
-                        * O lançamento será registrado como 'Pago' automaticamente.
-                    </p>
                 </div>
             </form>
         </div>

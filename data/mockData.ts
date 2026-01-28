@@ -158,7 +158,8 @@ const createTransaction = (
     type,
     category: cat,
     date: daysOffset === 0 ? new Date() : addDays(new Date(), daysOffset),
-    paymentMethod: 'pix',
+    // FIX: Changed paymentMethod to payment_method to match FinancialTransaction type.
+    payment_method: 'pix',
     status: 'pago',
     professionalId: profId
 });
