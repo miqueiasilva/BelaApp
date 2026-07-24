@@ -152,6 +152,90 @@ const getServicesForAppointment = (a: any, servicesList: any[]) => {
   return resolvedServices;
 };
 
+const getAppointmentValue = (a: any, servicesList: any[] = []): number => {
+  if (!a) return 0;
+
+  const rawClientName = String(
+    a.client_name || 
+    a.client?.nome || 
+    a.client?.name || 
+    a.client_nome || 
+    a.cliente || 
+    ''
+  ).trim().toLowerCase();
+
+  // If client is Adrielle Alves (or Adrielle), force value to 0 for 100% discount / partner
+  if (rawClientName.includes('adrielle') || rawClientName.includes('alves')) {
+    return 0;
+  }
+
+  // Explicit zero value checks (user opened payment and zeroed it out)
+  if (
+    a.value === 0 || a.price === 0 || a.amount === 0 || a.total === 0 ||
+    a.value === '0' || a.price === '0' || a.amount === '0' || a.total === '0' ||
+    a.value === 0.00 || a.price === 0.00
+  ) {
+    return 0;
+  }
+
+  // Check 100% discount flags or zeroed payment methods
+  if (
+    a.discount_percent === 100 || 
+    a.discount === 100 || 
+    a.discount_rule?.value === 100 || 
+    a.is_partner_100 === true ||
+    a.is_partner === true ||
+    a.payment_method === 'parceiro_100' ||
+    a.payment_method === 'direto_profissional' ||
+    a.payment_method === 'desconto_total' ||
+    a.payment_method === 'cortesia' ||
+    a.command?.payment_method === 'desconto_total' ||
+    a.command?.payment_method === 'cortesia' ||
+    a.command?.payment_method === 'parceiro_100' ||
+    a.commands?.payment_method === 'desconto_total' ||
+    a.commands?.payment_method === 'cortesia' ||
+    a.commands?.payment_method === 'parceiro_100'
+  ) {
+    return 0;
+  }
+
+  // Check notes for discount / zero / cortesia / parceiro
+  const notes = String(a.notes || a.observacoes || '').toLowerCase();
+  if (notes.includes('100%') || notes.includes('cortesia') || notes.includes('desconto total') || notes.includes('zera') || notes.includes('zerad')) {
+    return 0;
+  }
+
+  if (typeof a.value === 'number' && !isNaN(a.value)) {
+    return Math.max(0, a.value);
+  }
+  if (typeof a.value === 'string' && a.value.trim() !== '') {
+    const val = parseFloat(a.value);
+    if (!isNaN(val)) return Math.max(0, val);
+  }
+
+  if (typeof a.price === 'number' && !isNaN(a.price)) {
+    return Math.max(0, a.price);
+  }
+  if (typeof a.price === 'string' && a.price.trim() !== '') {
+    const val = parseFloat(a.price);
+    if (!isNaN(val)) return Math.max(0, val);
+  }
+
+  // Resolved services standard price
+  const resolved = getServicesForAppointment(a, servicesList);
+  const grossFromServices = resolved.reduce((sum: number, s: any) => sum + (Number(s.preco) || 0), 0);
+
+  // Subtract discount if any
+  let discountVal = 0;
+  if (typeof a.discount_amount === 'number') {
+    discountVal = a.discount_amount;
+  } else if (typeof a.discount === 'number') {
+    discountVal = a.discount <= 100 ? (grossFromServices * a.discount) / 100 : a.discount;
+  }
+
+  return Math.max(0, grossFromServices - discountVal);
+};
+
 const KPICard = ({ title, value, subtext, icon: Icon, color, trend, loading }: any) => {
   if (loading) return <Skeleton className="h-32" />;
   
@@ -256,9 +340,7 @@ const RelatoriosView: React.FC = () => {
     });
 
     const completedRevenue = appointments.filter(a => a.status === 'concluido').reduce((acc, a) => {
-      const resolved = getServicesForAppointment(a, services);
-      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-      return acc + (a.value || a.price || valFromServices || 0);
+      return acc + getAppointmentValue(a, services);
     }, 0);
 
     const rawIncome = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -271,9 +353,7 @@ const RelatoriosView: React.FC = () => {
     const margin = income > 0 ? (profit / income) * 100 : 0;
     
     const potentialIncome = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => {
-      const resolved = getServicesForAppointment(a, services);
-      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-      return acc + (a.value || a.price || valFromServices || 0);
+      return acc + getAppointmentValue(a, services);
     }, 0);
 
     const onlineAppts = appointments.filter(a => (a.origin === 'online' || a.origin === 'link') && a.status !== 'cancelado').length;
@@ -323,9 +403,7 @@ const RelatoriosView: React.FC = () => {
     });
 
     const completedRevenue = appointments.filter(a => a.status === 'concluido').reduce((acc, a) => {
-      const resolved = getServicesForAppointment(a, services);
-      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-      return acc + (a.value || a.price || valFromServices || 0);
+      return acc + getAppointmentValue(a, services);
     }, 0);
 
     const rawIncome = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -338,9 +416,7 @@ const RelatoriosView: React.FC = () => {
     const margin = income > 0 ? (profit / income) * 100 : 0;
     
     const potentialIncome = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => {
-      const resolved = getServicesForAppointment(a, services);
-      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-      return acc + (a.value || a.price || valFromServices || 0);
+      return acc + getAppointmentValue(a, services);
     }, 0);
 
     const onlineAppts = appointments.filter(a => (a.origin === 'online' || a.origin === 'link') && a.status !== 'cancelado').length;
@@ -376,9 +452,7 @@ const RelatoriosView: React.FC = () => {
     }
 
     const projectedIncome = filtered.reduce((acc: number, a: any) => {
-      const resolved = getServicesForAppointment(a, services);
-      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-      return acc + (a.value || a.price || valFromServices || 0);
+      return acc + getAppointmentValue(a, services);
     }, 0);
 
     return { projectedIncome, count: filtered.length };
@@ -491,9 +565,7 @@ const RelatoriosView: React.FC = () => {
         
         // potential value calculation
         const potentialIncome = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => {
-            const resolved = getServicesForAppointment(a, servicesRes.data || []);
-            const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-            return acc + (a.value || a.price || valFromServices || 0);
+            return acc + getAppointmentValue(a, servicesRes.data || []);
         }, 0);
 
         const onlineAppts = appointments.filter(a => (a.origin === 'online' || a.origin === 'link') && a.status !== 'cancelado').length;
@@ -550,7 +622,7 @@ const RelatoriosView: React.FC = () => {
       const resolved = getServicesForAppointment(a, services);
       if (resolved.length > 0) {
         const sumPrices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-        const appointmentValue = a.value || a.price || sumPrices || 0;
+        const appointmentValue = getAppointmentValue(a, services);
         resolved.forEach((s: any) => {
           const sPrice = s.preco || 0;
           const sCat = s.categoria || 'Sobrancelhas';
@@ -722,7 +794,7 @@ const RelatoriosView: React.FC = () => {
         'Cliente': a.client_name || 'Sem cliente',
         'Profissional': a.professional_name || 'Sem profissional',
         'Serviço': a.service_name || 'Sem serviço',
-        'Valor (R$)': Number((a.value || a.price || 0).toFixed(2)),
+        'Valor (R$)': Number(getAppointmentValue(a, services).toFixed(2)),
         'Status': a.status || 'confirmado',
         'Origem': a.origin || 'interno'
       }));
@@ -767,7 +839,7 @@ const RelatoriosView: React.FC = () => {
         'Cliente': a.client_name || 'Sem cliente',
         'Profissional': a.professional_name || 'Sem profissional',
         'Serviço': a.service_name || 'Sem serviço',
-        'Valor (R$)': Number((a.value || a.price || 0).toFixed(2)),
+        'Valor (R$)': Number(getAppointmentValue(a, services).toFixed(2)),
         'Status': a.status || 'confirmado',
         'Origem': a.origin || 'interno'
       }));
@@ -1027,7 +1099,7 @@ const RelatoriosView: React.FC = () => {
         a.professional_name || 'Sem profissional',
         a.service_name || 'Sem serviço',
         a.origin || 'interno',
-        `R$ ${(a.value || a.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        `R$ ${getAppointmentValue(a, services).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
         a.status || 'agendado'
       ]);
 
@@ -1158,9 +1230,7 @@ const RelatoriosView: React.FC = () => {
         const s = String(a.status || '').toLowerCase().trim();
         return s === 'concluido';
       }).reduce((acc: number, a: any) => {
-        const resolved = getServicesForAppointment(a, services);
-        const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-        return acc + (a.value || a.price || valFromServices || 0);
+        return acc + getAppointmentValue(a, services);
       }, 0);
 
       // Support transactional income directly mapped to this professional (direct product sales, etc.)
@@ -1173,9 +1243,7 @@ const RelatoriosView: React.FC = () => {
         const s = String(a.status || '').toLowerCase().trim();
         return s !== 'cancelado';
       }).reduce((acc: number, a: any) => {
-        const resolved = getServicesForAppointment(a, services);
-        const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-        return acc + (a.value || a.price || valFromServices || 0);
+        return acc + getAppointmentValue(a, services);
       }, 0);
 
       const count = pAppts.length;
@@ -1242,7 +1310,7 @@ const RelatoriosView: React.FC = () => {
 
       if (resolved.length > 0) {
         const sumPrices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-        const appointmentValue = a.value || a.price || sumPrices || 0;
+        const appointmentValue = getAppointmentValue(a, services);
 
         resolved.forEach((s: any) => {
           const sPrice = s.preco || 0;
@@ -1322,7 +1390,7 @@ const RelatoriosView: React.FC = () => {
       const serviceNames = resolved.map((s: any) => s.nome).filter(Boolean).join(', ') || 'Serviço';
       
       const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-      const appointmentValue = a.value || a.price || valFromServices || 0;
+      const appointmentValue = getAppointmentValue(a, services);
       const statusLabel = statusMeta[a.status]?.label || a.status || 'Agendado';
       
       return {
@@ -1441,7 +1509,7 @@ const RelatoriosView: React.FC = () => {
       const serviceNames = resolved.map((s: any) => s.nome).filter(Boolean).join(', ') || 'Serviço';
       
       const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-      const appointmentValue = a.value || a.price || valFromServices || 0;
+      const appointmentValue = getAppointmentValue(a, services);
       const statusLabel = statusMeta[a.status]?.label || a.status || 'Agendado';
 
       return [
@@ -2532,7 +2600,8 @@ const RelatoriosView: React.FC = () => {
                         const serviceNames = resolved.map((s: any) => s.nome).filter(Boolean).join(', ') || 'Serviço';
                         
                         const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-                        const appointmentValue = a.value || a.price || valFromServices || 0;
+                        const appointmentValue = getAppointmentValue(a, services);
+                        const isPartner100 = appointmentValue === 0 && (valFromServices > 0 || (a.client_name || '').toLowerCase().includes('adrielle alves'));
                         
                         const st = statusMeta[a.status] || { label: a.status || 'Agendado', bg: 'bg-amber-50 text-amber-700 border border-amber-200', text: 'text-amber-700' };
 
@@ -2558,7 +2627,15 @@ const RelatoriosView: React.FC = () => {
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right text-xs font-black text-slate-800">
-                              R$ {appointmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              {isPartner100 ? (
+                                <div className="flex flex-col items-end">
+                                  <span className="text-slate-400 font-bold line-through text-[10px]">R$ {valFromServices.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                  <span className="text-emerald-600 font-black">R$ 0,00</span>
+                                  <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-0.5">Parceiro 100%</span>
+                                </div>
+                              ) : (
+                                `R$ ${appointmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                              )}
                             </td>
                           </tr>
                         );
@@ -2578,7 +2655,7 @@ const RelatoriosView: React.FC = () => {
                     const serviceNames = resolved.map((s: any) => s.nome).filter(Boolean).join(', ') || 'Serviço';
                     
                     const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-                    const appointmentValue = a.value || a.price || valFromServices || 0;
+                    const appointmentValue = getAppointmentValue(a, services);
                     
                     const st = statusMeta[a.status] || { label: a.status || 'Agendado', bg: 'bg-amber-50 text-amber-700 border border-amber-200', text: 'text-amber-700' };
 
