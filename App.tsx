@@ -50,6 +50,7 @@ const AppContent: React.FC = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const { activeStudioId, isSyncing, refreshStudios } = useStudio();
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
+  const [commandReturnView, setCommandReturnView] = useState<ViewState>('agenda');
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [viewingPaidId, setViewingPaidId] = useState<string | null>(() => {
     try {
@@ -198,6 +199,9 @@ const AppContent: React.FC = () => {
   const handleAddTransaction = (t: FinancialTransaction) => setTransactions(prev => [t, ...prev]);
   const navigateToCommand = (id: string) => {
       setActiveCommandId(id);
+      if (currentView !== 'comanda_detalhe') {
+        setCommandReturnView(currentView);
+      }
       setCurrentView('comanda_detalhe');
   };
 
@@ -237,7 +241,7 @@ const AppContent: React.FC = () => {
             case 'remuneracoes': return <RemuneracoesView />;
             case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
             case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} onNavigateToCommand={navigateToCommand} onOpenPaidSummary={openPaidSummary} />;
-            case 'comanda_detalhe': return <CommandDetailView commandId={activeCommandId!} onBack={() => setCurrentView('comandas')} />;
+            case 'comanda_detalhe': return <CommandDetailView commandId={activeCommandId!} onBack={() => setCurrentView(commandReturnView || 'agenda')} />;
             case 'caixa': return <CaixaView />;
             case 'produtos': return <ProdutosView />;
             case 'servicos': return <ServicosView />;
