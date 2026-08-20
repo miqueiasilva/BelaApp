@@ -448,14 +448,37 @@ const PublicBookingPreview: React.FC = () => {
             const now = new Date();
             const minTimeLimit = addMinutes(now, rules.minNoticeMinutes);
 
-            // Sincronizando com professional_id (estável) para busca de slots livres
-            const { data: busyAppointments } = await supabase
+            const targetStudioId = studio?.studio_id || studio?.id;
+            const startOfDayISO = getStartOfDay(date).toISOString();
+            const endOfDayISO = addDays(getStartOfDay(date), 1).toISOString();
+
+            // Busca agendamentos existentes e bloqueios salvos na tabela appointments
+            const appointmentsQuery = supabase
                 .from('appointments')
-                .select('date, duration')
-                .eq('professional_id', professional?.id)
+                .select('id, date, duration, start_at, end_at, status, type, professional_id')
                 .neq('status', 'cancelado')
-                .gte('date', getStartOfDay(date).toISOString())
-                .lte('date', addDays(getStartOfDay(date), 1).toISOString());
+                .gte('date', startOfDayISO)
+                .lte('date', endOfDayISO);
+
+            if (targetStudioId) {
+                appointmentsQuery.eq('studio_id', targetStudioId);
+            }
+
+            // Busca bloqueios de agenda na tabela schedule_blocks
+            const blocksQuery = supabase
+                .from('schedule_blocks')
+                .select('id, professional_id, start_time, end_time, reason');
+
+            if (targetStudioId) {
+                blocksQuery.eq('studio_id', targetStudioId);
+            }
+
+            const [{ data: busyAppointments }, { data: scheduleBlocks }] = await Promise.all([
+                appointmentsQuery,
+                blocksQuery
+            ]);
+
+            const profIdStr = String(professional?.id || '');
 
             const slots: string[] = [];
             const [startH, startM] = config.start.split(':').map(Number);
@@ -505,13 +528,39 @@ const PublicBookingPreview: React.FC = () => {
                     continue;
                 }
 
-                const hasOverlap = busyAppointments?.some(app => {
-                    const appStart = new Date(app.date);
-                    const appEnd = addMinutes(appStart, app.duration);
+                // Verifica sobreposição com agendamentos e bloqueios na tabela appointments
+                const hasApptOverlap = busyAppointments?.some(app => {
+                    const appProfId = app.professional_id !== null && app.professional_id !== undefined ? String(app.professional_id) : null;
+                    const isForThisProf = appProfId === null || appProfId === 'null' || appProfId === '' || appProfId === profIdStr || appProfId === 'all';
+                    
+                    if (!isForThisProf) return false;
+
+                    const appStart = new Date(app.date || app.start_at);
+                    let appEnd: Date;
+                    if (app.end_at) {
+                        appEnd = new Date(app.end_at);
+                    } else {
+                        const dur = Number(app.duration) || 30;
+                        appEnd = addMinutes(appStart, dur);
+                    }
+
                     return (slotStart < appEnd) && (slotEnd > appStart);
                 });
 
-                if (!hasOverlap) {
+                // Verifica sobreposição com bloqueios na tabela schedule_blocks
+                const hasBlockOverlap = scheduleBlocks?.some(block => {
+                    const blockProfId = block.professional_id !== null && block.professional_id !== undefined ? String(block.professional_id) : null;
+                    const isForThisProf = blockProfId === null || blockProfId === 'null' || blockProfId === '' || blockProfId === profIdStr || blockProfId === 'all';
+
+                    if (!isForThisProf) return false;
+
+                    const bStart = new Date(block.start_time);
+                    const bEnd = new Date(block.end_time);
+
+                    return (slotStart < bEnd) && (slotEnd > bStart);
+                });
+
+                if (!hasApptOverlap && !hasBlockOverlap) {
                     slots.push(format(currentPointer, 'HH:mm'));
                 }
                 currentPointer = addMinutes(currentPointer, 30); 
@@ -595,34 +644,68 @@ const PublicBookingPreview: React.FC = () => {
 
             const endDateTime = addMinutes(appointmentDate, totalDuration);
 
-            // --- AUDIT & VALIDATION TO PREVENT DOUBLE BOOKINGS ---
-            // 1. Verificar se o profissional já tem agendamento que conflita com este período
+            // --- AUDIT & VALIDATION TO PREVENT DOUBLE BOOKINGS AND BLOCKED SLOTS ---
             const startOfDayStr = getStartOfDay(appointmentDate).toISOString();
             const endOfDayStr = addDays(getStartOfDay(appointmentDate), 1).toISOString();
-
-            const { data: profOverlapCheck, error: overlapErr } = await supabase
-                .from('appointments')
-                .select('id, date, duration, start_at, end_at')
-                .eq('professional_id', selectedProfessional.id)
-                .neq('status', 'cancelado')
-                .gte('date', startOfDayStr)
-                .lte('date', endOfDayStr);
-
-            if (overlapErr) {
-                console.error("Erro ao verificar sobreposição do profissional:", overlapErr);
-            }
+            const profIdStr = String(selectedProfessional.id);
 
             const slotStart = appointmentDate;
             const slotEnd = endDateTime;
 
+            // 1. Verificar agendamentos e bloqueios na tabela appointments
+            const apptsOverlapQuery = supabase
+                .from('appointments')
+                .select('id, date, duration, start_at, end_at, status, type, professional_id')
+                .neq('status', 'cancelado')
+                .gte('date', startOfDayStr)
+                .lte('date', endOfDayStr);
+
+            if (targetStudioId) {
+                apptsOverlapQuery.eq('studio_id', targetStudioId);
+            }
+
+            // 2. Verificar bloqueios na tabela schedule_blocks
+            const blocksOverlapQuery = supabase
+                .from('schedule_blocks')
+                .select('id, professional_id, start_time, end_time, reason');
+
+            if (targetStudioId) {
+                blocksOverlapQuery.eq('studio_id', targetStudioId);
+            }
+
+            const [{ data: profOverlapCheck }, { data: blocksOverlapCheck }] = await Promise.all([
+                apptsOverlapQuery,
+                blocksOverlapQuery
+            ]);
+
             const hasProfOverlap = profOverlapCheck?.some(app => {
+                const appProfId = app.professional_id !== null && app.professional_id !== undefined ? String(app.professional_id) : null;
+                const isForThisProf = appProfId === null || appProfId === 'null' || appProfId === '' || appProfId === profIdStr || appProfId === 'all';
+                if (!isForThisProf) return false;
+
                 const appStart = new Date(app.date || app.start_at);
-                const appEnd = addMinutes(appStart, app.duration);
+                let appEnd: Date;
+                if (app.end_at) {
+                    appEnd = new Date(app.end_at);
+                } else {
+                    const dur = Number(app.duration) || 30;
+                    appEnd = addMinutes(appStart, dur);
+                }
                 return (slotStart < appEnd) && (slotEnd > appStart);
             });
 
-            if (hasProfOverlap) {
-                throw new Error("Desculpe, este horário acabou de ser preenchido por outro cliente. Por favor, retorne e selecione outro horário disponível.");
+            const hasBlockOverlap = blocksOverlapCheck?.some(block => {
+                const blockProfId = block.professional_id !== null && block.professional_id !== undefined ? String(block.professional_id) : null;
+                const isForThisProf = blockProfId === null || blockProfId === 'null' || blockProfId === '' || blockProfId === profIdStr || blockProfId === 'all';
+                if (!isForThisProf) return false;
+
+                const bStart = new Date(block.start_time);
+                const bEnd = new Date(block.end_time);
+                return (slotStart < bEnd) && (slotEnd > bStart);
+            });
+
+            if (hasProfOverlap || hasBlockOverlap) {
+                throw new Error("Desculpe, este horário acabou de ser bloqueado ou preenchido por outro agendamento. Por favor, retorne e selecione outro horário disponível.");
             }
 
             // 2. Verificar se o próprio cliente já tem um agendamento no mesmo horário (conflitante)
