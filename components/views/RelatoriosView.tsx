@@ -291,12 +291,12 @@ const statusMeta: { [key: string]: { label: string, bg: string, text: string } }
 const RelatoriosView: React.FC = () => {
   const { activeStudioId, studios } = useStudio();
   const [activeTab, setActiveTab] = useState<string>('executivo');
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useState<Period>('custom');
   const [compareWithPrevious, setCompareWithPrevious] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Custom Date Range
-  const [customStartDate, setCustomStartDate] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
+  // Custom Date Range (Início do mês até a data atual por padrão)
+  const [customStartDate, setCustomStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   
   // Data States
