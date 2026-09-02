@@ -212,15 +212,14 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [last24hReminders, setLast24hReminders] = useState(0);
     
     // Filtro de Período
-    const [filter, setFilter] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('hoje');
-    const [customStart] = useState(format(new Date(), 'yyyy-MM-dd'));
-    const [customEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [filter, setFilter] = useState<'hoje' | 'semana' | '15d' | 'mes' | 'mes_anterior' | '3m' | 'custom'>('hoje');
+    const [customStart, setCustomStart] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'));
+    const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
     
     const dateRange = useMemo(() => {
         const now = new Date();
         switch (filter) {
             case 'hoje': {
-                // FIX: Manual startOfDay replacement.
                 const startToday = new Date(now);
                 startToday.setHours(0, 0, 0, 0);
                 return { 
@@ -230,7 +229,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 };
             }
             case 'semana': {
-                // FIX: Manual subDays and startOfDay replacement.
                 const startWeek = addDays(now, -7);
                 startWeek.setHours(0, 0, 0, 0);
                 return { 
@@ -239,8 +237,16 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     label: 'Últimos 7 dias'
                 };
             }
+            case '15d': {
+                const start15 = addDays(now, -15);
+                start15.setHours(0, 0, 0, 0);
+                return { 
+                    start: start15.toISOString(), 
+                    end: endOfDay(now).toISOString(),
+                    label: 'Últimos 15 dias'
+                };
+            }
             case 'mes': {
-                // FIX: Manual startOfMonth replacement.
                 const startMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
                 return { 
                     start: startMonth.toISOString(), 
@@ -248,16 +254,33 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     label: 'Este Mês'
                 };
             }
+            case 'mes_anterior': {
+                const startPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+                const endPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+                const monthName = format(startPrevMonth, 'MMMM', { locale: pt });
+                const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+                return {
+                    start: startPrevMonth.toISOString(),
+                    end: endPrevMonth.toISOString(),
+                    label: `Mês Anterior (${capitalizedMonth})`
+                };
+            }
+            case '3m': {
+                const start3m = addDays(now, -90);
+                start3m.setHours(0, 0, 0, 0);
+                return { 
+                    start: start3m.toISOString(), 
+                    end: endOfDay(now).toISOString(),
+                    label: 'Últimos 3 Meses'
+                };
+            }
             case 'custom': {
-                // FIX: Manual startOfDay replacement.
-                const startCustom = new Date(customStart);
-                startCustom.setHours(0, 0, 0, 0);
-                const endCustom = new Date(customEnd);
-                endCustom.setHours(23, 59, 59, 999);
+                const startCustom = new Date(customStart + 'T00:00:00');
+                const endCustom = new Date(customEnd + 'T23:59:59.999');
                 return {
                     start: startCustom.toISOString(),
                     end: endCustom.toISOString(),
-                    label: `Período: ${format(new Date(customStart), 'dd/MM')} a ${format(new Date(customEnd), 'dd/MM')}`
+                    label: `Personalizado (${format(new Date(customStart + 'T12:00:00'), 'dd/MM')} a ${format(new Date(customEnd + 'T12:00:00'), 'dd/MM')})`
                 };
             }
             default: {
@@ -690,13 +713,71 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     <p className="text-slate-400 text-sm mt-2 font-medium">Seu estúdio está com <span className="text-emerald-500 font-black">94% de produtividade</span> hoje.</p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full xl:w-auto">
-                    <div className="flex bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                        <button onClick={() => setFilter('hoje')} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'hoje' ? 'bg-slate-800 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}>Hoje</button>
-                        <button onClick={() => setFilter('semana')} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'semana' ? 'bg-slate-800 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}>7 Dias</button>
-                        <button onClick={() => setFilter('mes')} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'mes' ? 'bg-slate-800 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}>Mês</button>
+                <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 w-full xl:w-auto">
+                    <div className="flex flex-wrap items-center bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm gap-1">
+                        <button 
+                            onClick={() => setFilter('hoje')} 
+                            className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === 'hoje' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                        >
+                            Hoje
+                        </button>
+                        <button 
+                            onClick={() => setFilter('semana')} 
+                            className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === 'semana' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                        >
+                            7 Dias
+                        </button>
+                        <button 
+                            onClick={() => setFilter('15d')} 
+                            className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === '15d' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                        >
+                            15 Dias
+                        </button>
+                        <button 
+                            onClick={() => setFilter('mes')} 
+                            className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === 'mes' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                        >
+                            Este Mês
+                        </button>
+                        <button 
+                            onClick={() => setFilter('mes_anterior')} 
+                            className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === 'mes_anterior' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                        >
+                            Mês Anterior
+                        </button>
+                        <button 
+                            onClick={() => setFilter('3m')} 
+                            className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === '3m' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                        >
+                            3 Meses
+                        </button>
+                        <button 
+                            onClick={() => setFilter('custom')} 
+                            className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === 'custom' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                        >
+                            Personalizado
+                        </button>
                     </div>
-                    <button onClick={() => onNavigate('agenda')} className="px-6 py-4 bg-orange-500 text-white font-black rounded-2xl hover:bg-orange-600 focus:ring-4 focus:ring-orange-100 transition-all shadow-xl shadow-orange-500/20 flex items-center justify-center gap-2 text-xs uppercase tracking-widest active:scale-95">
+
+                    {filter === 'custom' && (
+                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-2xl border border-orange-200 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+                            <input 
+                                type="date" 
+                                value={customStart} 
+                                onChange={e => setCustomStart(e.target.value)} 
+                                className="bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold text-slate-700 outline-none px-2.5 py-1.5 focus:border-orange-500 transition-colors" 
+                            />
+                            <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">até</span>
+                            <input 
+                                type="date" 
+                                value={customEnd} 
+                                onChange={e => setCustomEnd(e.target.value)} 
+                                className="bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold text-slate-700 outline-none px-2.5 py-1.5 focus:border-orange-500 transition-colors" 
+                            />
+                        </div>
+                    )}
+
+                    <button onClick={() => onNavigate('agenda')} className="px-5 py-3 bg-orange-500 text-white font-black rounded-2xl hover:bg-orange-600 focus:ring-4 focus:ring-orange-100 transition-all shadow-xl shadow-orange-500/20 flex items-center justify-center gap-2 text-xs uppercase tracking-widest active:scale-95 whitespace-nowrap">
                         <PlusCircle size={18} /> Novo Agendamento
                     </button>
                 </div>
