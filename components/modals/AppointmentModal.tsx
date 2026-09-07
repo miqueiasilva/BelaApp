@@ -132,21 +132,41 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           start: appointment?.start || new Date(),
       });
       
-      const initialServices = appointment?.services && appointment.services.length > 0
-          ? appointment.services
-          : (appointment?.service ? [appointment.service] : []);
+      const apptPrice = appointment?.service?.price !== undefined && appointment.service.price !== null
+          ? Number(appointment.service.price)
+          : ((appointment as any)?.value !== undefined && (appointment as any)?.value !== null ? Number((appointment as any).value) : undefined);
+
+      let initialServices = appointment?.services && appointment.services.length > 0
+          ? appointment.services.map(s => ({ ...s }))
+          : (appointment?.service ? [{ ...appointment.service }] : []);
+
+      if (apptPrice !== undefined && !isNaN(apptPrice)) {
+          if (initialServices.length === 1) {
+              initialServices = [{ ...initialServices[0], price: apptPrice }];
+          } else if (initialServices.length > 1) {
+              const curSum = initialServices.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+              if (Math.abs(curSum - apptPrice) > 0.01) {
+                  const diff = apptPrice - curSum;
+                  initialServices[initialServices.length - 1] = {
+                      ...initialServices[initialServices.length - 1],
+                      price: Math.max(0, (Number(initialServices[initialServices.length - 1].price) || 0) + diff)
+                  };
+              }
+          }
+      }
       setSelectedServices(initialServices);
       
-      if (appointment?.service) {
-          setManualPrice(appointment.service.price !== undefined && appointment.service.price !== null ? appointment.service.price : 0);
-          const dur = appointment.service.duration || 0;
-          setHours(Math.floor(dur / 60));
-          setMinutes(dur % 60);
+      if (apptPrice !== undefined && !isNaN(apptPrice)) {
+          setManualPrice(apptPrice);
+      } else if (initialServices.length > 0) {
+          setManualPrice(initialServices.reduce((acc, s) => acc + (Number(s.price) || 0), 0));
       } else {
           setManualPrice(0);
-          setHours(0);
-          setMinutes(0);
       }
+
+      const dur = appointment?.service?.duration || (appointment?.end && appointment?.start ? Math.round((new Date(appointment.end).getTime() - new Date(appointment.start).getTime()) / 60000) : (initialServices.reduce((acc, s) => acc + (Number(s.duration) || 0), 0) || 30));
+      setHours(Math.floor(dur / 60));
+      setMinutes(dur % 60);
 
       setClientEmail(appointment?.client?.email || '');
       setError(null);
@@ -156,16 +176,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (selectedServices.length > 0) {
         setFormData(prev => ({ ...prev, service: selectedServices[0] }));
     }
-  }, [selectedServices]);
-
-  useEffect(() => {
-      if (selectedServices.length > 0) {
-          const price = selectedServices.reduce((acc, s) => acc + s.price, 0);
-          const duration = selectedServices.reduce((acc, s) => acc + s.duration, 0);
-          setManualPrice(price);
-          setHours(Math.floor(duration / 60));
-          setMinutes(duration % 60);
-      }
   }, [selectedServices]);
 
   useEffect(() => {
@@ -262,12 +272,34 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
     setIsSaving(true);
     try {
+        const finalPrice = manualPrice === '' ? 0 : Math.max(0, Number(manualPrice));
+        let finalServices = selectedServices.map(s => ({ ...s, price: Number(s.price) || 0 }));
+        
+        if (finalServices.length === 1) {
+            finalServices = [{
+                ...finalServices[0],
+                price: finalPrice,
+                duration: manualDuration
+            }];
+        } else if (finalServices.length > 1) {
+            const currentSum = finalServices.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+            const diff = finalPrice - currentSum;
+            if (Math.abs(diff) > 0.001) {
+                finalServices = finalServices.map((s, idx) => {
+                    if (idx === finalServices.length - 1) {
+                        return { ...s, price: Math.max(0, (Number(s.price) || 0) + diff) };
+                    }
+                    return s;
+                });
+            }
+        }
+
         const compositeService: LegacyService = {
-            ...selectedServices[0],
-            name: selectedServices.length > 1 
-                ? `${selectedServices[0].name} + ${selectedServices.length - 1}` 
-                : selectedServices[0].name,
-            price: manualPrice,
+            ...(finalServices[0] || {}),
+            name: finalServices.length > 1 
+                ? `${finalServices[0].name} + ${finalServices.length - 1}` 
+                : (finalServices[0]?.name || 'Serviço'),
+            price: finalPrice,
             duration: manualDuration
         };
 
@@ -275,15 +307,16 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             ...formData,
             client: { ...formData.client, email: clientEmail },
             service: compositeService,
-            services: selectedServices,
-            notas: selectedServices.length > 1 
-                ? `${formData.notas || ''} \n[Serviços: ${selectedServices.map(s => s.name).join(', ')}]`
+            services: finalServices,
+            value: finalPrice,
+            notas: finalServices.length > 1 
+                ? `${formData.notas || ''} \n[Serviços: ${finalServices.map(s => s.name).join(', ')}]`
                 : formData.notas,
             bypassScheduleCheck: showDayOffConfirm || showOverlapConfirm,
             isForce: showDayOffConfirm || showOverlapConfirm
         } as any;
 
-        console.log('🚀 Chamando onSave com:', finalAppointment, 'force:', showDayOffConfirm || showOverlapConfirm);
+        console.log('🚀 Chamando onSave com valor atualizado:', finalPrice, finalAppointment);
         await onSave(finalAppointment, showDayOffConfirm || showOverlapConfirm);
         console.log('✅ onSave concluído com sucesso');
     } catch (err: any) {
@@ -339,14 +372,52 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handleAddService = (service: LegacyService) => {
-    setSelectedServices(prev => [...prev, service]);
+    setSelectedServices(prev => {
+        const next = [...prev, service];
+        const newTotal = (manualPrice === '' ? 0 : Number(manualPrice)) + Number(service.price || 0);
+        setManualPrice(newTotal);
+        const curDur = manualDuration + Number(service.duration || 0);
+        setHours(Math.floor(curDur / 60));
+        setMinutes(curDur % 60);
+        return next;
+    });
     setSelectionModal(null);
   };
 
   const handleRemoveService = (index: number) => {
-    const newServices = [...selectedServices];
-    newServices.splice(index, 1);
-    setSelectedServices(newServices);
+    setSelectedServices(prev => {
+        const removed = prev[index];
+        const next = prev.filter((_, i) => i !== index);
+        const newTotal = Math.max(0, (manualPrice === '' ? 0 : Number(manualPrice)) - Number(removed?.price || 0));
+        setManualPrice(newTotal);
+        const curDur = Math.max(0, manualDuration - Number(removed?.duration || 0));
+        setHours(Math.floor(curDur / 60));
+        setMinutes(curDur % 60);
+        return next;
+    });
+  };
+
+  const handleServicePriceChange = (index: number, newPrice: number) => {
+    setSelectedServices(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], price: Math.max(0, newPrice) };
+        const total = updated.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+        setManualPrice(total);
+        return updated;
+    });
+  };
+
+  const handleManualPriceChange = (val: string) => {
+    if (val === '') {
+        setManualPrice('');
+        return;
+    }
+    const num = parseFloat(val);
+    const safeNum = isNaN(num) ? 0 : Math.max(0, num);
+    setManualPrice(safeNum);
+    if (selectedServices.length === 1) {
+        setSelectedServices(prev => [{ ...prev[0], price: safeNum }]);
+    }
   };
 
   const handleSelectProfessional = (professional: LegacyProfessional) => {
@@ -406,12 +477,59 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           <div className="space-y-2">
              <label className="text-xs font-bold text-slate-500 uppercase">Serviços <span className="text-red-500">*</span></label>
              {selectedServices.map((service, index) => (
-                <div key={index} className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200 group"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center"><Tag className="w-4 h-4" /></div><div><p className="text-sm font-semibold text-slate-800">{service.name}</p><p className="text-xs text-slate-500">R$ {service.price.toFixed(2)} • {service.duration} min</p></div></div><button onClick={() => handleRemoveService(index)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={16} /></button></div>
+                <div key={index} className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200 group hover:border-slate-300 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                      <Tag className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{service.name}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex items-center gap-1 bg-white border border-slate-200 px-1.5 py-0.5 rounded text-xs font-bold text-slate-700 shadow-2xs">
+                          <span className="text-slate-400 font-normal">R$</span>
+                          <input 
+                            type="number"
+                            step="any"
+                            min="0"
+                            value={service.price}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => handleServicePriceChange(index, parseFloat(e.target.value) || 0)}
+                            className="w-16 bg-transparent outline-none border-none p-0 text-xs font-bold text-slate-800 focus:ring-0"
+                            title="Clique para alterar o valor deste serviço"
+                          />
+                        </div>
+                        <span className="text-xs text-slate-500">• {service.duration} min</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button onClick={() => handleRemoveService(index)} className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors" title="Remover serviço">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
              ))}
              <button onClick={() => setSelectionModal('service')} disabled={loadingServices || !formData.professional} className="w-full py-2 border border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">{loadingServices ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlusCircle size={16} />}{!formData.professional ? 'Selecione um profissional primeiro' : (loadingServices ? 'Carregando...' : 'Adicionar Serviço')}</button>
           </div>
           <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]"><div className="p-1.5 bg-green-50 rounded text-green-600"><DollarSign className="w-4 h-4" /></div><div className="flex flex-col w-full"><span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Valor Total</span><input type="number" value={manualPrice === '' ? '' : manualPrice} onFocus={(e) => e.target.select()} onChange={(e) => setManualPrice(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)} className="font-bold text-slate-800 bg-transparent outline-none w-full p-0 border-none focus:ring-0 text-sm" /></div></div>
+              <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]">
+                <div className="p-1.5 bg-green-50 rounded text-green-600">
+                  <DollarSign className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col w-full">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Valor Total</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-bold text-slate-500">R$</span>
+                    <input 
+                      type="number" 
+                      step="any"
+                      min="0"
+                      value={manualPrice === '' ? '' : manualPrice} 
+                      onFocus={(e) => e.target.select()} 
+                      onChange={(e) => handleManualPriceChange(e.target.value)} 
+                      className="font-bold text-slate-800 bg-transparent outline-none w-full p-0 border-none focus:ring-0 text-sm" 
+                    />
+                  </div>
+                </div>
+              </div>
               <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]"><div className="p-1.5 bg-blue-50 rounded text-blue-600"><Clock className="w-4 h-4" /></div><div className="flex flex-col w-full"><span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Duração</span><div className="flex items-center gap-1"><div className="flex items-center gap-0.5"><input type="number" min="0" value={hours === '' ? '' : hours} onFocus={(e) => e.target.select()} onChange={(e) => setHours(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0))} className="w-7 font-black text-slate-800 bg-transparent outline-none p-0 border-none focus:ring-0 text-sm text-center font-mono" placeholder="0" /><span className="text-[9px] font-black text-slate-300 uppercase">h</span></div><span className="font-bold text-slate-200 mx-0.5">:</span><div className="flex items-center gap-0.5"><input type="number" min="0" max="59" value={minutes === '' ? '' : minutes} onFocus={(e) => e.target.select()} onChange={(e) => setMinutes(e.target.value === '' ? '' : Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))} className="w-7 font-black text-slate-800 bg-transparent outline-none p-0 border-none focus:ring-0 text-sm text-center font-mono" placeholder="00" /><span className="text-[9px] font-black text-slate-300 uppercase">m</span></div></div></div></div>
           </div>
           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Status</label><div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200"><CheckSquare className="w-5 h-5 text-slate-400" /><select name="status" value={formData.status} onChange={handleChange} className="w-full bg-transparent focus:outline-none text-sm font-medium text-slate-700"><option value="agendado">Agendado</option><option value="confirmado">Confirmado Manualmente</option><option value="confirmado_whatsapp">Confirmado via WhatsApp *</option><option value="chegou">Cliente Chegou</option><option value="em_atendimento">Em Atendimento</option><option value="concluido">Concluído</option><option value="faltou">Faltou</option><option value="cancelado">Cancelado</option></select></div></div>

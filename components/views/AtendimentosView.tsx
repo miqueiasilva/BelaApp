@@ -755,6 +755,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
         cleanNotes = cleanNotes.replace(/\[Serviços:.*?\]/g, '').trim();
 
+        // Sincronizar preços dos serviços com o valor total salvo (row.value)
+        const rowValue = Number(row.value);
+        if (!isNaN(rowValue) && services.length > 0) {
+            if (services.length === 1) {
+                services[0].price = rowValue;
+            } else {
+                const sSum = services.reduce((acc: number, s: any) => acc + (Number(s.price) || 0), 0);
+                if (Math.abs(sSum - rowValue) > 0.01) {
+                    const diff = rowValue - sSum;
+                    services[services.length - 1].price = Math.max(0, (Number(services[services.length - 1].price) || 0) + diff);
+                }
+            }
+        }
+
         return {
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
             notas: cleanNotes, origin: row.origin || 'interno',
@@ -769,7 +783,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 consent: true 
             },
             professional: prof || teamMembersList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
-            service: { id: row.service_id || 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
+            service: { id: row.service_id || 0, name: row.service_name, price: !isNaN(rowValue) ? rowValue : 0, duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
         } as LegacyAppointment;
     };
 
@@ -880,9 +894,41 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const startStr = format(app.start, "yyyy-MM-dd'T'HH:mm:ssXXX");
             const endStr = format(end, "yyyy-MM-dd'T'HH:mm:ssXXX");
 
-            const servicesMetadata = app.services && app.services.length > 0 
-                ? `\n---SERVICES_JSON---\n${JSON.stringify(app.services)}\n---END_SERVICES_JSON---` 
+            const finalPrice = Number(app.service?.price ?? (app as any).value ?? 0);
+
+            // Garantir que app.services tenha os preços atualizados
+            let updatedServicesList = app.services ? [...app.services] : undefined;
+            if (updatedServicesList && updatedServicesList.length === 1) {
+                updatedServicesList = [{ ...updatedServicesList[0], price: finalPrice }];
+            } else if (updatedServicesList && updatedServicesList.length > 1) {
+                const sSum = updatedServicesList.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+                const diff = finalPrice - sSum;
+                if (Math.abs(diff) > 0.001) {
+                    updatedServicesList = updatedServicesList.map((s, idx) => {
+                        if (idx === updatedServicesList!.length - 1) {
+                            return { ...s, price: Math.max(0, (Number(s.price) || 0) + diff) };
+                        }
+                        return s;
+                    });
+                }
+            }
+
+            const servicesMetadata = updatedServicesList && updatedServicesList.length > 0 
+                ? `\n---SERVICES_JSON---\n${JSON.stringify(updatedServicesList)}\n---END_SERVICES_JSON---` 
                 : '';
+
+            // Limpa metadados antigos de notas para não duplicar nem manter JSON antigo com valor desatualizado
+            let cleanedNotas = app.notas || '';
+            const oldJsonIndex = cleanedNotas.indexOf('---SERVICES_JSON---');
+            if (oldJsonIndex !== -1) {
+                const oldEndIndex = cleanedNotas.indexOf('---END_SERVICES_JSON---');
+                if (oldEndIndex !== -1) {
+                    cleanedNotas = (cleanedNotas.substring(0, oldJsonIndex) + cleanedNotas.substring(oldEndIndex + '---END_SERVICES_JSON---'.length)).trim();
+                } else {
+                    cleanedNotas = cleanedNotas.substring(0, oldJsonIndex).trim();
+                }
+            }
+            cleanedNotas = cleanedNotas.replace(/\[Serviços:.*?\]/g, '').trim();
 
             const payload = { 
                 studio_id: activeStudioId,
@@ -893,13 +939,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 professional_name: app.professional.name, 
                 service_id: app.service?.id || null,
                 service_name: app.service.name, 
-                value: Number(app.service.price) || 0, 
+                value: finalPrice, 
                 duration: duration, 
                 date: startStr, 
                 start_at: startStr,
                 end_at: endStr,
                 status: app.status || 'agendado', 
-                notes: (app.notas || '') + servicesMetadata, 
+                notes: (cleanedNotas ? cleanedNotas + '\n' : '') + servicesMetadata, 
                 service_color: app.service.color || '#3b82f6',
                 origin: 'interno'
             };
@@ -926,6 +972,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 setToast({ message: '✅ Agendamento salvo com sucesso!', type: 'success' });
                 setModalState(null); 
                 setPendingConflict(null);
+                
+                // Atualizar o activeAppointmentDetail se estiver aberto com esse agendamento
+                if (newAppointment) {
+                    const updatedMapped = mapRowToAppointment(newAppointment, resources);
+                    setActiveAppointmentDetail(prev => prev && prev.id === updatedMapped.id ? updatedMapped : prev);
+                }
                 await fetchAppointments();
 
             } catch (dbError: any) {

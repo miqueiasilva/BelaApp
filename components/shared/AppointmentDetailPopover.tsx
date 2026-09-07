@@ -477,11 +477,17 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const canCheckout = !isFinished;
 
   const pendingSameDay = sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status));
-  const pendingTotalValue = pendingSameDay.reduce((sum, item) => sum + Number(item.value || 0), 0);
+  const pendingTotalValue = pendingSameDay.reduce((sum, item) => sum + Number(item.service?.price ?? item.value ?? 0), 0);
 
-  const appointmentTotalValue = appointment.services && appointment.services.length > 0
+  const rawTotal = appointment.service?.price !== undefined && appointment.service.price !== null
+    ? Number(appointment.service.price)
+    : (appointment.value !== undefined && appointment.value !== null ? Number(appointment.value) : 0);
+
+  const servicesSum = appointment.services && appointment.services.length > 0
     ? appointment.services.reduce((sum, s) => sum + Number(s.price || 0), 0)
-    : Number(appointment.service?.price || appointment.value || 0);
+    : rawTotal;
+
+  const appointmentTotalValue = rawTotal > 0 ? rawTotal : servicesSum;
 
   const handleFinalizeAllTogether = async () => {
     if (isProcessing) return;
