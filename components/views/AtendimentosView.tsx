@@ -2105,8 +2105,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                         e.stopPropagation(); 
                                                         setActiveAppointmentDetail(app); 
                                                     }} 
-                                                    className={`rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 hover:shadow-md transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50 ${
-                                                        layout.isOverlapping ? 'hover:scale-[1.01] hover:z-50' : ''
+                                                    className={`rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 hover:shadow-lg transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50 hover:z-50 hover:scale-[1.008] ${
+                                                        activeAppointmentDetail?.id === app.id ? 'ring-2 ring-orange-500 ring-offset-1 z-40 shadow-md brightness-95' : ''
                                                     }`}
                                                     style={{ 
                                                         ...getAppointmentPosition(app.start, app.end, timeSlot),

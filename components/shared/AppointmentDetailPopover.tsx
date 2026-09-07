@@ -48,7 +48,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 }) => {
   const popoverRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLButtonElement>(null);
-  const [position, setPosition] = useState({ top: 0, left: 0, opacity: 0 });
+  const [position, setPosition] = useState({ top: 0, left: 0, maxHeight: 'calc(100vh - 24px)', opacity: 0 });
   const [isStatusPopoverOpen, setIsStatusPopoverOpen] = useState(false);
   const [statusTarget, setStatusTarget] = useState<HTMLElement | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -381,42 +381,86 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   };
 
   useEffect(() => {
+    const updatePosition = () => {
+      if (!targetElement || !popoverRef.current) return;
+      const targetRect = targetElement.getBoundingClientRect();
+      const popoverEl = popoverRef.current;
+      const popoverRect = popoverEl.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      const MARGIN = 12;
+      const maxAvailableHeight = Math.max(200, viewportHeight - (MARGIN * 2));
+
+      // 1. Calculate top: center vertically relative to the targetElement
+      let top = targetRect.top + (targetRect.height / 2) - (popoverRect.height / 2);
+
+      // Clamp vertical position strictly within screen margins
+      if (top + popoverRect.height > viewportHeight - MARGIN) {
+        top = viewportHeight - popoverRect.height - MARGIN;
+      }
+      if (top < MARGIN) {
+        top = MARGIN;
+      }
+
+      // 2. Calculate left
+      const popoverWidth = popoverRect.width || 390;
+      let left = targetRect.right + 12;
+
+      // On mobile or narrow screen, center horizontally
+      if (viewportWidth < 640 || popoverWidth >= viewportWidth - (MARGIN * 2)) {
+        left = Math.max(MARGIN, (viewportWidth - popoverWidth) / 2);
+      } else {
+        // If overflowing on the right, position to the left of target
+        if (left + popoverWidth > viewportWidth - MARGIN) {
+          left = targetRect.left - popoverWidth - 12;
+        }
+        // If still overflowing on the left, clamp within safe boundaries
+        if (left < MARGIN) {
+          left = Math.max(MARGIN, Math.min(viewportWidth - popoverWidth - MARGIN, (viewportWidth - popoverWidth) / 2));
+        }
+      }
+
+      setPosition({
+        top: Math.round(top),
+        left: Math.round(left),
+        maxHeight: `${maxAvailableHeight}px`,
+        opacity: 1
+      });
+    };
+
+    updatePosition();
+    const frameId = requestAnimationFrame(updatePosition);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (popoverRef.current && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        updatePosition();
+      });
+      resizeObserver.observe(popoverRef.current);
+    }
+
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (popoverRef.current && !popoverRef.current.contains(target)) {
-        // Ignora se estiver clicando dentro do popover de alteração de status
         const isStatusClick = document.querySelector('.status-update-popover')?.contains(target);
         if (isStatusClick) return;
-
         if (!isCheckoutOpen) onClose();
       }
     };
 
-    const handlePositioning = () => {
-      if (!targetElement || !popoverRef.current) return;
-      const targetRect = targetElement.getBoundingClientRect();
-      const popoverRect = popoverRef.current.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-      const SAFE_ZONE_TOP = 112;
-      let top = targetRect.top + (targetRect.height / 2) - (popoverRect.height / 2);
-      let left = targetRect.right + 12;
-      if (left + popoverRect.width > viewportWidth) left = targetRect.left - popoverRect.width - 12;
-      if (top < SAFE_ZONE_TOP) top = SAFE_ZONE_TOP;
-      if (top + popoverRect.height > viewportHeight - 16) top = viewportHeight - popoverRect.height - 16;
-      if (left < 16) left = 16;
-      setPosition({ top, left, opacity: 1 });
-    };
-
-    const timer = setTimeout(handlePositioning, 0);
     document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('resize', handlePositioning);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
     return () => {
-      clearTimeout(timer);
+      cancelAnimationFrame(frameId);
+      if (resizeObserver) resizeObserver.disconnect();
       document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('resize', handlePositioning);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [onClose, targetElement, isCheckoutOpen]);
+  }, [onClose, targetElement, isCheckoutOpen, sameDayAppointments.length]);
 
   const handleStatusUpdateWrapper = (id: number, status: AppointmentStatus) => {
     onUpdateStatus(id, status);
@@ -432,12 +476,37 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const isFinished = ['concluido', 'cancelado', 'bloqueado'].includes(appointment.status);
   const canCheckout = !isFinished;
 
-  const handleFinalize = async () => {
+  const pendingSameDay = sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status));
+  const pendingTotalValue = pendingSameDay.reduce((sum, item) => sum + Number(item.value || 0), 0);
+
+  const appointmentTotalValue = appointment.services && appointment.services.length > 0
+    ? appointment.services.reduce((sum, s) => sum + Number(s.price || 0), 0)
+    : Number(appointment.service?.price || appointment.value || 0);
+
+  const handleFinalizeAllTogether = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    const ids = pendingSameDay.map(app => app.id);
+    if (onConvertToCommand) {
+      try {
+        await onConvertToCommand(appointment, ids);
+      } catch (err) {
+        console.error("Erro ao converter agendamentos para comanda consolidada:", err);
+      } finally {
+        setIsProcessing(false);
+      }
+    } else {
+      setIsCheckoutOpen(true);
+      setIsProcessing(false);
+    }
+  };
+
+  const handleFinalizeSingle = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
     if (onConvertToCommand) {
       try {
-        await onConvertToCommand(appointment);
+        await onConvertToCommand(appointment, [appointment.id]);
       } catch (err) {
         console.error("Erro ao converter para comanda:", err);
       } finally {
@@ -451,160 +520,289 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 
   return (
     <>
+      {/* Backdrop suave para sobrepor a agenda inteira com foco no card */}
+      <div 
+        className={`fixed inset-0 z-[95] bg-slate-900/35 backdrop-blur-[1.5px] transition-opacity duration-200 ${
+          isCheckoutOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        }`}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Popover Card */}
       <div
         ref={popoverRef}
-        className={`fixed z-[100] w-80 max-h-[calc(100vh-140px)] bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-slate-200 flex flex-col transition-all duration-200 ${isCheckoutOpen ? 'opacity-0 pointer-events-none scale-95' : 'scale-100'}`}
-        style={{ top: position.top, left: position.left, opacity: isCheckoutOpen ? 0 : position.opacity }}
+        className={`fixed z-[100] w-[390px] max-w-[calc(100vw-24px)] bg-white rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.35)] border border-slate-200 flex flex-col transition-all duration-150 overflow-hidden ${
+          isCheckoutOpen ? 'opacity-0 pointer-events-none scale-95' : 'scale-100'
+        }`}
+        style={{ 
+          top: `${position.top}px`, 
+          left: `${position.left}px`, 
+          maxHeight: position.maxHeight,
+          opacity: isCheckoutOpen ? 0 : position.opacity 
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center p-3 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
-          <div className="flex-1 flex items-center gap-1.5">
+        {/* Cabeçalho Fixo */}
+        <header className="flex items-center justify-between p-3 border-b border-slate-100 bg-slate-50/70 shrink-0">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => { onEdit(appointment); onClose(); }}
-              className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
-              title="Editar"
+              className="p-2 text-slate-500 hover:bg-slate-200/60 rounded-xl transition-colors"
+              title="Editar Agendamento"
             >
-              <Edit size={18} />
+              <Edit size={17} />
             </button>
             <button
               onClick={() => onDelete(appointment.id)}
               className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-              title="Excluir"
+              title="Excluir Agendamento"
             >
-              <Trash2 size={18} />
+              <Trash2 size={17} />
             </button>
-            <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors" title="Ver Perfil">
-              <User size={18} />
-            </button>
+            {appointment.client?.id && (
+              <button className="p-2 text-slate-500 hover:bg-slate-200/60 rounded-xl transition-colors" title="Ver Perfil do Cliente">
+                <User size={17} />
+              </button>
+            )}
             {clientPhone && !isFinished && (
-              <div className="relative inline-block">
+              <div className="relative inline-block ml-0.5">
                 <button
                   onClick={handleSendWhatsAppReminder}
-                  className={`p-2 text-white rounded-xl transition-all shadow-sm ml-1 ${isReminderSent ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-105' : 'bg-green-500 hover:bg-green-600 shadow-green-105'}`}
-                  title={isReminderSent ? "Lembrete enviado. Clique para reenviar" : "Enviar Lembrete via WhatsApp"}
+                  className={`p-2 text-white rounded-xl transition-all shadow-sm ${
+                    isReminderSent ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
+                  }`}
+                  title={isReminderSent ? "Lembrete já enviado. Clique para reenviar" : "Enviar Lembrete via WhatsApp"}
                 >
-                  <MessageCircle size={18} />
+                  <MessageCircle size={17} />
                 </button>
                 {isReminderSent && (
-                  <span className="absolute -top-1 -right-1 bg-green-500 text-white rounded-full p-0.5 border-2 border-white flex items-center justify-center shadow-md animate-bounce" title="Lembrete já enviado">
+                  <span className="absolute -top-1 -right-1 bg-emerald-500 text-white rounded-full p-0.5 border-2 border-white flex items-center justify-center shadow-xs animate-pulse" title="Lembrete já enviado">
                     <CheckCheck size={10} className="w-2.5 h-2.5 font-black" />
                   </span>
                 )}
               </div>
             )}
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors">
+          <button 
+            onClick={onClose} 
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-full transition-colors"
+            title="Fechar Detalhes"
+          >
             <X size={18} />
           </button>
         </header>
 
-        <main className="p-6 space-y-4 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+        {/* Corpo com Rolagem Limpa */}
+        <main className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+          {/* Identificação do Cliente */}
           <div>
-            <h3 className="font-black text-xl text-slate-800 leading-tight flex flex-col gap-1">
+            <h3 className="font-black text-xl text-slate-900 leading-snug flex flex-col gap-1">
               <span>{appointment.type === 'block' ? (appointment.notas || 'Bloqueio de Horário') : (appointment.client?.nome || 'Horário Bloqueado')}</span>
               {appointment.client?.apelido && appointment.type !== 'block' && (
-                <span className="text-xs font-black text-orange-600 bg-orange-50 border border-orange-100 rounded-lg px-2 py-0.5 w-fit uppercase tracking-tight">
+                <span className="text-xs font-black text-orange-600 bg-orange-50 border border-orange-200/70 rounded-lg px-2 py-0.5 w-fit uppercase tracking-tight">
                   "{appointment.client.apelido}"
                 </span>
               )}
             </h3>
+
             {isReminderSent && appointment.type !== 'block' && (
-              <div className="mt-2.5 flex items-center justify-center gap-1.5 bg-indigo-50 border border-indigo-100 rounded-2xl px-3.5 py-2.5 text-indigo-700 animate-in fade-in duration-300">
+              <div className="mt-2.5 flex items-center justify-center gap-1.5 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 text-indigo-700">
                 <CheckCheck size={14} className="text-indigo-600 shrink-0" />
                 <span className="text-[10px] font-black uppercase tracking-wider">Lembrete manual já enviado</span>
               </div>
             )}
-            {appointment.type === 'block' ? (
+
+            {appointment.type === 'block' && (
               <p className="text-[10px] font-black text-rose-500 bg-rose-50 border border-rose-100 rounded-lg px-2.5 py-1 w-fit uppercase tracking-wider mt-2">
                 BLOQUEADO / INDISPONÍVEL
               </p>
-            ) : appointment.services && appointment.services.length > 0 ? (
-              <div className="mt-3 space-y-2 max-h-36 overflow-y-auto pr-1">
-                <p className="text-[9px] font-extrabold uppercase text-slate-400 tracking-wider">Procedimentos Marcados:</p>
-                {appointment.services.map((s, idx) => (
-                  <div key={idx} className="flex justify-between items-center bg-slate-50 border border-slate-100 p-2.5 rounded-2xl shadow-sm">
-                    <div className="min-w-0 pr-2">
-                      <p className="text-xs font-bold text-slate-700 truncate leading-tight">{s.name}</p>
-                      <p className="text-[9px] text-slate-400 font-semibold mt-0.5">{s.duration} min</p>
-                    </div>
-                    <span className="text-xs font-black text-slate-600 flex-shrink-0 bg-slate-100 px-2 py-1 rounded-lg">
-                      R$ {Number(s.price).toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mt-1">{appointment.service.name}</p>
             )}
           </div>
 
-          {sameDayAppointments.length > 1 && (
-            <div className="bg-orange-50/70 border border-orange-100 rounded-[20px] p-3 space-y-2 text-xs">
-              <div className="flex items-center gap-1.5 font-bold text-orange-850">
-                <MessageCircle size={14} className="text-orange-600 flex-shrink-0" />
-                <span>Múltiplos horários hoje!</span>
+          {/* Procedimentos Marcados */}
+          {appointment.type !== 'block' && (
+            appointment.services && appointment.services.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                    Procedimentos ({appointment.services.length}):
+                  </p>
+                  <span className="text-[11px] font-black text-slate-700">
+                    Total: R$ {appointmentTotalValue.toFixed(2)}
+                  </span>
+                </div>
+                <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5 custom-scrollbar">
+                  {appointment.services.map((s, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-slate-50 border border-slate-100 p-2.5 rounded-xl shadow-2xs">
+                      <div className="min-w-0 pr-2">
+                        <p className="text-xs font-bold text-slate-800 truncate leading-tight">{s.name}</p>
+                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{s.duration} min</p>
+                      </div>
+                      <span className="text-xs font-black text-slate-700 shrink-0 bg-white border border-slate-200/80 px-2 py-0.5 rounded-lg shadow-2xs">
+                        R$ {Number(s.price).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <p className="text-[10px] text-slate-500 font-semibold leading-tight0">
-                Esse cliente possui <b>{sameDayAppointments.length} agendamentos</b> no mesmo dia. Como prefere enviar o lembrete?
-              </p>
-              <div className="flex gap-2 pt-1 text-center">
-                <button 
-                  type="button"
-                  onClick={() => setSendAllTogether(true)}
-                  className={`flex-1 py-1.5 px-2 rounded-xl text-[9px] font-black uppercase tracking-tight transition-all border ${
-                    sendAllTogether 
-                      ? 'bg-orange-500 text-white border-orange-600 shadow-sm shadow-orange-100' 
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  Tudo Junto ✅
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => setSendAllTogether(false)}
-                  className={`flex-1 py-1.5 px-2 rounded-xl text-[9px] font-black uppercase tracking-tight transition-all border ${
-                    !sendAllTogether 
-                      ? 'bg-orange-500 text-white border-orange-600 shadow-sm shadow-orange-100' 
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  Separado 📲
-                </button>
+            ) : (
+              <div className="bg-orange-50/70 border border-orange-100/80 rounded-xl p-2.5 flex items-center justify-between">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-wider text-orange-500">Procedimento</p>
+                  <p className="text-xs font-bold text-slate-800">{appointment.service?.name || 'Serviço'}</p>
+                </div>
+                <span className="text-xs font-black text-slate-800 bg-white border border-orange-200 px-2 py-1 rounded-lg">
+                  R$ {Number(appointment.service?.price || appointment.value || 0).toFixed(2)}
+                </span>
+              </div>
+            )
+          )}
+
+          {/* Múltiplos Horários Hoje (Comanda Consolidada) */}
+          {sameDayAppointments.length > 1 && (
+            <div className="bg-gradient-to-br from-amber-50 to-orange-50/60 border border-amber-200/80 rounded-2xl p-3.5 space-y-2.5 text-xs shadow-2xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                  <Receipt size={15} className="text-amber-600 shrink-0" />
+                  <span className="text-xs font-black uppercase tracking-tight text-amber-900">
+                    Múltiplos horários hoje!
+                  </span>
+                </div>
+                <span className="bg-amber-200/80 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300">
+                  {sameDayAppointments.length} horários
+                </span>
+              </div>
+
+              {/* Lista dos agendamentos do dia */}
+              <div className="space-y-1.5 pt-0.5 max-h-36 overflow-y-auto pr-0.5 custom-scrollbar">
+                {sameDayAppointments.map((appItem) => {
+                  const isCurrent = appItem.id === appointment.id;
+                  const itemTime = appItem.time ? appItem.time.substring(0, 5) : (appItem.start ? format(new Date(appItem.start), 'HH:mm') : '');
+                  return (
+                    <div 
+                      key={appItem.id} 
+                      className={`flex items-center justify-between p-2 rounded-xl text-[11px] transition-all border ${
+                        isCurrent 
+                          ? 'bg-amber-100/90 border-amber-300 font-bold text-amber-950 shadow-2xs' 
+                          : 'bg-white/80 border-amber-100 text-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 pr-2">
+                        <span className="text-[10px] font-black bg-white px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
+                          {itemTime}
+                        </span>
+                        <div className="truncate">
+                          <p className="truncate font-semibold text-slate-800 leading-tight">
+                            {appItem.service_name || appItem.service?.name || 'Serviço'}
+                          </p>
+                          <p className="text-[9px] text-slate-400 font-medium">
+                            {appItem.professional_name || appItem.professional?.name || ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="font-black text-slate-800">
+                          R$ {Number(appItem.value || appItem.service?.price || 0).toFixed(2)}
+                        </span>
+                        {isCurrent && (
+                          <span className="block text-[8px] font-black uppercase tracking-wider text-amber-700">
+                            Atual
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Opção de Envio do Lembrete */}
+              <div className="pt-1 border-t border-amber-200/60">
+                <p className="text-[10px] text-amber-900 font-semibold mb-1.5">
+                  Como prefere enviar o lembrete de WhatsApp?
+                </p>
+                <div className="flex gap-2 text-center">
+                  <button 
+                    type="button"
+                    onClick={() => setSendAllTogether(true)}
+                    className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] font-black uppercase tracking-tight transition-all border ${
+                      sendAllTogether 
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs' 
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    Tudo Junto ✅
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setSendAllTogether(false)}
+                    className={`flex-1 py-1.5 px-2 rounded-xl text-[10px] font-black uppercase tracking-tight transition-all border ${
+                      !sendAllTogether 
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs' 
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    Separado 📲
+                  </button>
+                </div>
               </div>
             </div>
           )}
 
-          <div className="space-y-3 pt-2">
-            <div className="flex items-start gap-3 text-xs font-bold text-slate-600">
-              <div className="p-2 bg-slate-50 rounded-lg"><Calendar size={14} className="text-slate-400" /></div>
+          {/* Dados de Horário, Profissional e Notas */}
+          <div className="space-y-2.5 pt-1 text-xs font-bold text-slate-600">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-slate-100/70 rounded-xl text-slate-500 shrink-0">
+                <Calendar size={15} />
+              </div>
               <div>
-                <span className="capitalize">{format(appointment.start, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
+                <span className="capitalize text-slate-800">{format(appointment.start, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
                 <br />
-                <span className="text-slate-400">{format(appointment.start, "HH:mm")} às {format(appointment.end, "HH:mm")}</span>
+                <span className="text-slate-400 font-medium">{format(appointment.start, "HH:mm")} às {format(appointment.end, "HH:mm")}</span>
               </div>
             </div>
-            {appointment.type !== 'block' && (
-              <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
-                <div className="p-2 bg-emerald-50 rounded-lg"><DollarSign size={14} className="text-emerald-500" /></div>
+
+            {appointment.professional?.name && (
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-100/70 rounded-xl text-slate-500 shrink-0">
+                  <User size={15} />
+                </div>
                 <div>
-                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-0.5">Valor Total</p>
-                  <span className="text-emerald-600 font-black text-lg">R$ {appointment.service.price.toFixed(2)}</span>
+                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-0.5">Profissional</p>
+                  <span className="text-slate-800">{appointment.professional.name}</span>
                 </div>
               </div>
             )}
-            {appointment.notas ? (
-              <div className="flex items-start gap-3 text-xs font-bold text-slate-600">
-                <div className="p-2 bg-rose-50 rounded-lg"><AlignLeft size={14} className="text-rose-500" /></div>
+
+            {appointment.type !== 'block' && (
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600 shrink-0">
+                  <DollarSign size={15} />
+                </div>
                 <div>
+                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-0.5">Valor deste Agendamento</p>
+                  <span className="text-emerald-600 font-black text-base">R$ {appointmentTotalValue.toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+
+            {appointment.notas ? (
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-rose-50 rounded-xl text-rose-500 shrink-0">
+                  <AlignLeft size={15} />
+                </div>
+                <div className="min-w-0">
                   <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-1">
                     {appointment.type === 'block' ? 'Motivo do Bloqueio' : 'Observações'}
                   </p>
-                  <span className="text-slate-700 font-medium whitespace-pre-wrap">{appointment.notas}</span>
+                  <span className="text-slate-700 font-medium whitespace-pre-wrap break-words">{appointment.notas}</span>
                 </div>
               </div>
             ) : appointment.type === 'block' ? (
-              <div className="flex items-start gap-3 text-xs font-bold text-slate-600">
-                <div className="p-2 bg-rose-50 rounded-lg"><AlignLeft size={14} className="text-rose-500" /></div>
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-rose-50 rounded-xl text-rose-500 shrink-0">
+                  <AlignLeft size={15} />
+                </div>
                 <div>
                   <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-1">Motivo do Bloqueio</p>
                   <span className="text-slate-400 italic font-medium">Sem detalhes informados</span>
@@ -612,82 +810,63 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
               </div>
             ) : null}
           </div>
+        </main>
 
-          <div className="border-t border-slate-100 pt-5 flex flex-col gap-3">
-            <div className="mb-1">
-              <button
-                ref={statusRef}
-                onClick={handleOpenStatus}
-                className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50 hover:bg-slate-100 p-4 rounded-2xl transition-all border border-slate-100"
-              >
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 size={14} className="text-slate-400" />
-                  <span>{statusLabels[appointment.status]}</span>
-                </div>
-                <MoreVertical size={14} />
-              </button>
+        {/* Rodapé Fixo (NUNCA corta os botões de finalizar / comanda) */}
+        <footer className="p-3.5 sm:p-4 bg-slate-50/95 border-t border-slate-100 flex flex-col gap-2 shrink-0 rounded-b-3xl">
+          {/* Seletor de Status */}
+          <button
+            ref={statusRef}
+            onClick={handleOpenStatus}
+            className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-600 bg-white hover:bg-slate-100/80 px-3.5 py-2.5 rounded-xl transition-all border border-slate-200/80 shadow-2xs"
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={14} className="text-slate-400 shrink-0" />
+              <span>Status: {statusLabels[appointment.status] || appointment.status}</span>
             </div>
+            <MoreVertical size={14} className="text-slate-400 shrink-0" />
+          </button>
 
-            {canCheckout && (
-              sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status)).length > 1 ? (
-                <div className="flex flex-col gap-2 bg-amber-50/50 border border-amber-200 p-3.5 rounded-[24px]">
-                  <p className="text-[10px] font-bold text-amber-800 text-center uppercase tracking-wider mb-1">
-                    Múltiplos agendamentos pendentes hoje!
-                  </p>
-                  <button
-                    disabled={isProcessing}
-                    onClick={async () => {
-                      if (isProcessing) return;
-                      setIsProcessing(true);
-                      const pending = sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status));
-                      const ids = pending.map(app => app.id);
-                      if (onConvertToCommand) {
-                        try {
-                          await onConvertToCommand(appointment, ids);
-                        } catch (err) {
-                          console.error("Erro ao converter agendamentos:", err);
-                        } finally {
-                          setIsProcessing(false);
-                        }
-                      } else {
-                        setIsCheckoutOpen(true);
-                        setIsProcessing(false);
-                      }
-                    }}
-                    className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:hover:bg-amber-500 text-white font-black text-xs uppercase tracking-[0.05em] py-4 rounded-[20px] shadow-md shadow-amber-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} />}
-                    {isProcessing ? 'Processando...' : `Finalizar Todos Juntos (R$ ${sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status)).reduce((sum, item) => sum + Number(item.value || 0), 0).toFixed(2)})`}
-                  </button>
-                  <button
-                    disabled={isProcessing}
-                    onClick={handleFinalize}
-                    className="w-full bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 font-bold text-[10px] uppercase tracking-[0.05em] py-2.5 rounded-[16px] transition-all active:scale-95 flex items-center justify-center gap-1.5"
-                  >
-                    {isProcessing ? <Loader2 size={12} className="animate-spin" /> : null}
-                    {isProcessing ? 'Aguarde...' : 'Finalizar Apenas Este'}
-                  </button>
-                </div>
-              ) : (
+          {/* Ações de Comanda / Fechamento */}
+          {canCheckout && (
+            pendingSameDay.length > 1 ? (
+              <div className="flex flex-col gap-2 pt-0.5">
                 <button
                   disabled={isProcessing}
-                  onClick={handleFinalize}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:hover:bg-emerald-600 text-white font-black text-xs uppercase tracking-[0.1em] py-5 rounded-[24px] shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  onClick={handleFinalizeAllTogether}
+                  className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider py-3.5 px-4 rounded-2xl shadow-lg shadow-amber-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Receipt size={18} />}
-                  {isProcessing ? 'Processando...' : 'Finalizar Atendimento'}
+                  {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} />}
+                  <span>{isProcessing ? 'Processando...' : `Finalizar Todos Juntos (R$ ${pendingTotalValue.toFixed(2)})`}</span>
                 </button>
-              )
-            )}
-
-            {appointment.status === 'concluido' && (
-              <div className="flex items-center justify-center gap-2 py-4 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100">
-                <CheckCircle2 size={16} />
-                <span className="text-[10px] font-black uppercase tracking-widest">Pagamento Recebido</span>
+                <button
+                  disabled={isProcessing}
+                  onClick={handleFinalizeSingle}
+                  className="w-full bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-700 font-bold text-[10px] uppercase tracking-wider py-2 px-3 rounded-xl border border-slate-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {isProcessing ? <Loader2 size={12} className="animate-spin" /> : null}
+                  <span>Finalizar Apenas Este (R$ {appointmentTotalValue.toFixed(2)})</span>
+                </button>
               </div>
-            )}
-          </div>
-        </main>
+            ) : (
+              <button
+                disabled={isProcessing}
+                onClick={handleFinalizeSingle}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider py-3.5 px-4 rounded-2xl shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} />}
+                <span>{isProcessing ? 'Processando...' : `Finalizar Atendimento (R$ ${appointmentTotalValue.toFixed(2)})`}</span>
+              </button>
+            )
+          )}
+
+          {appointment.status === 'concluido' && (
+            <div className="flex items-center justify-center gap-2 py-2.5 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 font-black text-[11px] uppercase tracking-wider">
+              <CheckCircle2 size={15} />
+              <span>Pagamento Recebido / Concluído</span>
+            </div>
+          )}
+        </footer>
       </div>
 
       {isStatusPopoverOpen && (
@@ -707,10 +886,10 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             id: appointment.id,
             client_id: appointment.client?.id,
             client_name: appointment.client?.nome || 'Cliente',
-            service_name: appointment.service.name,
-            price: appointment.service.price,
-            professional_id: appointment.professional.id,
-            professional_name: appointment.professional.name
+            service_name: appointment.service?.name || 'Serviço',
+            price: appointmentTotalValue,
+            professional_id: appointment.professional?.id,
+            professional_name: appointment.professional?.name
           }}
           onSuccess={() => {
             onUpdateStatus(appointment.id, 'concluido');
