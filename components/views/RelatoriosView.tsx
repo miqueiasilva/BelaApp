@@ -33,6 +33,7 @@ import autoTable from 'jspdf-autotable';
 
 import DREReport from '../reports/DREReport';
 import { D3RevenueEvolutionChart, D3TeamPerformanceChart } from '../reports/D3Charts';
+import { isPartnerOr100Discount, getEffectiveAppointmentValue } from '../../utils/commissionRules';
 
 // --- Types ---
 type Period = 'today' | '7d' | '15d' | '30d' | '3m' | '6m' | '12m' | 'custom';
@@ -154,86 +155,10 @@ const getServicesForAppointment = (a: any, servicesList: any[]) => {
 
 const getAppointmentValue = (a: any, servicesList: any[] = []): number => {
   if (!a) return 0;
-
-  const rawClientName = String(
-    a.client_name || 
-    a.client?.nome || 
-    a.client?.name || 
-    a.client_nome || 
-    a.cliente || 
-    ''
-  ).trim().toLowerCase();
-
-  // If client is Adrielle Alves (or Adrielle), force value to 0 for 100% discount / partner
-  if (rawClientName.includes('adrielle') || rawClientName.includes('alves')) {
+  if (isPartnerOr100Discount(a)) {
     return 0;
   }
-
-  // Explicit zero value checks (user opened payment and zeroed it out)
-  if (
-    a.value === 0 || a.price === 0 || a.amount === 0 || a.total === 0 ||
-    a.value === '0' || a.price === '0' || a.amount === '0' || a.total === '0' ||
-    a.value === 0.00 || a.price === 0.00
-  ) {
-    return 0;
-  }
-
-  // Check 100% discount flags or zeroed payment methods
-  if (
-    a.discount_percent === 100 || 
-    a.discount === 100 || 
-    a.discount_rule?.value === 100 || 
-    a.is_partner_100 === true ||
-    a.is_partner === true ||
-    a.payment_method === 'parceiro_100' ||
-    a.payment_method === 'direto_profissional' ||
-    a.payment_method === 'desconto_total' ||
-    a.payment_method === 'cortesia' ||
-    a.command?.payment_method === 'desconto_total' ||
-    a.command?.payment_method === 'cortesia' ||
-    a.command?.payment_method === 'parceiro_100' ||
-    a.commands?.payment_method === 'desconto_total' ||
-    a.commands?.payment_method === 'cortesia' ||
-    a.commands?.payment_method === 'parceiro_100'
-  ) {
-    return 0;
-  }
-
-  // Check notes for discount / zero / cortesia / parceiro
-  const notes = String(a.notes || a.observacoes || '').toLowerCase();
-  if (notes.includes('100%') || notes.includes('cortesia') || notes.includes('desconto total') || notes.includes('zera') || notes.includes('zerad')) {
-    return 0;
-  }
-
-  if (typeof a.value === 'number' && !isNaN(a.value)) {
-    return Math.max(0, a.value);
-  }
-  if (typeof a.value === 'string' && a.value.trim() !== '') {
-    const val = parseFloat(a.value);
-    if (!isNaN(val)) return Math.max(0, val);
-  }
-
-  if (typeof a.price === 'number' && !isNaN(a.price)) {
-    return Math.max(0, a.price);
-  }
-  if (typeof a.price === 'string' && a.price.trim() !== '') {
-    const val = parseFloat(a.price);
-    if (!isNaN(val)) return Math.max(0, val);
-  }
-
-  // Resolved services standard price
-  const resolved = getServicesForAppointment(a, servicesList);
-  const grossFromServices = resolved.reduce((sum: number, s: any) => sum + (Number(s.preco) || 0), 0);
-
-  // Subtract discount if any
-  let discountVal = 0;
-  if (typeof a.discount_amount === 'number') {
-    discountVal = a.discount_amount;
-  } else if (typeof a.discount === 'number') {
-    discountVal = a.discount <= 100 ? (grossFromServices * a.discount) / 100 : a.discount;
-  }
-
-  return Math.max(0, grossFromServices - discountVal);
+  return getEffectiveAppointmentValue(a, servicesList);
 };
 
 const KPICard = ({ title, value, subtext, icon: Icon, color, trend, loading }: any) => {
@@ -2601,7 +2526,7 @@ const RelatoriosView: React.FC = () => {
                         
                         const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
                         const appointmentValue = getAppointmentValue(a, services);
-                        const isPartner100 = appointmentValue === 0 && (valFromServices > 0 || (a.client_name || '').toLowerCase().includes('adrielle alves'));
+                        const isPartner100 = appointmentValue === 0 && (valFromServices > 0 || isPartnerOr100Discount(a));
                         
                         const st = statusMeta[a.status] || { label: a.status || 'Agendado', bg: 'bg-amber-50 text-amber-700 border border-amber-200', text: 'text-amber-700' };
 
@@ -2656,6 +2581,7 @@ const RelatoriosView: React.FC = () => {
                     
                     const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
                     const appointmentValue = getAppointmentValue(a, services);
+                    const isPartner100 = appointmentValue === 0 && (valFromServices > 0 || isPartnerOr100Discount(a));
                     
                     const st = statusMeta[a.status] || { label: a.status || 'Agendado', bg: 'bg-amber-50 text-amber-700 border border-amber-200', text: 'text-amber-700' };
 
@@ -2677,9 +2603,19 @@ const RelatoriosView: React.FC = () => {
                         </div>
                         <div className="text-xs font-bold text-slate-600 pt-1 border-t border-slate-50 flex justify-between items-end">
                           <span className="flex-1 pr-2 line-clamp-1">{serviceNames}</span>
-                          <span className="font-black text-slate-800 text-right whitespace-nowrap">
-                            R$ {appointmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </span>
+                          <div className="text-right">
+                            {isPartner100 ? (
+                              <div className="flex flex-col items-end">
+                                <span className="text-slate-400 font-bold line-through text-[10px]">R$ {valFromServices.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                <span className="text-emerald-600 font-black">R$ 0,00</span>
+                                <span className="text-[8px] font-bold text-amber-600 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 mt-0.5">Parceiro 100%</span>
+                              </div>
+                            ) : (
+                              <span className="font-black text-slate-800 text-right whitespace-nowrap">
+                                R$ {appointmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );

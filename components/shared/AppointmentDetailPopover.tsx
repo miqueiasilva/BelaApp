@@ -11,6 +11,7 @@ import StatusUpdatePopover from './StatusUpdatePopover';
 import CheckoutModal from '../modals/CheckoutModal';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
+import { isPartnerOr100Discount, getEffectiveAppointmentValue } from '../../utils/commissionRules';
 
 interface AppointmentDetailPopoverProps {
   appointment: LegacyAppointment;
@@ -479,15 +480,20 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const pendingSameDay = sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status));
   const pendingTotalValue = pendingSameDay.reduce((sum, item) => sum + Number(item.service?.price ?? item.value ?? 0), 0);
 
-  const rawTotal = appointment.service?.price !== undefined && appointment.service.price !== null
-    ? Number(appointment.service.price)
-    : (appointment.value !== undefined && appointment.value !== null ? Number(appointment.value) : 0);
+  const isPartner = isPartnerOr100Discount(appointment);
+  const rawTotal = appointment.value !== undefined && appointment.value !== null
+    ? Number(appointment.value)
+    : (appointment.service?.price !== undefined && appointment.service.price !== null ? Number(appointment.service.price) : 0);
 
   const servicesSum = appointment.services && appointment.services.length > 0
     ? appointment.services.reduce((sum, s) => sum + Number(s.price || 0), 0)
     : rawTotal;
 
-  const appointmentTotalValue = rawTotal > 0 ? rawTotal : servicesSum;
+  const appointmentTotalValue = isPartner 
+    ? 0 
+    : (appointment.value !== undefined && appointment.value !== null 
+        ? Number(appointment.value) 
+        : (rawTotal > 0 ? rawTotal : servicesSum));
 
   const handleFinalizeAllTogether = async () => {
     if (isProcessing) return;
@@ -655,11 +661,18 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             ) : (
               <div className="bg-orange-50/70 border border-orange-100/80 rounded-xl p-2.5 flex items-center justify-between">
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-wider text-orange-500">Procedimento</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-orange-500">Procedimento</p>
+                    {isPartner && (
+                      <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
+                        🌟 Parceiro 100%
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs font-bold text-slate-800">{appointment.service?.name || 'Serviço'}</p>
                 </div>
                 <span className="text-xs font-black text-slate-800 bg-white border border-orange-200 px-2 py-1 rounded-lg">
-                  R$ {Number(appointment.service?.price || appointment.value || 0).toFixed(2)}
+                  R$ {Number(appointmentTotalValue).toFixed(2)}
                 </span>
               </div>
             )

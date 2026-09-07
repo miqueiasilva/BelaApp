@@ -13,6 +13,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Toast, { ToastType } from '../shared/Toast';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { isPartnerOr100Discount, getEffectiveAppointmentValue } from '../../utils/commissionRules';
 
 const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
 
@@ -214,47 +215,8 @@ const RemuneracoesView: React.FC = () => {
 
           const getApptPrice = (appt: any) => {
               if (!appt) return 0;
-              const clientName = String(
-                  appt.client_name || 
-                  appt.client?.nome || 
-                  appt.client?.name || 
-                  appt.client_nome || 
-                  appt.cliente || 
-                  ''
-              ).trim().toLowerCase();
-
-              if (clientName.includes('adrielle') || clientName.includes('alves')) {
-                  return 0;
-              }
-
-              if (
-                  appt.value === 0 || appt.price === 0 || appt.amount === 0 || appt.total === 0 ||
-                  appt.value === '0' || appt.price === '0' || appt.amount === '0' || appt.total === '0' ||
-                  appt.value === 0.00 || appt.price === 0.00
-              ) return 0;
-
-              const is100Discount = 
-                  appt.discount_percent === 100 || 
-                  appt.discount === 100 || 
-                  appt.discount_rule?.value === 100 || 
-                  appt.is_partner_100 === true ||
-                  appt.is_partner === true ||
-                  appt.payment_method === 'parceiro_100' ||
-                  appt.payment_method === 'direto_profissional' ||
-                  appt.payment_method === 'desconto_total' ||
-                  appt.payment_method === 'cortesia' ||
-                  appt.command?.payment_method === 'desconto_total' ||
-                  appt.command?.payment_method === 'cortesia' ||
-                  appt.command?.payment_method === 'parceiro_100';
-
-              if (is100Discount) return 0;
-
-              const notes = String(appt.notes || appt.observacoes || '').toLowerCase();
-              if (notes.includes('100%') || notes.includes('cortesia') || notes.includes('desconto total') || notes.includes('zera')) {
-                  return 0;
-              }
-
-              return Number(appt.value || appt.price || 0);
+              if (isPartnerOr100Discount(appt)) return 0;
+              return getEffectiveAppointmentValue(appt);
           };
 
           const totalBase = myAppts.reduce((acc, appt) => {
@@ -269,6 +231,8 @@ const RemuneracoesView: React.FC = () => {
                   id: appt.id,
                   title: appt.service_name || 'Serviço',
                   price: getApptPrice(appt),
+                  originalPrice: Number(appt.value || appt.price || 0),
+                  isPartner: isPartnerOr100Discount(appt),
                   quantity: 1,
                   type: 'appointment',
                   date: appt.date,
@@ -288,12 +252,8 @@ const RemuneracoesView: React.FC = () => {
           
           const getCommandItemPrice = (item: any) => {
               if (!item) return 0;
-              const cmd = item.commands || {};
-              const clientName = String(cmd.client_name || cmd.client?.nome || item.client_name || '').trim().toLowerCase();
-
-              if (clientName.includes('adrielle') || clientName.includes('alves')) {
-                  return 0;
-              }
+              const cmd = item.commands || item.command || {};
+              if (isPartnerOr100Discount({ ...item, command: cmd, commands: cmd })) return 0;
 
               if (
                   item.price === 0 || item.price === '0' ||
@@ -301,17 +261,6 @@ const RemuneracoesView: React.FC = () => {
                   cmd.total_amount === 0 || cmd.total_amount === '0'
               ) return 0;
 
-              const is100Discount = 
-                  item.discount_percent === 100 || 
-                  item.discount === 100 || 
-                  cmd.discount_percent === 100 || 
-                  cmd.discount === 100 ||
-                  cmd.payment_method === 'parceiro_100' ||
-                  cmd.payment_method === 'direto_profissional' ||
-                  cmd.payment_method === 'desconto_total' ||
-                  cmd.payment_method === 'cortesia';
-
-              if (is100Discount) return 0;
               return Number(item.price || 0) * Number(item.quantity || 1);
           };
 
@@ -336,7 +285,14 @@ const RemuneracoesView: React.FC = () => {
           
           return { 
               member, 
-              items: myItems, 
+              items: myItems.map(item => {
+                  const cmd = item.commands || item.command || {};
+                  return {
+                      ...item,
+                      originalPrice: Number(item.price || 0) * Number(item.quantity || 1),
+                      isPartner: isPartnerOr100Discount({ ...item, command: cmd, commands: cmd }),
+                  };
+              }), 
               totalBase, 
               commissionValue, 
               count: myItems.length, 
@@ -751,6 +707,11 @@ const RemuneracoesView: React.FC = () => {
                                                             </span>
                                                             <p className="text-[9px] text-slate-400 font-black uppercase">{identifier}</p>
                                                             <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-black uppercase">{method}</span>
+                                                            {it.isPartner && (
+                                                                <span className="text-[9px] px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg font-black uppercase tracking-wide">
+                                                                    🌟 Parceiro / 100% Desconto (Sem Comissão)
+                                                                </span>
+                                                            )}
                                                             {!isAppt && calculationBase === 'liquido' && taxRate > 0 && (
                                                                 <span className="text-[9px] text-rose-400 font-bold uppercase">(-{taxRate}%)</span>
                                                             )}
@@ -760,6 +721,11 @@ const RemuneracoesView: React.FC = () => {
                                                         {dateDisplay}
                                                     </td>
                                                     <td className="px-8 py-4 text-right text-slate-500 font-mono text-xs">
+                                                        {it.isPartner && it.originalPrice > 0 && (
+                                                            <span className="line-through text-slate-400 block text-[10px]">
+                                                                {formatBRL(it.originalPrice)}
+                                                            </span>
+                                                        )}
                                                         {formatBRL(base)}
                                                     </td>
                                                     <td className="px-8 py-4 text-right text-orange-600 font-black font-mono">

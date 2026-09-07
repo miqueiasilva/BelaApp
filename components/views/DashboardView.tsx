@@ -17,6 +17,7 @@ import { ViewState } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import toast from 'react-hot-toast';
+import { isPartnerOr100Discount, getEffectiveAppointmentValue } from '../../utils/commissionRules';
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -394,7 +395,10 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         throw todayError;
                     }
 
-                    const totalTodayRev = todayData?.reduce((acc, curr) => acc + (Number(curr.value || curr.price || 0) || 0), 0) || 0;
+                    const totalTodayRev = todayData?.reduce((acc, curr) => {
+                        if (isPartnerOr100Discount(curr)) return acc;
+                        return acc + (Number(curr.value || curr.price || 0) || 0);
+                    }, 0) || 0;
                     if (mounted) setTodayRevenue(totalTodayRev);
                 } catch (todayErr: any) {
                     console.warn("Erro ao buscar faturamento diário no dashboard:", todayErr?.message || todayErr);
@@ -409,9 +413,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                             .eq('active', true),
                         supabase.from('commands')
                             .select(`
-                                closed_at, status,
+                                id, client_id, client_name, payment_method, discount, discount_percent, closed_at, status, notes,
                                 command_items (
-                                    price, quantity, professional_id
+                                    price, quantity, professional_id, discount, discount_percent, name
                                 )
                             `)
                             .eq('studio_id', activeStudioId)
@@ -435,6 +439,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         commands.forEach(cmd => {
                             const items = cmd.command_items || [];
                             items.forEach((item: any) => {
+                                if (isPartnerOr100Discount({ ...item, command: cmd, commands: cmd })) {
+                                    return; // 100% partner / courtesy discount - no collaborator payout
+                                }
                                 const profId = String(item.professional_id);
                                 const rate = ratesMap.get(profId) || 0;
                                 const itemPrice = Number(item.price || 0) * Number(item.quantity || 1);

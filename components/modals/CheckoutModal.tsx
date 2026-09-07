@@ -226,7 +226,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             // 3. ATUALIZAÇÃO DO AGENDAMENTO
             const { error: apptError } = await supabase
                 .from('appointments')
-                .update({ status: 'concluido' })
+                .update({ 
+                    status: 'concluido',
+                    value: Number(appointment.price || 0)
+                })
                 .eq('id', appointment.id);
             
             if (apptError) throw apptError;
